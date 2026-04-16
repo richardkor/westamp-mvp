@@ -1,0 +1,21 @@
+# Environment secrets (never commit real credentials)
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+
+# Local storage data (user uploads and job records)
+uploads/
+data/
+print-tokens/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
