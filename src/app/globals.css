@@ -381,6 +381,49 @@ input[type="file"] {
   margin-bottom: 6px;
 }
 
+/* Per-party input block on the generate form — groups one party's fields */
+.party-block {
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.party-block:first-of-type {
+  margin-top: 6px;
+}
+
+.party-block-heading {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #555;
+  margin: 0 0 10px;
+}
+
+.fieldset-note {
+  font-size: 13px;
+  color: #666;
+  margin: 0 0 12px;
+  font-style: italic;
+}
+
+/* Per-tenant heading within Annexure A when multiple tenants have NRIC uploads */
+.nric-tenant-heading {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 16px 0 8px;
+  color: #333;
+}
+
+/* Preserve line breaks for multi-party descriptors rendered into a single
+   Schedule table cell (Section 2/3 values contain "(1) NAME\n(2) NAME"). */
+.agreement-schedule-table td {
+  white-space: pre-line;
+}
+
 .review-table {
   width: 100%;
   border-collapse: collapse;
@@ -754,20 +797,43 @@ input[type="file"] {
   margin-bottom: 14px;
 }
 
+/* Stack by role: landlords on the top row, tenants below. Each .signature-row
+   holds all blocks for that role laid out horizontally with wrapping. */
 .agreement-signature-block {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.signature-row {
   display: flex;
   gap: 28px;
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
+/* Cap each signature party at half width so a single block in a row does
+   not stretch across the full page. 2-per-row, wrapping for 3+. */
 .signature-party {
-  flex: 1;
+  flex: 0 1 calc(50% - 14px);
   min-width: 180px;
+  display: flex;
+  flex-direction: column;
 }
 
 .signature-party p {
   margin-bottom: 3px;
   font-size: 12px;
+}
+
+/* Reserve a consistent two-line header height across all signature blocks
+   so the dotted signature line, name, ID, and witness block start at the
+   same baseline in every column — regardless of whether the heading is
+   "SIGNED BY THE SAID LANDLORD" (one line) or "SIGNED BY THE SAID
+   LANDLORD (1)" (potentially two lines in narrow columns). */
+.signature-party > p:first-child {
+  min-height: 2.6em;
+  margin-bottom: 6px;
 }
 
 .signature-line {
@@ -1998,13 +2064,75 @@ section[data-section] {
     break-before: page;
   }
 
-  /* Prevent awkward breaks inside small content blocks.
-     Covenant and proviso clauses are allowed to flow across pages
-     to avoid large gaps. */
-  .agreement-signature-block,
+  /* Minimal atomic blocks — only keep whole the things that split badly:
+     the schedule table and individual signature parties. The body of the
+     agreement (recitals, operative clauses, covenants, provisos, interp)
+     flows naturally across pages — no forced grouping. */
   .agreement-schedule-table,
-  .operative-clause {
+  .signature-party {
     break-inside: avoid;
+  }
+
+  /* Narrow orphan protection: only the tiny NUMBER / margin-note elements
+     stick to their next line. This prevents a bare "5.4" or its margin
+     note from stranding, without pulling whole clauses forward. */
+  .covenant-letter,
+  .proviso-number,
+  .recital-number,
+  .interpretation-number,
+  .operative-number,
+  .margin-note {
+    break-after: avoid;
+  }
+
+  /* The .clause-head-pair JSX wrapper is intentionally NOT declared
+     break-inside: avoid here. Previous experiments forced the wrapper
+     (margin-note + first body paragraph) to be an indivisible block.
+     That caused large bottom-of-page gaps whenever the atomic block
+     did not fit — e.g. Clause 3 pushed fully to page 3 even when
+     ~200 px was free on page 2, and Clause 7.3 pushed fully to the
+     next page even when ~150 px was free on the previous page.
+
+     The remaining mechanism that keeps the sub-heading visually
+     attached to the start of the body is the .margin-note rule
+     above (break-after: avoid), plus the body paragraphs' widows: 2 /
+     orphans: 2. Together they keep the margin-note with at least
+     the first 2 lines of body, while allowing the rest of the body
+     to continue naturally on the next page. */
+
+  /* .section-head-pair is a historical JSX wrapper name that is not
+     currently used anywhere in the JSX but the selector is retained
+     here as a harmless no-op in case future markup revives it. */
+
+  /* Keep the section-intro heading text itself from splitting across pages
+     (the heading wraps to 2 lines at 12px font — we don't want Chrome
+     breaking mid-heading between "BOTH" and "PARTIES").
+
+     break-after: avoid — if the heading would otherwise land at the
+     bottom of a page with its content starting on the next page,
+     Chrome pulls the heading forward to the next page so it sits
+     together with the start of its section content. The cost is a
+     small gap (1–2 lines worth) at the bottom of the previous page,
+     which is much cleaner than a 200–400px orphan-heading gap.
+
+     These headings are:
+     (a) the "5./6. ... COVENANTS ..." intros (covenant-heading)
+     (b) the "7. PROVIDED ALWAYS ..." intro    (proviso-heading) */
+  .covenant-heading,
+  .proviso-heading {
+    break-inside: avoid;
+    break-after: avoid;
+  }
+
+
+  /* Standard CSS paragraph widow/orphan control. */
+  .covenant-body p,
+  .proviso-body p,
+  .recital-body p,
+  .interpretation-body p,
+  .operative-body p {
+    orphans: 2;
+    widows: 2;
   }
 
   /* Ensure clean black-on-white output */

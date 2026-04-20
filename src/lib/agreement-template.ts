@@ -14,7 +14,7 @@
  * - Ritz: utility deposit structure, air-con servicing (if landlord), special conditions (Schedule Section 12)
  */
 
-import { TenancyFormData, InventoryItem, InventoryCategory, INVENTORY_CATEGORIES } from "./tenancy-types";
+import { TenancyFormData, LandlordParty, TenantParty, InventoryItem, InventoryCategory, INVENTORY_CATEGORIES } from "./tenancy-types";
 import { ringgitWords } from "./amount-words";
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -41,11 +41,22 @@ export interface InventoryGrouped {
   items: { itemName: string; quantity: number }[];
 }
 
+/**
+ * A single signatory block — used for the execution/signing section.
+ * One per party (so multiple landlords → multiple landlord signatory blocks).
+ */
+export interface Signatory {
+  name: string;
+  idLine: string;
+}
+
 export interface AgreementDoc {
   // Cover
   agreementDateOrdinal: string;
-  landlordDescriptor: string;
-  tenantDescriptor: string;
+  /** Array of landlord descriptors, one per party. Always length >= 1. */
+  landlordDescriptors: string[];
+  /** Array of tenant descriptors, one per party. Always length >= 1. */
+  tenantDescriptors: string[];
   propertyAddress: string;
 
   // Body
@@ -76,11 +87,9 @@ export interface AgreementDoc {
   // Annexures
   annexures: { id: string; title: string; placeholder: string }[];
 
-  // Execution block data
-  landlordName: string;
-  landlordIdLine: string;
-  tenantName: string;
-  tenantIdLine: string;
+  // Execution block data — one signatory per party
+  landlordSignatories: Signatory[];
+  tenantSignatories: Signatory[];
 }
 
 // ─── Date utilities ───────────────────────────────────────────────────────
@@ -161,6 +170,44 @@ export function deriveEndDate(commencementDate: string, leaseMonths: string): st
 
 function idLabel(partyType: "individual" | "company"): string {
   return partyType === "individual" ? "NRIC NO." : "CO. REG. NO.";
+}
+
+/**
+ * Format one landlord party as a short descriptor string (name + ID only).
+ * Used on the cover page for compact party presentation.
+ */
+function formatLandlordDescriptor(p: LandlordParty): string {
+  return `${p.name.toUpperCase()} (${idLabel(p.partyType)}: ${p.idNumber})`;
+}
+
+/** Short tenant descriptor (name + ID only). Used on the cover page. */
+function formatTenantDescriptor(p: TenantParty): string {
+  return `${p.name.toUpperCase()} (${idLabel(p.partyType)}: ${p.idNumber})`;
+}
+
+/**
+ * Format one party as a FULL Schedule entry: name, ID, and address.
+ * Used for Schedule Sections 2 and 3 where the legal party description
+ * must include the address. Rendered without quotation marks around
+ * the address for natural inline reading.
+ */
+function formatScheduleEntry(
+  name: string,
+  partyType: "individual" | "company",
+  idNumber: string,
+  address: string,
+): string {
+  return `${name.toUpperCase()} (${idLabel(partyType)}: ${idNumber}) of ${address}`;
+}
+
+/**
+ * Render a list of party descriptors for the Schedule (Section 2/3).
+ * Single party → plain descriptor. Multiple parties → numbered lines
+ * "(1) NAME (…)\n(2) NAME (…)" for clean multi-line display.
+ */
+function renderScheduleDescriptors(descriptors: string[]): string {
+  if (descriptors.length === 1) return descriptors[0];
+  return descriptors.map((d, i) => `(${i + 1}) ${d}`).join("\n");
 }
 
 // ─── Inventory grouping ──────────────────────────────────────────────────
@@ -422,17 +469,14 @@ function buildProvisos(form: TenancyFormData): Proviso[] {
   return provisos;
 }
 
-// ─── Special Conditions proviso (fixed at 7.13) ──────────────────────────
+// ─── Special Conditions proviso ──────────────────────────
 
 /**
- * Fixed sub-number for the Special Conditions proviso within Clause 7.
- * This is intentionally hardcoded — it must never renumber dynamically.
- */
-const SPECIAL_CONDITIONS_SUB_NUM = 13;
-
-/**
- * Build the Special Conditions proviso. Always present, always numbered 7.13
- * regardless of whether Option to Renew is selected.
+ * Build the Special Conditions proviso. Always present — but its sub-number
+ * now flows naturally after the preceding provisos so there is no numbering
+ * gap when Option to Renew is OFF:
+ *   - Option to Renew ON:  provisos = 12 items → Special Conditions = 7.13
+ *   - Option to Renew OFF: provisos = 11 items → Special Conditions = 7.12
  */
 function buildSpecialConditionsProviso(): Proviso {
   return {
@@ -444,11 +488,19 @@ function buildSpecialConditionsProviso(): Proviso {
 // ─── Main builder ─────────────────────────────────────────────────────────
 
 export function buildAgreement(form: TenancyFormData): AgreementDoc {
-  const landlordIdLabel = idLabel(form.landlordPartyType);
-  const tenantIdLabel   = idLabel(form.tenantPartyType);
+  // Per-party descriptors for cover page display and schedule
+  const landlordDescriptors = form.landlords.map(formatLandlordDescriptor);
+  const tenantDescriptors   = form.tenants.map(formatTenantDescriptor);
 
-  const landlordDescriptor = `${form.landlordName.toUpperCase()} (${landlordIdLabel}: ${form.landlordIdNumber})`;
-  const tenantDescriptor   = `${form.tenantName.toUpperCase()} (${tenantIdLabel}: ${form.tenantIdNumber})`;
+  // Per-party signatories for execution block (one signature line per party)
+  const landlordSignatories: Signatory[] = form.landlords.map((p) => ({
+    name: p.name.toUpperCase(),
+    idLine: `${idLabel(p.partyType)}: ${p.idNumber}`,
+  }));
+  const tenantSignatories: Signatory[] = form.tenants.map((p) => ({
+    name: p.name.toUpperCase(),
+    idLine: `${idLabel(p.partyType)}: ${p.idNumber}`,
+  }));
 
   const agreementDateOrdinal = fmtDateOrdinal(form.agreementDate);
   const agreementDateFmt     = fmtDate(form.agreementDate);
@@ -462,14 +514,18 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
   const preambleText = `THIS AGREEMENT is made the day and year stated in Section 1 of the Schedule hereto between the party whose name and description are stated in Section 2 of the Schedule hereto (hereinafter called the \u201CLandlord\u201D) of the one part and the party whose name and description are stated in Section 3 of the Schedule hereto (hereinafter called the \u201CTenant\u201D) of the other part.`;
 
   // ── Recitals (numbered 1. 2. 3.) ──────────────────────────────────────
+  // Recitals 1 and 2 use plural-flexible "is/are" wording so they read
+  // correctly for one or multiple landlords/tenants. The rest of the
+  // agreement relies on Interpretation Clause 8.3 (singular ↔ plural) for
+  // party reference coverage.
   const recitals: { number: string; text: string }[] = [
     {
       number: "1.",
-      text: `The Landlord is the registered/beneficial proprietor of the property more particularly referred to and described in Section 4 of the Schedule hereto (hereinafter referred to as the Said Premises). The Landlord warrants that the co-registered/beneficial proprietor (if any) has authorized the Landlord to enter into this Agreement with the Tenant.`,
+      text: `The Landlord is/are the registered/beneficial proprietor of the property more particularly referred to and described in Section 4 of the Schedule hereto (hereinafter referred to as the Said Premises). The Landlord warrants that the co-registered/beneficial proprietor (if any) has authorized the Landlord to enter into this Agreement with the Tenant.`,
     },
     {
       number: "2.",
-      text: `The Landlord is desirous of letting and the Tenant is desirous of taking the Said Premises together with furniture, fixtures and fittings as described in the Inventory hereto (where applicable) subject to the terms and conditions hereinafter contained.`,
+      text: `The Landlord is/are desirous of letting and the Tenant is/are desirous of taking the Said Premises together with furniture, fixtures and fittings as described in the Inventory hereto (where applicable) subject to the terms and conditions hereinafter contained.`,
     },
     {
       number: "3.",
@@ -527,10 +583,25 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
   ];
 
   // ── The Schedule (amounts now in words + figures) ────────────────────
+  // Section 2 and Section 3 labels use the plural-flexible "(s)" form so the
+  // label reads correctly for one or multiple parties. Clause 8.3 of the
+  // Interpretation clause covers singular/plural usage throughout the body.
+  //
+  // Section 2 and 3 VALUES include each party's address in the descriptor,
+  // rendered as:  NAME (NRIC NO.: ###) of "FULL ADDRESS"
+  // This is the legally proper party description on the Schedule. The
+  // cover-page descriptors remain short (name + ID only).
+  const landlordScheduleEntries = form.landlords.map((p) =>
+    formatScheduleEntry(p.name, p.partyType, p.idNumber, p.address),
+  );
+  const tenantScheduleEntries = form.tenants.map((p) =>
+    formatScheduleEntry(p.name, p.partyType, p.idNumber, p.address),
+  );
+
   const schedule: ScheduleRow[] = [
     { section: "1.",     item: "Date of Agreement",             value: agreementDateFmt },
-    { section: "2.",     item: "Description of Landlord",       value: landlordDescriptor },
-    { section: "3.",     item: "Description of Tenant",         value: tenantDescriptor },
+    { section: "2.",     item: "Description of Landlord(s)",    value: renderScheduleDescriptors(landlordScheduleEntries) },
+    { section: "3.",     item: "Description of Tenant(s)",      value: renderScheduleDescriptors(tenantScheduleEntries) },
     { section: "4.",     item: "Description of Said Premises",  value: form.propertyAddress },
     { section: "5(a)",   item: "Term",                          value: `${form.leaseMonths} months` },
     { section: "5(b)",   item: "Commencing",                    value: commencementDateFmt },
@@ -578,22 +649,29 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
   const inventoryGrouped = groupInventory(form.inventoryItems);
 
   // ── Annexures ────────────────────────────────────────────────────────
-  // Annexure A: Tenant NRIC — only when individual AND at least one side uploaded.
+  // Annexure A: Tenant NRIC — included when ANY individual tenant has at
+  // least one NRIC side uploaded. Handles single or multiple tenants.
   // There is no Annexure B. Stamp certificate is appended as final page(s), not an annexure.
   const annexures: { id: string; title: string; placeholder: string }[] = [];
-  const hasTenantNric = form.tenantNricFront !== null || form.tenantNricBack !== null;
-  if (form.tenantPartyType === "individual" && hasTenantNric) {
+  const anyTenantNricUploaded = form.tenants.some(
+    (t) => t.partyType === "individual" && (t.nricFront !== null || t.nricBack !== null),
+  );
+  if (anyTenantNricUploaded) {
+    const tenantLabel = form.tenants.length > 1 ? "Tenants' Identity Documents" : "Tenant's Identity Documents";
+    const placeholderLabel = form.tenants.length > 1
+      ? "[To be attached \u2014 Tenants' NRIC (front and back)]"
+      : "[To be attached \u2014 Tenant's NRIC (front and back)]";
     annexures.push({
       id: "A",
-      title: "Tenant's Identity Documents",
-      placeholder: "[To be attached \u2014 Tenant's NRIC (front and back)]",
+      title: tenantLabel,
+      placeholder: placeholderLabel,
     });
   }
 
   return {
     agreementDateOrdinal: agreementDateOrdinal,
-    landlordDescriptor,
-    tenantDescriptor,
+    landlordDescriptors,
+    tenantDescriptors,
     propertyAddress: form.propertyAddress,
     preambleText,
     recitals,
@@ -604,7 +682,7 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
     landlordCovenants,
     provisosClauseNum,
     provisos,
-    specialConditionsProvisoSubNum: SPECIAL_CONDITIONS_SUB_NUM,
+    specialConditionsProvisoSubNum: provisos.length + 1,
     specialConditionsProviso: buildSpecialConditionsProviso(),
     interpretationClauseNum,
     interpretation,
@@ -613,9 +691,7 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
     inventoryUploadFileNames,
     inventoryGrouped,
     annexures,
-    landlordName: form.landlordName.toUpperCase(),
-    landlordIdLine: `${landlordIdLabel}: ${form.landlordIdNumber}`,
-    tenantName: form.tenantName.toUpperCase(),
-    tenantIdLine: `${tenantIdLabel}: ${form.tenantIdNumber}`,
+    landlordSignatories,
+    tenantSignatories,
   };
 }

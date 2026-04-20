@@ -11,18 +11,22 @@
  */
 
 import React from "react";
-import { TenancyFormData, TENANCY_FORM_DEFAULTS, InventoryCategory, INVENTORY_CATEGORIES } from "../../../lib/tenancy-types";
+import { TenancyFormData, TENANCY_FORM_DEFAULTS, TenantParty, BLANK_TENANT_PARTY, InventoryCategory, INVENTORY_CATEGORIES } from "../../../lib/tenancy-types";
 import { buildAgreement, AgreementDoc } from "../../../lib/agreement-template";
 
 /**
  * Serialized form data shape — matches TenancyFormData but with
  * File fields replaced by filename metadata.
  */
+interface SerializedTenantNric {
+  front: string | null;
+  back: string | null;
+}
+
 interface SerializedFormData {
   [key: string]: unknown;
-  // File fields are replaced:
-  tenantNricFrontName?: string | null;
-  tenantNricBackName?: string | null;
+  /** Per-tenant NRIC filename metadata, indexed by tenant position. */
+  tenantNricNames?: SerializedTenantNric[];
   inventoryUploadFileNames?: string[];
   inventoryItemPhotoNames?: Record<string, string[]>; // itemId → filenames
 }
@@ -32,12 +36,23 @@ interface SerializedFormData {
  * File fields become null/empty — the template handles this gracefully.
  */
 function deserializeFormData(json: Record<string, unknown>): TenancyFormData {
+  const base = { ...TENANCY_FORM_DEFAULTS, ...(json as Partial<TenancyFormData>) };
+
+  // Tenants array must be reconstructed with null File fields (cannot serialize files)
+  const rawTenants = (json.tenants as unknown[]) ?? base.tenants;
+  const tenants: TenantParty[] = rawTenants.map((t: unknown) => {
+    const tp = t as Partial<TenantParty>;
+    return {
+      ...BLANK_TENANT_PARTY,
+      ...tp,
+      nricFront: null,
+      nricBack: null,
+    };
+  });
+
   return {
-    ...TENANCY_FORM_DEFAULTS,
-    ...(json as Partial<TenancyFormData>),
-    // File fields are always null/empty in the print context
-    tenantNricFront: null,
-    tenantNricBack: null,
+    ...base,
+    tenants,
     inventoryUploadFiles: [],
     inventoryItems: ((json.inventoryItems as unknown[]) ?? []).map((item: unknown) => {
       const it = item as Record<string, unknown>;
@@ -158,24 +173,40 @@ function PrintInventoryPreview({
 
 // ─── Annexure A for Print ────────────────────────────────────────────
 
-function PrintAnnexureAContent({ serialized }: { serialized: SerializedFormData }) {
-  const frontName = serialized.tenantNricFrontName;
-  const backName = serialized.tenantNricBackName;
+function PrintAnnexureAContent({
+  serialized,
+  form,
+}: {
+  serialized: SerializedFormData;
+  form: TenancyFormData;
+}) {
+  const namesByTenant = serialized.tenantNricNames ?? [];
+  // Only individual tenants can have NRIC; filter by partyType
+  const tenantsWithUploads = form.tenants
+    .map((t, idx) => ({ t, idx, names: namesByTenant[idx] }))
+    .filter(({ t, names }) => t.partyType === "individual" && (names?.front || names?.back));
 
-  if (!frontName && !backName) {
+  if (tenantsWithUploads.length === 0) {
     return <p className="agreement-placeholder">[Tenant NRIC copies to be attached]</p>;
   }
+
+  const showTenantHeading = form.tenants.length > 1;
 
   return (
     <div style={{ marginTop: 12 }}>
       <p className="agreement-placeholder">[Tenant NRIC copies to be attached]</p>
-      <p style={{ fontSize: 12, color: "#555", marginTop: 8 }}>
-        Uploaded NRIC files:
-      </p>
-      <ul style={{ fontSize: 12, color: "#444", paddingLeft: 20, marginTop: 4 }}>
-        {frontName && <li>Front: {frontName}</li>}
-        {backName && <li>Back: {backName}</li>}
-      </ul>
+      {tenantsWithUploads.map(({ idx, names }) => (
+        <div key={`nric-${idx}`} style={{ marginTop: 12 }}>
+          {showTenantHeading && (
+            <p style={{ fontSize: 12, color: "#333", fontWeight: 600, marginTop: 6 }}>Tenant {idx + 1}</p>
+          )}
+          <p style={{ fontSize: 12, color: "#555", marginTop: 4 }}>Uploaded NRIC files:</p>
+          <ul style={{ fontSize: 12, color: "#444", paddingLeft: 20, marginTop: 4 }}>
+            {names?.front && <li>Front: {names.front}</li>}
+            {names?.back && <li>Back: {names.back}</li>}
+          </ul>
+        </div>
+      ))}
       <p style={{ fontSize: 11, color: "#888", fontStyle: "italic", marginTop: 6 }}>
         Note: NRIC images are not included in this PDF version.
       </p>
@@ -203,11 +234,23 @@ export function PrintAgreement({
           <p className="cover-date">{doc.agreementDateOrdinal}</p>
           <div className="cover-parties">
             <p className="cover-label">BETWEEN</p>
-            <p className="cover-party-name">{doc.landlordDescriptor}</p>
-            <p className="cover-party-role">(&ldquo;THE LANDLORD&rdquo;)</p>
+            {doc.landlordDescriptors.map((d, i) => (
+              <p key={`ll-${i}`} className="cover-party-name">
+                {doc.landlordDescriptors.length > 1 ? `(${i + 1}) ${d}` : d}
+              </p>
+            ))}
+            <p className="cover-party-role">
+              (&ldquo;{doc.landlordDescriptors.length > 1 ? "THE LANDLORDS" : "THE LANDLORD"}&rdquo;)
+            </p>
             <p className="cover-label">AND</p>
-            <p className="cover-party-name">{doc.tenantDescriptor}</p>
-            <p className="cover-party-role">(&ldquo;THE TENANT&rdquo;)</p>
+            {doc.tenantDescriptors.map((d, i) => (
+              <p key={`tt-${i}`} className="cover-party-name">
+                {doc.tenantDescriptors.length > 1 ? `(${i + 1}) ${d}` : d}
+              </p>
+            ))}
+            <p className="cover-party-role">
+              (&ldquo;{doc.tenantDescriptors.length > 1 ? "THE TENANTS" : "THE TENANT"}&rdquo;)
+            </p>
           </div>
           <div className="cover-title-box">
             <p>TENANCY AGREEMENT</p>
@@ -245,8 +288,10 @@ export function PrintAgreement({
               <div key={c.number} className="operative-clause">
                 <span className="operative-number">{c.number}.</span>
                 <div className="operative-body">
-                  <p className="margin-note"><em>{c.marginNote}</em></p>
-                  <p><BoldScheduleRefs text={c.text} /></p>
+                  <div className="clause-head-pair">
+                    <p className="margin-note"><em>{c.marginNote}</em></p>
+                    <p><BoldScheduleRefs text={c.text} /></p>
+                  </div>
                 </div>
               </div>
             ))}
@@ -259,17 +304,23 @@ export function PrintAgreement({
             <p className="covenant-heading">
               <strong>{doc.tenantCovenantsClauseNum}. THE TENANT HEREBY COVENANTS WITH THE LANDLORD as follows:-</strong>
             </p>
-            {doc.tenantCovenants.map((c, idx) => (
-              <div key={c.letter} className="covenant-clause">
-                <span className="covenant-letter">{doc.tenantCovenantsClauseNum}.{idx + 1}</span>
-                <div className="covenant-body">
-                  <p className="margin-note"><em>{c.marginNote}</em></p>
-                  {c.text.split("\n\n").map((para, pi) => (
-                    <p key={pi}><BoldScheduleRefs text={para} /></p>
-                  ))}
+            {doc.tenantCovenants.map((c, idx) => {
+              const paras = c.text.split("\n\n");
+              return (
+                <div key={c.letter} className="covenant-clause">
+                  <span className="covenant-letter">{doc.tenantCovenantsClauseNum}.{idx + 1}</span>
+                  <div className="covenant-body">
+                    <div className="clause-head-pair">
+                      <p className="margin-note"><em>{c.marginNote}</em></p>
+                      {paras[0] && <p><BoldScheduleRefs text={paras[0]} /></p>}
+                    </div>
+                    {paras.slice(1).map((para, pi) => (
+                      <p key={pi}><BoldScheduleRefs text={para} /></p>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -279,17 +330,23 @@ export function PrintAgreement({
             <p className="covenant-heading">
               <strong>{doc.landlordCovenantsClauseNum}. THE LANDLORD HEREBY COVENANTS WITH THE TENANT as follows:-</strong>
             </p>
-            {doc.landlordCovenants.map((c, idx) => (
-              <div key={c.letter} className="covenant-clause">
-                <span className="covenant-letter">{doc.landlordCovenantsClauseNum}.{idx + 1}</span>
-                <div className="covenant-body">
-                  <p className="margin-note"><em>{c.marginNote}</em></p>
-                  {c.text.split("\n\n").map((para, pi) => (
-                    <p key={pi}><BoldScheduleRefs text={para} /></p>
-                  ))}
+            {doc.landlordCovenants.map((c, idx) => {
+              const paras = c.text.split("\n\n");
+              return (
+                <div key={c.letter} className="covenant-clause">
+                  <span className="covenant-letter">{doc.landlordCovenantsClauseNum}.{idx + 1}</span>
+                  <div className="covenant-body">
+                    <div className="clause-head-pair">
+                      <p className="margin-note"><em>{c.marginNote}</em></p>
+                      {paras[0] && <p><BoldScheduleRefs text={paras[0]} /></p>}
+                    </div>
+                    {paras.slice(1).map((para, pi) => (
+                      <p key={pi}><BoldScheduleRefs text={para} /></p>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -299,27 +356,41 @@ export function PrintAgreement({
             <p className="proviso-heading">
               <strong>{doc.provisosClauseNum}. PROVIDED ALWAYS AND IT IS HEREBY EXPRESSLY AGREED BETWEEN BOTH PARTIES as follows:-</strong>
             </p>
-            {doc.provisos.map((p, i) => (
-              <div key={i} className="proviso-clause">
-                <span className="proviso-number">{doc.provisosClauseNum}.{i + 1}</span>
-                <div className="proviso-body">
-                  <p className="margin-note"><em>{p.marginNote}</em></p>
-                  {p.text.split("\n\n").map((para, pi) => (
-                    <p key={pi}><BoldScheduleRefs text={para} /></p>
-                  ))}
+            {doc.provisos.map((p, i) => {
+              const paras = p.text.split("\n\n");
+              return (
+                <div key={i} className="proviso-clause">
+                  <span className="proviso-number">{doc.provisosClauseNum}.{i + 1}</span>
+                  <div className="proviso-body">
+                    <div className="clause-head-pair">
+                      <p className="margin-note"><em>{p.marginNote}</em></p>
+                      {paras[0] && <p><BoldScheduleRefs text={paras[0]} /></p>}
+                    </div>
+                    {paras.slice(1).map((para, pi) => (
+                      <p key={pi}><BoldScheduleRefs text={para} /></p>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-            {/* Special Conditions — ALWAYS rendered at fixed sub-number 7.13 */}
-            <div className="proviso-clause">
-              <span className="proviso-number">{doc.provisosClauseNum}.{doc.specialConditionsProvisoSubNum}</span>
-              <div className="proviso-body">
-                <p className="margin-note"><em>{doc.specialConditionsProviso.marginNote}</em></p>
-                {doc.specialConditionsProviso.text.split("\n\n").map((para, pi) => (
-                  <p key={pi}><BoldScheduleRefs text={para} /></p>
-                ))}
-              </div>
-            </div>
+              );
+            })}
+            {/* Special Conditions — dynamic sub-number (7.12 or 7.13) */}
+            {(() => {
+              const scParas = doc.specialConditionsProviso.text.split("\n\n");
+              return (
+                <div className="proviso-clause">
+                  <span className="proviso-number">{doc.provisosClauseNum}.{doc.specialConditionsProvisoSubNum}</span>
+                  <div className="proviso-body">
+                    <div className="clause-head-pair">
+                      <p className="margin-note"><em>{doc.specialConditionsProviso.marginNote}</em></p>
+                      {scParas[0] && <p><BoldScheduleRefs text={scParas[0]} /></p>}
+                    </div>
+                    {scParas.slice(1).map((para, pi) => (
+                      <p key={pi}><BoldScheduleRefs text={para} /></p>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </section>
 
@@ -351,29 +422,37 @@ export function PrintAgreement({
               the day and year specified in <strong>Section 1 of the Schedule</strong> hereto.
             </p>
             <div className="agreement-signature-block">
-              <div className="signature-party">
-                <p><strong>SIGNED BY THE SAID LANDLORD</strong></p>
-                <p className="signature-line-dotted">&nbsp;</p>
-                <p>{doc.landlordName}</p>
-                <p className="signature-id">({doc.landlordIdLine})</p>
-                <div className="witness-block">
-                  <p className="witness-label">In the presence of:</p>
-                  <p className="signature-line-dotted">&nbsp;</p>
-                  <p className="witness-field">Name: ..........................................................</p>
-                  <p className="witness-field">NRIC No.: ..................................................</p>
-                </div>
+              <div className="signature-row">
+                {doc.landlordSignatories.map((s, i) => (
+                  <div key={`ll-sig-${i}`} className="signature-party">
+                    <p><strong>SIGNED BY THE SAID LANDLORD</strong></p>
+                    <p className="signature-line-dotted">&nbsp;</p>
+                    <p>{s.name}</p>
+                    <p className="signature-id">({s.idLine})</p>
+                    <div className="witness-block">
+                      <p className="witness-label">In the presence of:</p>
+                      <p className="signature-line-dotted">&nbsp;</p>
+                      <p className="witness-field">Name: ..........................................................</p>
+                      <p className="witness-field">NRIC No.: ..................................................</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="signature-party">
-                <p><strong>SIGNED BY THE SAID TENANT</strong></p>
-                <p className="signature-line-dotted">&nbsp;</p>
-                <p>{doc.tenantName}</p>
-                <p className="signature-id">({doc.tenantIdLine})</p>
-                <div className="witness-block">
-                  <p className="witness-label">In the presence of:</p>
-                  <p className="signature-line-dotted">&nbsp;</p>
-                  <p className="witness-field">Name: ..........................................................</p>
-                  <p className="witness-field">NRIC No.: ..................................................</p>
-                </div>
+              <div className="signature-row">
+                {doc.tenantSignatories.map((s, i) => (
+                  <div key={`tt-sig-${i}`} className="signature-party">
+                    <p><strong>SIGNED BY THE SAID TENANT</strong></p>
+                    <p className="signature-line-dotted">&nbsp;</p>
+                    <p>{s.name}</p>
+                    <p className="signature-id">({s.idLine})</p>
+                    <div className="witness-block">
+                      <p className="witness-label">In the presence of:</p>
+                      <p className="signature-line-dotted">&nbsp;</p>
+                      <p className="witness-field">Name: ..........................................................</p>
+                      <p className="witness-field">NRIC No.: ..................................................</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -422,8 +501,8 @@ export function PrintAgreement({
               <h3 className="agreement-schedule-heading schedule-centred">
                 ANNEXURE {annexure.id} &mdash; {annexure.title.toUpperCase()}
               </h3>
-              {annexure.id === "A" && form.tenantPartyType === "individual" ? (
-                <PrintAnnexureAContent serialized={serialized} />
+              {annexure.id === "A" ? (
+                <PrintAnnexureAContent serialized={serialized} form={form} />
               ) : (
                 <p className="agreement-placeholder">{annexure.placeholder}</p>
               )}

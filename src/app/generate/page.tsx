@@ -5,6 +5,11 @@ import {
   TenancyFormData,
   TENANCY_FORM_DEFAULTS,
   PartyType,
+  LandlordParty,
+  TenantParty,
+  BLANK_LANDLORD_PARTY,
+  BLANK_TENANT_PARTY,
+  MAX_PARTIES_PER_SIDE,
   UtilityResponsibility,
   AirConServicingResponsibility,
   InventoryMode,
@@ -62,6 +67,63 @@ export default function GeneratePage() {
     if (digits.length <= 6) return digits;
     if (digits.length <= 8) return `${digits.slice(0, 6)}-${digits.slice(6)}`;
     return `${digits.slice(0, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
+  }
+
+  // ─── Party count + field helpers ──────────────────────────────────
+
+  /**
+   * Change the landlord count. Grows the array with blank parties or
+   * truncates from the end. Always keeps at least 1 entry.
+   */
+  function setLandlordCount(n: number) {
+    const target = Math.max(1, Math.min(MAX_PARTIES_PER_SIDE, n));
+    setForm((prev) => {
+      const current = prev.landlords;
+      if (target === current.length) return prev;
+      if (target > current.length) {
+        const added = Array.from({ length: target - current.length }, () => ({ ...BLANK_LANDLORD_PARTY }));
+        return { ...prev, landlords: [...current, ...added] };
+      }
+      return { ...prev, landlords: current.slice(0, target) };
+    });
+  }
+
+  /** Change the tenant count. Same semantics as setLandlordCount. */
+  function setTenantCount(n: number) {
+    const target = Math.max(1, Math.min(MAX_PARTIES_PER_SIDE, n));
+    setForm((prev) => {
+      const current = prev.tenants;
+      if (target === current.length) return prev;
+      if (target > current.length) {
+        const added = Array.from({ length: target - current.length }, () => ({ ...BLANK_TENANT_PARTY }));
+        return { ...prev, tenants: [...current, ...added] };
+      }
+      return { ...prev, tenants: current.slice(0, target) };
+    });
+  }
+
+  /** Update one field on one landlord party by index. */
+  function setLandlordField<K extends keyof LandlordParty>(
+    idx: number,
+    key: K,
+    value: LandlordParty[K],
+  ) {
+    setForm((prev) => {
+      const next = prev.landlords.map((p, i) => (i === idx ? { ...p, [key]: value } : p));
+      return { ...prev, landlords: next };
+    });
+  }
+
+  /** Update one field on one tenant party by index. */
+  function setTenantField<K extends keyof TenantParty>(
+    idx: number,
+    key: K,
+    value: TenantParty[K],
+  ) {
+    setForm((prev) => {
+      const next = prev.tenants.map((p, i) => (i === idx ? { ...p, [key]: value } : p));
+      return { ...prev, tenants: next };
+    });
   }
 
   // ─── Inventory helpers ────────────────────────────────────────────
@@ -129,20 +191,22 @@ export default function GeneratePage() {
     // Property
     if (!form.propertyAddress.trim()) e.propertyAddress = "Required.";
 
-    // Landlord
-    if (!form.landlordName.trim()) e.landlordName = "Required.";
-    if (!form.landlordIdNumber.trim()) e.landlordIdNumber = "Required.";
-    if (!form.landlordAddress.trim()) e.landlordAddress = "Required.";
-    if (!form.landlordEmail.trim()) e.landlordEmail = "Required.";
+    // Landlords (dynamic — one validation set per party)
+    form.landlords.forEach((p, i) => {
+      if (!p.name.trim()) e[`landlord${i}Name`] = "Required.";
+      if (!p.idNumber.trim()) e[`landlord${i}IdNumber`] = "Required.";
+      if (!p.address.trim()) e[`landlord${i}Address`] = "Required.";
+    });
     if (!form.landlordBankName.trim()) e.landlordBankName = "Required.";
     if (!form.landlordBankAccountNumber.trim()) e.landlordBankAccountNumber = "Required.";
     if (!form.landlordBankAccountHolderName.trim()) e.landlordBankAccountHolderName = "Required.";
 
-    // Tenant
-    if (!form.tenantName.trim()) e.tenantName = "Required.";
-    if (!form.tenantIdNumber.trim()) e.tenantIdNumber = "Required.";
-    if (!form.tenantAddress.trim()) e.tenantAddress = "Required.";
-    if (!form.tenantEmail.trim()) e.tenantEmail = "Required.";
+    // Tenants (dynamic — one validation set per party)
+    form.tenants.forEach((p, i) => {
+      if (!p.name.trim()) e[`tenant${i}Name`] = "Required.";
+      if (!p.idNumber.trim()) e[`tenant${i}IdNumber`] = "Required.";
+      if (!p.address.trim()) e[`tenant${i}Address`] = "Required.";
+    });
 
     // Tenant NRIC uploads are optional — Annexure A is included only when at least one side is uploaded.
 
@@ -279,95 +343,56 @@ export default function GeneratePage() {
             type="text"
             value={form.propertyAddress}
             onChange={(e) => setField("propertyAddress", e.target.value)}
-            placeholder="e.g. Unit A-12-3, Pavilion Embassy, Jalan Ampang, 50450 Kuala Lumpur"
+            placeholder="e.g. No. 12, Jalan Example 1, Taman Example, 50450 Kuala Lumpur"
             className={errors.propertyAddress ? "input-error" : ""}
           />
+          <p className="field-note">Use the property address stated in the sale and purchase agreement or other title/source document.</p>
           {errors.propertyAddress && <p className="field-error">{errors.propertyAddress}</p>}
         </div>
       </fieldset>
 
-      {/* ── Landlord ─────────────────────────────────────────────── */}
+      {/* ── Landlords (1..MAX) ───────────────────────────────────── */}
       <fieldset>
         <legend>Landlord Details</legend>
 
         <div className="form-group">
-          <label htmlFor="landlordPartyType">Party Type</label>
+          <label htmlFor="landlordCount">
+            Number of Landlords
+            <span className="label-hint"> (for co-owners / joint landlords)</span>
+          </label>
           <select
-            id="landlordPartyType"
-            value={form.landlordPartyType}
-            onChange={(e) => setField("landlordPartyType", e.target.value as PartyType)}
+            id="landlordCount"
+            value={form.landlords.length}
+            onChange={(e) => setLandlordCount(parseInt(e.target.value, 10))}
           >
-            <option value="individual">Individual</option>
-            <option value="company">Company</option>
+            {Array.from({ length: MAX_PARTIES_PER_SIDE }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
           </select>
         </div>
 
-        <div className="form-group">
-          <label htmlFor="landlordName">{nameLabel(form.landlordPartyType)}</label>
-          <input
-            id="landlordName"
-            type="text"
-            value={form.landlordName}
-            onChange={(e) => setField("landlordName", e.target.value)}
-            placeholder={form.landlordPartyType === "individual" ? "e.g. Ahmad bin Abdullah" : "e.g. ABC Properties Sdn Bhd"}
-            className={errors.landlordName ? "input-error" : ""}
+        {form.landlords.map((party, idx) => (
+          <LandlordPartyFields
+            key={idx}
+            index={idx}
+            total={form.landlords.length}
+            party={party}
+            errors={errors}
+            setLandlordField={setLandlordField}
+            formatNricInput={formatNricInput}
+            nameLabel={nameLabel}
+            idLabel={idLabel}
           />
-          {errors.landlordName && <p className="field-error">{errors.landlordName}</p>}
-        </div>
+        ))}
+      </fieldset>
+
+      {/* ── Bank Account for Rent ────────────────────────────────── */}
+      <fieldset>
+        <legend>Bank Account for Rent</legend>
+        <p className="fieldset-note">Rent is paid into one nominated account.</p>
 
         <div className="form-group">
-          <label htmlFor="landlordIdNumber">{idLabel(form.landlordPartyType)}</label>
-          <input
-            id="landlordIdNumber"
-            type="text"
-            inputMode={form.landlordPartyType === "individual" ? "numeric" : "text"}
-            value={form.landlordIdNumber}
-            onChange={(e) => {
-              const next =
-                form.landlordPartyType === "individual"
-                  ? formatNricInput(e.target.value)
-                  : e.target.value;
-              setField("landlordIdNumber", next);
-            }}
-            placeholder={form.landlordPartyType === "individual" ? "880101-14-5678" : "e.g. 202001012345 (1234567-A)"}
-            maxLength={form.landlordPartyType === "individual" ? 14 : undefined}
-            className={errors.landlordIdNumber ? "input-error" : ""}
-          />
-          {errors.landlordIdNumber && <p className="field-error">{errors.landlordIdNumber}</p>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="landlordAddress">Correspondence Address</label>
-          <input
-            id="landlordAddress"
-            type="text"
-            value={form.landlordAddress}
-            onChange={(e) => setField("landlordAddress", e.target.value)}
-            placeholder="e.g. 10, Jalan Bukit Bintang, 55100 Kuala Lumpur"
-            className={errors.landlordAddress ? "input-error" : ""}
-          />
-          {errors.landlordAddress && <p className="field-error">{errors.landlordAddress}</p>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="landlordEmail">Email</label>
-          <input
-            id="landlordEmail"
-            type="email"
-            inputMode="email"
-            value={form.landlordEmail}
-            onChange={(e) => setField("landlordEmail", e.target.value)}
-            placeholder="e.g. ahmad@email.com"
-            className={errors.landlordEmail ? "input-error" : ""}
-          />
-          {errors.landlordEmail && <p className="field-error">{errors.landlordEmail}</p>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="landlordBankName">
-            Bank Name
-            <span className="label-hint"> (for deposit refund and rent payments)</span>
-          </label>
+          <label htmlFor="landlordBankName">Bank Name</label>
           <input
             id="landlordBankName"
             type="text"
@@ -409,124 +434,39 @@ export default function GeneratePage() {
         </div>
       </fieldset>
 
-      {/* ── Tenant ───────────────────────────────────────────────── */}
+      {/* ── Tenants (1..MAX) ─────────────────────────────────────── */}
       <fieldset>
         <legend>Tenant Details</legend>
 
         <div className="form-group">
-          <label htmlFor="tenantPartyType">Party Type</label>
+          <label htmlFor="tenantCount">
+            Number of Tenants
+            <span className="label-hint"> (for joint tenants)</span>
+          </label>
           <select
-            id="tenantPartyType"
-            value={form.tenantPartyType}
-            onChange={(e) => setField("tenantPartyType", e.target.value as PartyType)}
+            id="tenantCount"
+            value={form.tenants.length}
+            onChange={(e) => setTenantCount(parseInt(e.target.value, 10))}
           >
-            <option value="individual">Individual</option>
-            <option value="company">Company</option>
+            {Array.from({ length: MAX_PARTIES_PER_SIDE }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
           </select>
         </div>
 
-        <div className="form-group">
-          <label htmlFor="tenantName">{nameLabel(form.tenantPartyType)}</label>
-          <input
-            id="tenantName"
-            type="text"
-            value={form.tenantName}
-            onChange={(e) => setField("tenantName", e.target.value)}
-            placeholder={form.tenantPartyType === "individual" ? "e.g. Lim Wei Ling" : "e.g. XYZ Trading Sdn Bhd"}
-            className={errors.tenantName ? "input-error" : ""}
+        {form.tenants.map((party, idx) => (
+          <TenantPartyFields
+            key={idx}
+            index={idx}
+            total={form.tenants.length}
+            party={party}
+            errors={errors}
+            setTenantField={setTenantField}
+            formatNricInput={formatNricInput}
+            nameLabel={nameLabel}
+            idLabel={idLabel}
           />
-          {errors.tenantName && <p className="field-error">{errors.tenantName}</p>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="tenantIdNumber">{idLabel(form.tenantPartyType)}</label>
-          <input
-            id="tenantIdNumber"
-            type="text"
-            inputMode={form.tenantPartyType === "individual" ? "numeric" : "text"}
-            value={form.tenantIdNumber}
-            onChange={(e) => {
-              const next =
-                form.tenantPartyType === "individual"
-                  ? formatNricInput(e.target.value)
-                  : e.target.value;
-              setField("tenantIdNumber", next);
-            }}
-            placeholder={form.tenantPartyType === "individual" ? "880101-14-5678" : "e.g. 202301054321 (5432109-B)"}
-            maxLength={form.tenantPartyType === "individual" ? 14 : undefined}
-            className={errors.tenantIdNumber ? "input-error" : ""}
-          />
-          {errors.tenantIdNumber && <p className="field-error">{errors.tenantIdNumber}</p>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="tenantAddress">
-            Correspondence Address
-            <span className="label-hint"> (pre-tenancy address)</span>
-          </label>
-          <input
-            id="tenantAddress"
-            type="text"
-            value={form.tenantAddress}
-            onChange={(e) => setField("tenantAddress", e.target.value)}
-            placeholder="e.g. 5, Lorong Setapak, 53000 Kuala Lumpur"
-            className={errors.tenantAddress ? "input-error" : ""}
-          />
-          {errors.tenantAddress && <p className="field-error">{errors.tenantAddress}</p>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="tenantEmail">Email</label>
-          <input
-            id="tenantEmail"
-            type="email"
-            inputMode="email"
-            value={form.tenantEmail}
-            onChange={(e) => setField("tenantEmail", e.target.value)}
-            placeholder="e.g. weiling@email.com"
-            className={errors.tenantEmail ? "input-error" : ""}
-          />
-          {errors.tenantEmail && <p className="field-error">{errors.tenantEmail}</p>}
-        </div>
-
-        {form.tenantPartyType === "individual" && (
-          <>
-            <div className="form-group">
-              <label htmlFor="tenantNricFront">NRIC Front (image or PDF) <span className="label-hint">(optional)</span></label>
-              <input
-                id="tenantNricFront"
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  setField("tenantNricFront", file as never);
-                }}
-                className={errors.tenantNricFront ? "input-error" : ""}
-              />
-              {form.tenantNricFront && (
-                <p className="file-selected">Selected: {(form.tenantNricFront as File).name}</p>
-              )}
-              {errors.tenantNricFront && <p className="field-error">{errors.tenantNricFront}</p>}
-            </div>
-            <div className="form-group">
-              <label htmlFor="tenantNricBack">NRIC Back (image or PDF) <span className="label-hint">(optional)</span></label>
-              <input
-                id="tenantNricBack"
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null;
-                  setField("tenantNricBack", file as never);
-                }}
-                className={errors.tenantNricBack ? "input-error" : ""}
-              />
-              {form.tenantNricBack && (
-                <p className="file-selected">Selected: {(form.tenantNricBack as File).name}</p>
-              )}
-              {errors.tenantNricBack && <p className="field-error">{errors.tenantNricBack}</p>}
-            </div>
-          </>
-        )}
+        ))}
       </fieldset>
 
       {/* ── Tenancy Terms ────────────────────────────────────────── */}
@@ -819,6 +759,233 @@ export default function GeneratePage() {
   );
 }
 
+// ─── Landlord Party Fields (per-party input block) ────────────────────
+
+/**
+ * Renders the input fields for ONE landlord party. Keys errors under
+ * `landlord{index}{Field}` so each party has its own field-level errors
+ * without collisions.
+ */
+function LandlordPartyFields({
+  index,
+  total,
+  party,
+  errors,
+  setLandlordField,
+  formatNricInput,
+  nameLabel,
+  idLabel,
+}: {
+  index: number;
+  total: number;
+  party: LandlordParty;
+  errors: Partial<Record<string, string>>;
+  setLandlordField: <K extends keyof LandlordParty>(idx: number, key: K, value: LandlordParty[K]) => void;
+  formatNricInput: (raw: string) => string;
+  nameLabel: (pt: PartyType) => string;
+  idLabel: (pt: PartyType) => string;
+}) {
+  const prefix = `landlord${index}`;
+  return (
+    <div className="party-block">
+      {total > 1 && <p className="party-block-heading">Landlord {index + 1}</p>}
+
+      <div className="form-group">
+        <label htmlFor={`${prefix}PartyType`}>Party Type</label>
+        <select
+          id={`${prefix}PartyType`}
+          value={party.partyType}
+          onChange={(e) => setLandlordField(index, "partyType", e.target.value as PartyType)}
+        >
+          <option value="individual">Individual</option>
+          <option value="company">Company</option>
+        </select>
+      </div>
+
+      <div className="form-group">
+        <label htmlFor={`${prefix}Name`}>{nameLabel(party.partyType)}</label>
+        <input
+          id={`${prefix}Name`}
+          type="text"
+          value={party.name}
+          onChange={(e) => setLandlordField(index, "name", e.target.value)}
+          placeholder={party.partyType === "individual" ? "e.g. Ahmad bin Abdullah" : "e.g. ABC Properties Sdn Bhd"}
+          className={errors[`${prefix}Name`] ? "input-error" : ""}
+        />
+        {errors[`${prefix}Name`] && <p className="field-error">{errors[`${prefix}Name`]}</p>}
+      </div>
+
+      <div className="form-group">
+        <label htmlFor={`${prefix}IdNumber`}>{idLabel(party.partyType)}</label>
+        <input
+          id={`${prefix}IdNumber`}
+          type="text"
+          inputMode={party.partyType === "individual" ? "numeric" : "text"}
+          value={party.idNumber}
+          onChange={(e) => {
+            const next = party.partyType === "individual"
+              ? formatNricInput(e.target.value)
+              : e.target.value;
+            setLandlordField(index, "idNumber", next);
+          }}
+          placeholder={party.partyType === "individual" ? "880101-14-5678" : "e.g. 202001012345 (1234567-A)"}
+          maxLength={party.partyType === "individual" ? 14 : undefined}
+          className={errors[`${prefix}IdNumber`] ? "input-error" : ""}
+        />
+        {errors[`${prefix}IdNumber`] && <p className="field-error">{errors[`${prefix}IdNumber`]}</p>}
+      </div>
+
+      <div className="form-group">
+        <label htmlFor={`${prefix}Address`}>Correspondence Address</label>
+        <input
+          id={`${prefix}Address`}
+          type="text"
+          value={party.address}
+          onChange={(e) => setLandlordField(index, "address", e.target.value)}
+          placeholder="e.g. 10, Jalan Bukit Bintang, 55100 Kuala Lumpur"
+          className={errors[`${prefix}Address`] ? "input-error" : ""}
+        />
+        {errors[`${prefix}Address`] && <p className="field-error">{errors[`${prefix}Address`]}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tenant Party Fields (per-party input block) ──────────────────────
+
+/**
+ * Renders the input fields for ONE tenant party. Keys errors under
+ * `tenant{index}{Field}` so each party has its own field-level errors
+ * without collisions. NRIC upload fields are rendered only when the
+ * party is an individual; they remain optional for Annexure A inclusion.
+ */
+function TenantPartyFields({
+  index,
+  total,
+  party,
+  errors,
+  setTenantField,
+  formatNricInput,
+  nameLabel,
+  idLabel,
+}: {
+  index: number;
+  total: number;
+  party: TenantParty;
+  errors: Partial<Record<string, string>>;
+  setTenantField: <K extends keyof TenantParty>(idx: number, key: K, value: TenantParty[K]) => void;
+  formatNricInput: (raw: string) => string;
+  nameLabel: (pt: PartyType) => string;
+  idLabel: (pt: PartyType) => string;
+}) {
+  const prefix = `tenant${index}`;
+  return (
+    <div className="party-block">
+      {total > 1 && <p className="party-block-heading">Tenant {index + 1}</p>}
+
+      <div className="form-group">
+        <label htmlFor={`${prefix}PartyType`}>Party Type</label>
+        <select
+          id={`${prefix}PartyType`}
+          value={party.partyType}
+          onChange={(e) => setTenantField(index, "partyType", e.target.value as PartyType)}
+        >
+          <option value="individual">Individual</option>
+          <option value="company">Company</option>
+        </select>
+      </div>
+
+      <div className="form-group">
+        <label htmlFor={`${prefix}Name`}>{nameLabel(party.partyType)}</label>
+        <input
+          id={`${prefix}Name`}
+          type="text"
+          value={party.name}
+          onChange={(e) => setTenantField(index, "name", e.target.value)}
+          placeholder={party.partyType === "individual" ? "e.g. Lim Wei Ling" : "e.g. XYZ Trading Sdn Bhd"}
+          className={errors[`${prefix}Name`] ? "input-error" : ""}
+        />
+        {errors[`${prefix}Name`] && <p className="field-error">{errors[`${prefix}Name`]}</p>}
+      </div>
+
+      <div className="form-group">
+        <label htmlFor={`${prefix}IdNumber`}>{idLabel(party.partyType)}</label>
+        <input
+          id={`${prefix}IdNumber`}
+          type="text"
+          inputMode={party.partyType === "individual" ? "numeric" : "text"}
+          value={party.idNumber}
+          onChange={(e) => {
+            const next = party.partyType === "individual"
+              ? formatNricInput(e.target.value)
+              : e.target.value;
+            setTenantField(index, "idNumber", next);
+          }}
+          placeholder={party.partyType === "individual" ? "880101-14-5678" : "e.g. 202301054321 (5432109-B)"}
+          maxLength={party.partyType === "individual" ? 14 : undefined}
+          className={errors[`${prefix}IdNumber`] ? "input-error" : ""}
+        />
+        {errors[`${prefix}IdNumber`] && <p className="field-error">{errors[`${prefix}IdNumber`]}</p>}
+      </div>
+
+      <div className="form-group">
+        <label htmlFor={`${prefix}Address`}>
+          Correspondence Address
+          <span className="label-hint"> (pre-tenancy address)</span>
+        </label>
+        <input
+          id={`${prefix}Address`}
+          type="text"
+          value={party.address}
+          onChange={(e) => setTenantField(index, "address", e.target.value)}
+          placeholder="e.g. 5, Lorong Setapak, 53000 Kuala Lumpur"
+          className={errors[`${prefix}Address`] ? "input-error" : ""}
+        />
+        {errors[`${prefix}Address`] && <p className="field-error">{errors[`${prefix}Address`]}</p>}
+      </div>
+
+      {party.partyType === "individual" && (
+        <>
+          <div className="form-group">
+            <label htmlFor={`${prefix}NricFront`}>
+              NRIC Front (image or PDF) <span className="label-hint">(optional)</span>
+            </label>
+            <input
+              id={`${prefix}NricFront`}
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setTenantField(index, "nricFront", file);
+              }}
+            />
+            {party.nricFront && (
+              <p className="file-selected">Selected: {party.nricFront.name}</p>
+            )}
+          </div>
+          <div className="form-group">
+            <label htmlFor={`${prefix}NricBack`}>
+              NRIC Back (image or PDF) <span className="label-hint">(optional)</span>
+            </label>
+            <input
+              id={`${prefix}NricBack`}
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0] || null;
+                setTenantField(index, "nricBack", file);
+              }}
+            />
+            {party.nricBack && (
+              <p className="file-selected">Selected: {party.nricBack.name}</p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Inventory Builder Component ──────────────────────────────────────
 
 function InventoryBuilder({
@@ -1013,9 +1180,6 @@ function ReviewView({
   onGeneratePreview: () => void;
 }) {
 
-  const landlordIdLabel = form.landlordPartyType === "individual" ? "NRIC No." : "Co. Reg. No.";
-  const tenantIdLabel   = form.tenantPartyType   === "individual" ? "NRIC No." : "Co. Reg. No.";
-
   const inventoryModeLabel =
     form.inventoryMode === "none"
       ? "No inventory"
@@ -1044,30 +1208,50 @@ function ReviewView({
       <div className="review-section">
         <p className="review-section-title">1. Parties</p>
 
-        <p className="review-party-heading">Landlord</p>
+        {form.landlords.map((party, idx) => {
+          const idL = party.partyType === "individual" ? "NRIC No." : "Co. Reg. No.";
+          const heading = form.landlords.length > 1 ? `Landlord ${idx + 1}` : "Landlord";
+          return (
+            <React.Fragment key={`landlord-${idx}`}>
+              <p className="review-party-heading">{heading}</p>
+              <table className="review-table">
+                <tbody>
+                  <tr><td>Type</td><td>{party.partyType === "individual" ? "Individual" : "Company"}</td></tr>
+                  <tr><td>Name</td><td>{party.name}</td></tr>
+                  <tr><td>{idL}</td><td>{party.idNumber}</td></tr>
+                  <tr><td>Address</td><td>{party.address}</td></tr>
+                </tbody>
+              </table>
+            </React.Fragment>
+          );
+        })}
+
+        <p className="review-party-heading">Bank Account for Rent</p>
         <table className="review-table">
           <tbody>
-            <tr><td>Type</td><td>{form.landlordPartyType === "individual" ? "Individual" : "Company"}</td></tr>
-            <tr><td>Name</td><td>{form.landlordName}</td></tr>
-            <tr><td>{landlordIdLabel}</td><td>{form.landlordIdNumber}</td></tr>
-            <tr><td>Address</td><td>{form.landlordAddress}</td></tr>
-            <tr><td>Email</td><td>{form.landlordEmail}</td></tr>
             <tr><td>Bank</td><td>{form.landlordBankName}</td></tr>
             <tr><td>Account No.</td><td>{form.landlordBankAccountNumber}</td></tr>
             <tr><td>Account Name</td><td>{form.landlordBankAccountHolderName}</td></tr>
           </tbody>
         </table>
 
-        <p className="review-party-heading">Tenant</p>
-        <table className="review-table">
-          <tbody>
-            <tr><td>Type</td><td>{form.tenantPartyType === "individual" ? "Individual" : "Company"}</td></tr>
-            <tr><td>Name</td><td>{form.tenantName}</td></tr>
-            <tr><td>{tenantIdLabel}</td><td>{form.tenantIdNumber}</td></tr>
-            <tr><td>Address</td><td>{form.tenantAddress}</td></tr>
-            <tr><td>Email</td><td>{form.tenantEmail}</td></tr>
-          </tbody>
-        </table>
+        {form.tenants.map((party, idx) => {
+          const idL = party.partyType === "individual" ? "NRIC No." : "Co. Reg. No.";
+          const heading = form.tenants.length > 1 ? `Tenant ${idx + 1}` : "Tenant";
+          return (
+            <React.Fragment key={`tenant-${idx}`}>
+              <p className="review-party-heading">{heading}</p>
+              <table className="review-table">
+                <tbody>
+                  <tr><td>Type</td><td>{party.partyType === "individual" ? "Individual" : "Company"}</td></tr>
+                  <tr><td>Name</td><td>{party.name}</td></tr>
+                  <tr><td>{idL}</td><td>{party.idNumber}</td></tr>
+                  <tr><td>Address</td><td>{party.address}</td></tr>
+                </tbody>
+              </table>
+            </React.Fragment>
+          );
+        })}
       </div>
 
       {/* ── 3. Premises ────────────────────────────────────────────── */}
@@ -1169,18 +1353,22 @@ function ReviewView({
         <p className="review-section-title">8. Annexures and Attachments</p>
         <table className="review-table">
           <tbody>
-            {form.tenantPartyType === "individual" && (
-              <>
-                <tr>
-                  <td>Tenant NRIC Front</td>
-                  <td>{form.tenantNricFront ? (form.tenantNricFront as File).name : <span className="review-nil">Not uploaded</span>}</td>
-                </tr>
-                <tr>
-                  <td>Tenant NRIC Back</td>
-                  <td>{form.tenantNricBack ? (form.tenantNricBack as File).name : <span className="review-nil">Not uploaded</span>}</td>
-                </tr>
-              </>
-            )}
+            {form.tenants.map((party, idx) => {
+              if (party.partyType !== "individual") return null;
+              const label = form.tenants.length > 1 ? `Tenant ${idx + 1}` : "Tenant";
+              return (
+                <React.Fragment key={`nric-${idx}`}>
+                  <tr>
+                    <td>{label} NRIC Front</td>
+                    <td>{party.nricFront ? party.nricFront.name : <span className="review-nil">Not uploaded</span>}</td>
+                  </tr>
+                  <tr>
+                    <td>{label} NRIC Back</td>
+                    <td>{party.nricBack ? party.nricBack.name : <span className="review-nil">Not uploaded</span>}</td>
+                  </tr>
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1246,7 +1434,7 @@ function AgreementPreview({
 
   // ── Check whether uploaded files exist (for limitation note) ──
   const hasUploadedFiles =
-    (form.tenantPartyType === "individual" && (form.tenantNricFront !== null || form.tenantNricBack !== null)) ||
+    form.tenants.some((t) => t.partyType === "individual" && (t.nricFront !== null || t.nricBack !== null)) ||
     (form.inventoryMode === "upload_own_inventory" && form.inventoryUploadFiles.length > 0) ||
     (form.inventoryMode === "build_inventory_in_app" && form.inventoryItems.some((it) => it.photos.length > 0));
 
@@ -1291,11 +1479,23 @@ function AgreementPreview({
           <p className="cover-date">{doc.agreementDateOrdinal}</p>
           <div className="cover-parties">
             <p className="cover-label">BETWEEN</p>
-            <p className="cover-party-name">{doc.landlordDescriptor}</p>
-            <p className="cover-party-role">(&ldquo;THE LANDLORD&rdquo;)</p>
+            {doc.landlordDescriptors.map((d, i) => (
+              <p key={`ll-${i}`} className="cover-party-name">
+                {doc.landlordDescriptors.length > 1 ? `(${i + 1}) ${d}` : d}
+              </p>
+            ))}
+            <p className="cover-party-role">
+              (&ldquo;{doc.landlordDescriptors.length > 1 ? "THE LANDLORDS" : "THE LANDLORD"}&rdquo;)
+            </p>
             <p className="cover-label">AND</p>
-            <p className="cover-party-name">{doc.tenantDescriptor}</p>
-            <p className="cover-party-role">(&ldquo;THE TENANT&rdquo;)</p>
+            {doc.tenantDescriptors.map((d, i) => (
+              <p key={`tt-${i}`} className="cover-party-name">
+                {doc.tenantDescriptors.length > 1 ? `(${i + 1}) ${d}` : d}
+              </p>
+            ))}
+            <p className="cover-party-role">
+              (&ldquo;{doc.tenantDescriptors.length > 1 ? "THE TENANTS" : "THE TENANT"}&rdquo;)
+            </p>
           </div>
           <div className="cover-title-box">
             <p>TENANCY AGREEMENT</p>
@@ -1333,8 +1533,10 @@ function AgreementPreview({
               <div key={c.number} className="operative-clause">
                 <span className="operative-number">{c.number}.</span>
                 <div className="operative-body">
-                  <p className="margin-note"><em>{c.marginNote}</em></p>
-                  <p><BoldScheduleRefs text={c.text} /></p>
+                  <div className="clause-head-pair">
+                    <p className="margin-note"><em>{c.marginNote}</em></p>
+                    <p><BoldScheduleRefs text={c.text} /></p>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1347,17 +1549,23 @@ function AgreementPreview({
             <p className="covenant-heading">
               <strong>{doc.tenantCovenantsClauseNum}. THE TENANT HEREBY COVENANTS WITH THE LANDLORD as follows:-</strong>
             </p>
-            {doc.tenantCovenants.map((c, idx) => (
-              <div key={c.letter} className="covenant-clause">
-                <span className="covenant-letter">{doc.tenantCovenantsClauseNum}.{idx + 1}</span>
-                <div className="covenant-body">
-                  <p className="margin-note"><em>{c.marginNote}</em></p>
-                  {c.text.split("\n\n").map((para, pi) => (
-                    <p key={pi}><BoldScheduleRefs text={para} /></p>
-                  ))}
+            {doc.tenantCovenants.map((c, idx) => {
+              const paras = c.text.split("\n\n");
+              return (
+                <div key={c.letter} className="covenant-clause">
+                  <span className="covenant-letter">{doc.tenantCovenantsClauseNum}.{idx + 1}</span>
+                  <div className="covenant-body">
+                    <div className="clause-head-pair">
+                      <p className="margin-note"><em>{c.marginNote}</em></p>
+                      {paras[0] && <p><BoldScheduleRefs text={paras[0]} /></p>}
+                    </div>
+                    {paras.slice(1).map((para, pi) => (
+                      <p key={pi}><BoldScheduleRefs text={para} /></p>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -1367,17 +1575,23 @@ function AgreementPreview({
             <p className="covenant-heading">
               <strong>{doc.landlordCovenantsClauseNum}. THE LANDLORD HEREBY COVENANTS WITH THE TENANT as follows:-</strong>
             </p>
-            {doc.landlordCovenants.map((c, idx) => (
-              <div key={c.letter} className="covenant-clause">
-                <span className="covenant-letter">{doc.landlordCovenantsClauseNum}.{idx + 1}</span>
-                <div className="covenant-body">
-                  <p className="margin-note"><em>{c.marginNote}</em></p>
-                  {c.text.split("\n\n").map((para, pi) => (
-                    <p key={pi}><BoldScheduleRefs text={para} /></p>
-                  ))}
+            {doc.landlordCovenants.map((c, idx) => {
+              const paras = c.text.split("\n\n");
+              return (
+                <div key={c.letter} className="covenant-clause">
+                  <span className="covenant-letter">{doc.landlordCovenantsClauseNum}.{idx + 1}</span>
+                  <div className="covenant-body">
+                    <div className="clause-head-pair">
+                      <p className="margin-note"><em>{c.marginNote}</em></p>
+                      {paras[0] && <p><BoldScheduleRefs text={paras[0]} /></p>}
+                    </div>
+                    {paras.slice(1).map((para, pi) => (
+                      <p key={pi}><BoldScheduleRefs text={para} /></p>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
 
@@ -1387,27 +1601,41 @@ function AgreementPreview({
             <p className="proviso-heading">
               <strong>{doc.provisosClauseNum}. PROVIDED ALWAYS AND IT IS HEREBY EXPRESSLY AGREED BETWEEN BOTH PARTIES as follows:-</strong>
             </p>
-            {doc.provisos.map((p, i) => (
-              <div key={i} className="proviso-clause">
-                <span className="proviso-number">{doc.provisosClauseNum}.{i + 1}</span>
-                <div className="proviso-body">
-                  <p className="margin-note"><em>{p.marginNote}</em></p>
-                  {p.text.split("\n\n").map((para, pi) => (
-                    <p key={pi}><BoldScheduleRefs text={para} /></p>
-                  ))}
+            {doc.provisos.map((p, i) => {
+              const paras = p.text.split("\n\n");
+              return (
+                <div key={i} className="proviso-clause">
+                  <span className="proviso-number">{doc.provisosClauseNum}.{i + 1}</span>
+                  <div className="proviso-body">
+                    <div className="clause-head-pair">
+                      <p className="margin-note"><em>{p.marginNote}</em></p>
+                      {paras[0] && <p><BoldScheduleRefs text={paras[0]} /></p>}
+                    </div>
+                    {paras.slice(1).map((para, pi) => (
+                      <p key={pi}><BoldScheduleRefs text={para} /></p>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-            {/* Special Conditions — ALWAYS rendered at fixed sub-number 7.13 */}
-            <div className="proviso-clause">
-              <span className="proviso-number">{doc.provisosClauseNum}.{doc.specialConditionsProvisoSubNum}</span>
-              <div className="proviso-body">
-                <p className="margin-note"><em>{doc.specialConditionsProviso.marginNote}</em></p>
-                {doc.specialConditionsProviso.text.split("\n\n").map((para, pi) => (
-                  <p key={pi}><BoldScheduleRefs text={para} /></p>
-                ))}
-              </div>
-            </div>
+              );
+            })}
+            {/* Special Conditions — rendered at dynamic sub-number (7.12 or 7.13) */}
+            {(() => {
+              const scParas = doc.specialConditionsProviso.text.split("\n\n");
+              return (
+                <div className="proviso-clause">
+                  <span className="proviso-number">{doc.provisosClauseNum}.{doc.specialConditionsProvisoSubNum}</span>
+                  <div className="proviso-body">
+                    <div className="clause-head-pair">
+                      <p className="margin-note"><em>{doc.specialConditionsProviso.marginNote}</em></p>
+                      {scParas[0] && <p><BoldScheduleRefs text={scParas[0]} /></p>}
+                    </div>
+                    {scParas.slice(1).map((para, pi) => (
+                      <p key={pi}><BoldScheduleRefs text={para} /></p>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </section>
 
@@ -1440,29 +1668,37 @@ function AgreementPreview({
             </p>
 
             <div className="agreement-signature-block">
-              <div className="signature-party">
-                <p><strong>SIGNED BY THE SAID LANDLORD</strong></p>
-                <p className="signature-line-dotted">&nbsp;</p>
-                <p>{doc.landlordName}</p>
-                <p className="signature-id">({doc.landlordIdLine})</p>
-                <div className="witness-block">
-                  <p className="witness-label">In the presence of:</p>
-                  <p className="signature-line-dotted">&nbsp;</p>
-                  <p className="witness-field">Name: ..........................................................</p>
-                  <p className="witness-field">NRIC No.: ..................................................</p>
-                </div>
+              <div className="signature-row">
+                {doc.landlordSignatories.map((s, i) => (
+                  <div key={`ll-sig-${i}`} className="signature-party">
+                    <p><strong>SIGNED BY THE SAID LANDLORD</strong></p>
+                    <p className="signature-line-dotted">&nbsp;</p>
+                    <p>{s.name}</p>
+                    <p className="signature-id">({s.idLine})</p>
+                    <div className="witness-block">
+                      <p className="witness-label">In the presence of:</p>
+                      <p className="signature-line-dotted">&nbsp;</p>
+                      <p className="witness-field">Name: ..........................................................</p>
+                      <p className="witness-field">NRIC No.: ..................................................</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="signature-party">
-                <p><strong>SIGNED BY THE SAID TENANT</strong></p>
-                <p className="signature-line-dotted">&nbsp;</p>
-                <p>{doc.tenantName}</p>
-                <p className="signature-id">({doc.tenantIdLine})</p>
-                <div className="witness-block">
-                  <p className="witness-label">In the presence of:</p>
-                  <p className="signature-line-dotted">&nbsp;</p>
-                  <p className="witness-field">Name: ..........................................................</p>
-                  <p className="witness-field">NRIC No.: ..................................................</p>
-                </div>
+              <div className="signature-row">
+                {doc.tenantSignatories.map((s, i) => (
+                  <div key={`tt-sig-${i}`} className="signature-party">
+                    <p><strong>SIGNED BY THE SAID TENANT</strong></p>
+                    <p className="signature-line-dotted">&nbsp;</p>
+                    <p>{s.name}</p>
+                    <p className="signature-id">({s.idLine})</p>
+                    <div className="witness-block">
+                      <p className="witness-label">In the presence of:</p>
+                      <p className="signature-line-dotted">&nbsp;</p>
+                      <p className="witness-field">Name: ..........................................................</p>
+                      <p className="witness-field">NRIC No.: ..................................................</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -1698,26 +1934,44 @@ function InventoryPreview({ form }: { form: TenancyFormData }) {
 // ─── Annexure A: Tenant NRIC ───────────────────────────────────────────
 
 function AnnexureAContent({ form }: { form: TenancyFormData }) {
-  // This component is only rendered when Annexure A is present in doc.annexures,
-  // which means at least one NRIC side has been uploaded.
+  // Rendered only when at least one individual tenant has at least one NRIC
+  // side uploaded. Iterates over all individual tenants so each tenant's
+  // identity documents appear in Annexure A.
+  const individualTenants = form.tenants
+    .map((t, idx) => ({ t, idx }))
+    .filter(({ t }) => t.partyType === "individual");
+
+  const showTenantHeading = individualTenants.length > 1;
+
   return (
-    <div className="nric-image-block">
-      <div className="nric-image-wrap">
-        <p className="nric-image-label">Identity Card (Front)</p>
-        {form.tenantNricFront ? (
-          <AnnexureImage file={form.tenantNricFront} className="nric-image" />
-        ) : (
-          <p className="nric-not-provided">Identity Card (Front) &mdash; not provided</p>
-        )}
-      </div>
-      <div className="nric-image-wrap">
-        <p className="nric-image-label">Identity Card (Back)</p>
-        {form.tenantNricBack ? (
-          <AnnexureImage file={form.tenantNricBack} className="nric-image" />
-        ) : (
-          <p className="nric-not-provided">Identity Card (Back) &mdash; not provided</p>
-        )}
-      </div>
-    </div>
+    <>
+      {individualTenants.map(({ t, idx }) => {
+        const hasAny = t.nricFront !== null || t.nricBack !== null;
+        if (!hasAny) return null;
+        return (
+          <div key={`nric-${idx}`} className="nric-image-block">
+            {showTenantHeading && (
+              <p className="nric-tenant-heading">Tenant {idx + 1}</p>
+            )}
+            <div className="nric-image-wrap">
+              <p className="nric-image-label">Identity Card (Front)</p>
+              {t.nricFront ? (
+                <AnnexureImage file={t.nricFront} className="nric-image" />
+              ) : (
+                <p className="nric-not-provided">Identity Card (Front) &mdash; not provided</p>
+              )}
+            </div>
+            <div className="nric-image-wrap">
+              <p className="nric-image-label">Identity Card (Back)</p>
+              {t.nricBack ? (
+                <AnnexureImage file={t.nricBack} className="nric-image" />
+              ) : (
+                <p className="nric-not-provided">Identity Card (Back) &mdash; not provided</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 }

@@ -11,6 +11,51 @@
 /** Individual or company — controls label text and NRIC requirement. */
 export type PartyType = "individual" | "company";
 
+// ─── Party Entry Types ───────────────────────────────────────────────
+
+/** Maximum supported count of landlord or tenant parties in a single agreement. */
+export const MAX_PARTIES_PER_SIDE = 4;
+
+/**
+ * One landlord party entry. Banking details are NOT here — they are
+ * captured once per agreement at the form level (rent is paid to a
+ * single nominated account).
+ */
+export interface LandlordParty {
+  partyType: PartyType;
+  name: string;
+  idNumber: string;
+  address: string;
+}
+
+/** One tenant party entry. NRIC upload fields apply only to individuals. */
+export interface TenantParty {
+  partyType: PartyType;
+  name: string;
+  idNumber: string;
+  address: string;
+  nricFront: File | null;
+  nricBack: File | null;
+}
+
+/** Default blank landlord party. */
+export const BLANK_LANDLORD_PARTY: LandlordParty = {
+  partyType: "individual",
+  name: "",
+  idNumber: "",
+  address: "",
+};
+
+/** Default blank tenant party. */
+export const BLANK_TENANT_PARTY: TenantParty = {
+  partyType: "individual",
+  name: "",
+  idNumber: "",
+  address: "",
+  nricFront: null,
+  nricBack: null,
+};
+
 // ─── Responsibility Enums ─────────────────────────────────────────────
 
 /**
@@ -79,25 +124,19 @@ export interface TenancyFormData {
   /** Full address of the premises. Required. */
   propertyAddress: string;
 
-  // ── Landlord ────────────────────────────────────────────────────────
-  /** Individual or company. Required. */
-  landlordPartyType: PartyType;
-  landlordName: string;
-  landlordIdNumber: string;
-  landlordAddress: string;
-  landlordEmail: string;
+  // ── Landlords (1..MAX_PARTIES_PER_SIDE) ─────────────────────────────
+  /** Array of landlord parties. Always at least one entry. */
+  landlords: LandlordParty[];
+
+  // ── Tenants (1..MAX_PARTIES_PER_SIDE) ───────────────────────────────
+  /** Array of tenant parties. Always at least one entry. */
+  tenants: TenantParty[];
+
+  // ── Banking (single, agreement-level) ──────────────────────────────
+  /** Rent is paid to ONE nominated account regardless of landlord count. */
   landlordBankName: string;
   landlordBankAccountNumber: string;
   landlordBankAccountHolderName: string;
-
-  // ── Tenant ──────────────────────────────────────────────────────────
-  tenantPartyType: PartyType;
-  tenantName: string;
-  tenantIdNumber: string;
-  tenantAddress: string;
-  tenantEmail: string;
-  tenantNricFront: File | null;
-  tenantNricBack: File | null;
 
   // ── Tenancy Terms ───────────────────────────────────────────────────
   monthlyRent: string;
@@ -147,21 +186,11 @@ function todayISO(): string {
 export const TENANCY_FORM_DEFAULTS: TenancyFormData = {
   agreementDate: todayISO(),
   propertyAddress: "",
-  landlordPartyType: "individual",
-  landlordName: "",
-  landlordIdNumber: "",
-  landlordAddress: "",
-  landlordEmail: "",
+  landlords: [{ ...BLANK_LANDLORD_PARTY }],
+  tenants: [{ ...BLANK_TENANT_PARTY }],
   landlordBankName: "",
   landlordBankAccountNumber: "",
   landlordBankAccountHolderName: "",
-  tenantPartyType: "individual",
-  tenantName: "",
-  tenantIdNumber: "",
-  tenantAddress: "",
-  tenantEmail: "",
-  tenantNricFront: null,
-  tenantNricBack: null,
   monthlyRent: "",
   leaseMonths: "",
   commencementDate: "",
