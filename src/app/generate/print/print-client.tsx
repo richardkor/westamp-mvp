@@ -55,8 +55,10 @@ function deserializeFormData(json: Record<string, unknown>): TenancyFormData {
 // ─── BoldScheduleRefs — same as main page ────────────────────────────
 
 function BoldScheduleRefs({ text }: { text: string }) {
+  // "hereto" is intentionally NOT included in the bolded match — it remains
+  // in normal weight regardless of whether it follows the reference.
   const pattern =
-    /(Section\s+\d+(?:\([a-z]\))?(?:\s*(?:\([a-z]\)\s*(?:and\s*)?)*)?(?:\s*(?:respectively\s+)?of the Schedule(?:\s+hereto)?))/g;
+    /(Section\s+\d+(?:\([a-z]\))?(?:\s*(?:\([a-z]\)\s*(?:and\s*)?)*)?(?:\s*(?:respectively\s+)?of the Schedule))/g;
   const parts: { text: string; bold: boolean }[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -225,9 +227,12 @@ export function PrintAgreement({
           <div className="agreement-recital agreement-justified">
             <p><strong>WHEREAS :-</strong></p>
             {doc.recitals.map((r, i) => (
-              <p key={i} className="agreement-recital-item">
-                <strong>{r.number}</strong> <BoldScheduleRefs text={r.text} />
-              </p>
+              <div key={i} className="agreement-recital-item">
+                <span className="recital-number">{r.number}</span>
+                <div className="recital-body">
+                  <p><BoldScheduleRefs text={r.text} /></p>
+                </div>
+              </div>
             ))}
           </div>
         </section>
@@ -238,8 +243,11 @@ export function PrintAgreement({
             <p><strong>NOW IT IS HEREBY AGREED AS FOLLOWS :-</strong></p>
             {doc.operativeClauses.map((c) => (
               <div key={c.number} className="operative-clause">
-                <p className="margin-note"><em>{c.marginNote}</em></p>
-                <p><strong>{c.number}.</strong> <BoldScheduleRefs text={c.text} /></p>
+                <span className="operative-number">{c.number}.</span>
+                <div className="operative-body">
+                  <p className="margin-note"><em>{c.marginNote}</em></p>
+                  <p><BoldScheduleRefs text={c.text} /></p>
+                </div>
               </div>
             ))}
           </div>
@@ -293,13 +301,25 @@ export function PrintAgreement({
             </p>
             {doc.provisos.map((p, i) => (
               <div key={i} className="proviso-clause">
-                <p className="margin-note"><em>{p.marginNote}</em></p>
-                <p><strong>{doc.provisosClauseNum}.{i + 1}</strong> <BoldScheduleRefs text={p.text.split("\n\n")[0]} /></p>
-                {p.text.split("\n\n").slice(1).map((para, pi) => (
+                <span className="proviso-number">{doc.provisosClauseNum}.{i + 1}</span>
+                <div className="proviso-body">
+                  <p className="margin-note"><em>{p.marginNote}</em></p>
+                  {p.text.split("\n\n").map((para, pi) => (
+                    <p key={pi}><BoldScheduleRefs text={para} /></p>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {/* Special Conditions — ALWAYS rendered at fixed sub-number 7.13 */}
+            <div className="proviso-clause">
+              <span className="proviso-number">{doc.provisosClauseNum}.{doc.specialConditionsProvisoSubNum}</span>
+              <div className="proviso-body">
+                <p className="margin-note"><em>{doc.specialConditionsProviso.marginNote}</em></p>
+                {doc.specialConditionsProviso.text.split("\n\n").map((para, pi) => (
                   <p key={pi}><BoldScheduleRefs text={para} /></p>
                 ))}
               </div>
-            ))}
+            </div>
           </div>
         </section>
 
@@ -308,9 +328,12 @@ export function PrintAgreement({
           <div className="agreement-section agreement-justified">
             <p><strong>{doc.interpretationClauseNum}. IN THIS AGREEMENT:-</strong></p>
             {doc.interpretation.map((t, i) => (
-              <p key={i} className="interpretation-item">
-                <strong>{doc.interpretationClauseNum}.{i + 1}</strong> {t}
-              </p>
+              <div key={i} className="interpretation-item">
+                <span className="interpretation-number">{doc.interpretationClauseNum}.{i + 1}</span>
+                <div className="interpretation-body">
+                  <p>{t}</p>
+                </div>
+              </div>
             ))}
           </div>
         </section>

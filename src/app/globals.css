@@ -71,6 +71,13 @@ input.input-error {
   margin-top: 4px;
 }
 
+.field-note {
+  color: #666;
+  font-size: 13px;
+  margin-top: 4px;
+  font-style: italic;
+}
+
 button {
   padding: 10px 24px;
   font-size: 16px;
@@ -575,8 +582,24 @@ input[type="file"] {
 }
 
 .agreement-recital-item {
-  padding-left: 16px;
+  display: flex;
+  gap: 8px;
   margin-bottom: 10px;
+}
+
+.recital-number {
+  min-width: 24px;
+  font-weight: 600;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.recital-body {
+  flex: 1;
+}
+
+.recital-body p {
+  margin-bottom: 8px;
 }
 
 /* Operative clauses */
@@ -590,7 +613,24 @@ input[type="file"] {
 }
 
 .operative-clause {
+  display: flex;
+  gap: 8px;
   margin-bottom: 14px;
+}
+
+.operative-number {
+  min-width: 24px;
+  font-weight: 600;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.operative-body {
+  flex: 1;
+}
+
+.operative-body p {
+  margin-bottom: 8px;
 }
 
 /* Margin notes — small italic labels like Pavilion's side annotations */
@@ -644,10 +684,23 @@ input[type="file"] {
 }
 
 .proviso-clause {
+  display: flex;
+  gap: 8px;
   margin-bottom: 14px;
 }
 
-.proviso-clause p {
+.proviso-number {
+  min-width: 32px;
+  font-weight: 600;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.proviso-body {
+  flex: 1;
+}
+
+.proviso-body p {
   margin-bottom: 4px;
 }
 
@@ -662,7 +715,23 @@ input[type="file"] {
 }
 
 .interpretation-item {
-  padding-left: 16px;
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.interpretation-number {
+  min-width: 24px;
+  font-weight: 600;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.interpretation-body {
+  flex: 1;
+}
+
+.interpretation-body p {
   margin-bottom: 6px;
 }
 

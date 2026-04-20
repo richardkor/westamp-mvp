@@ -52,6 +52,18 @@ export default function GeneratePage() {
     return partyType === "individual" ? "NRIC No." : "Company Registration No.";
   }
 
+  /**
+   * Auto-format NRIC input as YYMMDD-PB-###G (e.g. 880101-14-5678).
+   * Strips non-digits, caps at 12 digits, inserts hyphens at positions 6 and 8.
+   * Applied only when party type is individual; company reg numbers pass through untouched.
+   */
+  function formatNricInput(raw: string): string {
+    const digits = raw.replace(/\D/g, "").slice(0, 12);
+    if (digits.length <= 6) return digits;
+    if (digits.length <= 8) return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+    return `${digits.slice(0, 6)}-${digits.slice(6, 8)}-${digits.slice(8)}`;
+  }
+
   // ─── Inventory helpers ────────────────────────────────────────────
 
   function addInventoryItem(category: InventoryCategory, itemName: string) {
@@ -121,7 +133,6 @@ export default function GeneratePage() {
     if (!form.landlordName.trim()) e.landlordName = "Required.";
     if (!form.landlordIdNumber.trim()) e.landlordIdNumber = "Required.";
     if (!form.landlordAddress.trim()) e.landlordAddress = "Required.";
-    if (!form.landlordPhone.trim()) e.landlordPhone = "Required.";
     if (!form.landlordEmail.trim()) e.landlordEmail = "Required.";
     if (!form.landlordBankName.trim()) e.landlordBankName = "Required.";
     if (!form.landlordBankAccountNumber.trim()) e.landlordBankAccountNumber = "Required.";
@@ -131,7 +142,6 @@ export default function GeneratePage() {
     if (!form.tenantName.trim()) e.tenantName = "Required.";
     if (!form.tenantIdNumber.trim()) e.tenantIdNumber = "Required.";
     if (!form.tenantAddress.trim()) e.tenantAddress = "Required.";
-    if (!form.tenantPhone.trim()) e.tenantPhone = "Required.";
     if (!form.tenantEmail.trim()) e.tenantEmail = "Required.";
 
     // Tenant NRIC uploads are optional — Annexure A is included only when at least one side is uploaded.
@@ -310,9 +320,17 @@ export default function GeneratePage() {
           <input
             id="landlordIdNumber"
             type="text"
+            inputMode={form.landlordPartyType === "individual" ? "numeric" : "text"}
             value={form.landlordIdNumber}
-            onChange={(e) => setField("landlordIdNumber", e.target.value)}
-            placeholder={form.landlordPartyType === "individual" ? "e.g. 880101-14-5678" : "e.g. 202001012345 (1234567-A)"}
+            onChange={(e) => {
+              const next =
+                form.landlordPartyType === "individual"
+                  ? formatNricInput(e.target.value)
+                  : e.target.value;
+              setField("landlordIdNumber", next);
+            }}
+            placeholder={form.landlordPartyType === "individual" ? "880101-14-5678" : "e.g. 202001012345 (1234567-A)"}
+            maxLength={form.landlordPartyType === "individual" ? 14 : undefined}
             className={errors.landlordIdNumber ? "input-error" : ""}
           />
           {errors.landlordIdNumber && <p className="field-error">{errors.landlordIdNumber}</p>}
@@ -329,20 +347,6 @@ export default function GeneratePage() {
             className={errors.landlordAddress ? "input-error" : ""}
           />
           {errors.landlordAddress && <p className="field-error">{errors.landlordAddress}</p>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="landlordPhone">Phone</label>
-          <input
-            id="landlordPhone"
-            type="text"
-            inputMode="tel"
-            value={form.landlordPhone}
-            onChange={(e) => setField("landlordPhone", e.target.value)}
-            placeholder="e.g. 012-3456789"
-            className={errors.landlordPhone ? "input-error" : ""}
-          />
-          {errors.landlordPhone && <p className="field-error">{errors.landlordPhone}</p>}
         </div>
 
         <div className="form-group">
@@ -439,9 +443,17 @@ export default function GeneratePage() {
           <input
             id="tenantIdNumber"
             type="text"
+            inputMode={form.tenantPartyType === "individual" ? "numeric" : "text"}
             value={form.tenantIdNumber}
-            onChange={(e) => setField("tenantIdNumber", e.target.value)}
-            placeholder={form.tenantPartyType === "individual" ? "e.g. 950615-08-1234" : "e.g. 202301054321 (5432109-B)"}
+            onChange={(e) => {
+              const next =
+                form.tenantPartyType === "individual"
+                  ? formatNricInput(e.target.value)
+                  : e.target.value;
+              setField("tenantIdNumber", next);
+            }}
+            placeholder={form.tenantPartyType === "individual" ? "880101-14-5678" : "e.g. 202301054321 (5432109-B)"}
+            maxLength={form.tenantPartyType === "individual" ? 14 : undefined}
             className={errors.tenantIdNumber ? "input-error" : ""}
           />
           {errors.tenantIdNumber && <p className="field-error">{errors.tenantIdNumber}</p>}
@@ -461,20 +473,6 @@ export default function GeneratePage() {
             className={errors.tenantAddress ? "input-error" : ""}
           />
           {errors.tenantAddress && <p className="field-error">{errors.tenantAddress}</p>}
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="tenantPhone">Phone</label>
-          <input
-            id="tenantPhone"
-            type="text"
-            inputMode="tel"
-            value={form.tenantPhone}
-            onChange={(e) => setField("tenantPhone", e.target.value)}
-            placeholder="e.g. 011-12345678"
-            className={errors.tenantPhone ? "input-error" : ""}
-          />
-          {errors.tenantPhone && <p className="field-error">{errors.tenantPhone}</p>}
         </div>
 
         <div className="form-group">
@@ -581,6 +579,23 @@ export default function GeneratePage() {
           {errors.commencementDate && (
             <p className="field-error">{errors.commencementDate}</p>
           )}
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="rentDueDayOfMonth">
+            Rent Due Date
+            <span className="label-hint"> (recurring day of each month)</span>
+          </label>
+          <select
+            id="rentDueDayOfMonth"
+            value={form.rentDueDayOfMonth}
+            onChange={(e) => setField("rentDueDayOfMonth", parseInt(e.target.value, 10))}
+          >
+            {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <p className="field-note">The 7th day of each month is commonly used.</p>
         </div>
 
         <div className="form-group">
@@ -715,21 +730,9 @@ export default function GeneratePage() {
         </div>
       </fieldset>
 
-      {/* ── Handover & Inventory ─────────────────────────────────── */}
+      {/* ── Inventory ────────────────────────────────────────────── */}
       <fieldset>
-        <legend>Handover &amp; Inventory</legend>
-        <div className="form-group">
-          <label htmlFor="handoverDate">
-            Handover Date{" "}
-            <span className="label-hint">(optional — key collection date)</span>
-          </label>
-          <input
-            id="handoverDate"
-            type="date"
-            value={form.handoverDate}
-            onChange={(e) => setField("handoverDate", e.target.value)}
-          />
-        </div>
+        <legend>Inventory</legend>
 
         <div className="form-group inventory-mode-select">
           <label htmlFor="inventoryMode">Inventory</label>
@@ -973,6 +976,23 @@ function fmtRM(amountStr: string): string {
   return `RM ${n.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/**
+ * Format a day-of-month number as a natural-case ordinal (e.g. 1→"1st",
+ * 7→"7th", 23→"23rd"). Used on the review page — lowercase to read
+ * naturally in prose. The agreement Schedule uses an uppercase variant.
+ */
+function fmtOrdinalDay(day: number): string {
+  const n = Math.max(1, Math.min(31, Math.round(day)));
+  let suffix: string;
+  if (n >= 11 && n <= 13) {
+    suffix = "th";
+  } else {
+    const last = n % 10;
+    suffix = last === 1 ? "st" : last === 2 ? "nd" : last === 3 ? "rd" : "th";
+  }
+  return `${n}${suffix}`;
+}
+
 function fmtDate(isoStr: string): string {
   if (!isoStr) return "—";
   const [y, m, d] = isoStr.split("-").map(Number);
@@ -1031,7 +1051,6 @@ function ReviewView({
             <tr><td>Name</td><td>{form.landlordName}</td></tr>
             <tr><td>{landlordIdLabel}</td><td>{form.landlordIdNumber}</td></tr>
             <tr><td>Address</td><td>{form.landlordAddress}</td></tr>
-            <tr><td>Phone</td><td>{form.landlordPhone}</td></tr>
             <tr><td>Email</td><td>{form.landlordEmail}</td></tr>
             <tr><td>Bank</td><td>{form.landlordBankName}</td></tr>
             <tr><td>Account No.</td><td>{form.landlordBankAccountNumber}</td></tr>
@@ -1046,7 +1065,6 @@ function ReviewView({
             <tr><td>Name</td><td>{form.tenantName}</td></tr>
             <tr><td>{tenantIdLabel}</td><td>{form.tenantIdNumber}</td></tr>
             <tr><td>Address</td><td>{form.tenantAddress}</td></tr>
-            <tr><td>Phone</td><td>{form.tenantPhone}</td></tr>
             <tr><td>Email</td><td>{form.tenantEmail}</td></tr>
           </tbody>
         </table>
@@ -1069,9 +1087,6 @@ function ReviewView({
           <tbody>
             <tr><td>Commencement Date</td><td>{fmtDate(form.commencementDate)}</td></tr>
             <tr><td>Lease Duration</td><td>{form.leaseMonths} months</td></tr>
-            {form.handoverDate && (
-              <tr><td>Handover Date</td><td>{fmtDate(form.handoverDate)}</td></tr>
-            )}
             <tr>
               <td>Option to Renew</td>
               <td>
@@ -1090,6 +1105,7 @@ function ReviewView({
         <table className="review-table">
           <tbody>
             <tr><td>Monthly Rent</td><td>{fmtRM(form.monthlyRent)}</td></tr>
+            <tr><td>Rent Due Date</td><td>{fmtOrdinalDay(form.rentDueDayOfMonth)} day of each month</td></tr>
             <tr><td>Security Deposit</td><td>{fmtRM(form.securityDeposit)}</td></tr>
             <tr><td>Utility Deposit</td><td>{parseFloat(form.utilityDeposit.trim()) === 0 ? "Not Applicable" : fmtRM(form.utilityDeposit)}</td></tr>
             {form.accessCardDeposit.trim() && (
@@ -1188,9 +1204,12 @@ function ReviewView({
  * Renders text with "Section X of the Schedule" references bolded.
  * Matches patterns like "Section 1 of the Schedule", "Section 5(a) (b) and (c)...of the Schedule",
  * "Section 6(a) of the Schedule", "Section 10 of the Schedule".
+ *
+ * The word "hereto" is intentionally NOT included in the bolded match — it
+ * remains in normal weight regardless of whether it follows the reference.
  */
 function BoldScheduleRefs({ text }: { text: string }) {
-  const pattern = /Section\s+\d+(?:\([a-z]\))?(?:\s*(?:\([a-z]\)\s*(?:and\s*)?)*)?(?:\s*(?:respectively\s+)?of the Schedule(?:\s+hereto)?)/g;
+  const pattern = /Section\s+\d+(?:\([a-z]\))?(?:\s*(?:\([a-z]\)\s*(?:and\s*)?)*)?(?:\s*(?:respectively\s+)?of the Schedule)/g;
   const parts: { text: string; bold: boolean }[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -1296,9 +1315,12 @@ function AgreementPreview({
           <div className="agreement-recital agreement-justified">
             <p><strong>WHEREAS :-</strong></p>
             {doc.recitals.map((r, i) => (
-              <p key={i} className="agreement-recital-item">
-                <strong>{r.number}</strong> <BoldScheduleRefs text={r.text} />
-              </p>
+              <div key={i} className="agreement-recital-item">
+                <span className="recital-number">{r.number}</span>
+                <div className="recital-body">
+                  <p><BoldScheduleRefs text={r.text} /></p>
+                </div>
+              </div>
             ))}
           </div>
         </section>
@@ -1309,8 +1331,11 @@ function AgreementPreview({
             <p><strong>NOW IT IS HEREBY AGREED AS FOLLOWS :-</strong></p>
             {doc.operativeClauses.map((c) => (
               <div key={c.number} className="operative-clause">
-                <p className="margin-note"><em>{c.marginNote}</em></p>
-                <p><strong>{c.number}.</strong> <BoldScheduleRefs text={c.text} /></p>
+                <span className="operative-number">{c.number}.</span>
+                <div className="operative-body">
+                  <p className="margin-note"><em>{c.marginNote}</em></p>
+                  <p><BoldScheduleRefs text={c.text} /></p>
+                </div>
               </div>
             ))}
           </div>
@@ -1364,13 +1389,25 @@ function AgreementPreview({
             </p>
             {doc.provisos.map((p, i) => (
               <div key={i} className="proviso-clause">
-                <p className="margin-note"><em>{p.marginNote}</em></p>
-                <p><strong>{doc.provisosClauseNum}.{i + 1}</strong> <BoldScheduleRefs text={p.text.split("\n\n")[0]} /></p>
-                {p.text.split("\n\n").slice(1).map((para, pi) => (
+                <span className="proviso-number">{doc.provisosClauseNum}.{i + 1}</span>
+                <div className="proviso-body">
+                  <p className="margin-note"><em>{p.marginNote}</em></p>
+                  {p.text.split("\n\n").map((para, pi) => (
+                    <p key={pi}><BoldScheduleRefs text={para} /></p>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {/* Special Conditions — ALWAYS rendered at fixed sub-number 7.13 */}
+            <div className="proviso-clause">
+              <span className="proviso-number">{doc.provisosClauseNum}.{doc.specialConditionsProvisoSubNum}</span>
+              <div className="proviso-body">
+                <p className="margin-note"><em>{doc.specialConditionsProviso.marginNote}</em></p>
+                {doc.specialConditionsProviso.text.split("\n\n").map((para, pi) => (
                   <p key={pi}><BoldScheduleRefs text={para} /></p>
                 ))}
               </div>
-            ))}
+            </div>
           </div>
         </section>
 
@@ -1379,7 +1416,12 @@ function AgreementPreview({
           <div className="agreement-section agreement-justified">
             <p><strong>{doc.interpretationClauseNum}. IN THIS AGREEMENT:-</strong></p>
             {doc.interpretation.map((t, i) => (
-              <p key={i} className="interpretation-item"><strong>{doc.interpretationClauseNum}.{i + 1}</strong> {t}</p>
+              <div key={i} className="interpretation-item">
+                <span className="interpretation-number">{doc.interpretationClauseNum}.{i + 1}</span>
+                <div className="interpretation-body">
+                  <p>{t}</p>
+                </div>
+              </div>
             ))}
           </div>
         </section>

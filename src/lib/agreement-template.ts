@@ -58,6 +58,10 @@ export interface AgreementDoc {
   landlordCovenants: LetterClause[];
   provisosClauseNum: number;
   provisos: Proviso[];
+  /** Fixed sub-number for the Special Conditions proviso (always 13). */
+  specialConditionsProvisoSubNum: number;
+  /** Special Conditions proviso — always present, always numbered 7.13. */
+  specialConditionsProviso: Proviso;
   interpretationClauseNum: number;
   interpretation: string[];
 
@@ -101,6 +105,16 @@ function ordinalSuffix(day: number): string {
   if (lastDigit === 2) return "ND";
   if (lastDigit === 3) return "RD";
   return "TH";
+}
+
+/**
+ * Render the Schedule Section 6(c) sentence with the recurring day-of-month
+ * rent due date. Example: day 7 → "DUE AND PAYABLE ON OR BEFORE THE 7TH
+ * DAY OF EACH CALENDAR MONTH". Clamps out-of-range days defensively to 1-31.
+ */
+function formatRentDueSentence(dayOfMonth: number): string {
+  const safe = Math.max(1, Math.min(31, Math.round(dayOfMonth)));
+  return `DUE AND PAYABLE ON OR BEFORE THE ${safe}${ordinalSuffix(safe)} DAY OF EACH CALENDAR MONTH`;
 }
 
 /**
@@ -401,7 +415,30 @@ function buildProvisos(form: TenancyFormData): Proviso[] {
     text: "This Agreement may be executed in counterparts, including electronically or digitally. Each counterpart constitutes an original of this Agreement, all of which together constitute one instrument. A Party who has executed a counterpart of this Agreement may exchange it with another Party by electronic means including Docusign, faxing, or by emailing a pdf (portable document format) copy of, the executed counterpart to that other Party, and if requested by that other Party, will promptly deliver the original by hand or post. Failure to make that delivery by hand or by post will not affect the validity of this Agreement.",
   });
 
+  // NOTE: Special Conditions (Clause 7.13) is NOT pushed here. It is rendered
+  // separately with a fixed sub-number of 13 so it never renumbers to 7.12
+  // when Option to Renew is absent. See AgreementDoc.specialConditionsProviso.
+
   return provisos;
+}
+
+// ─── Special Conditions proviso (fixed at 7.13) ──────────────────────────
+
+/**
+ * Fixed sub-number for the Special Conditions proviso within Clause 7.
+ * This is intentionally hardcoded — it must never renumber dynamically.
+ */
+const SPECIAL_CONDITIONS_SUB_NUM = 13;
+
+/**
+ * Build the Special Conditions proviso. Always present, always numbered 7.13
+ * regardless of whether Option to Renew is selected.
+ */
+function buildSpecialConditionsProviso(): Proviso {
+  return {
+    marginNote: "Special Conditions",
+    text: "This Agreement is subject to the special conditions set out in Section 12 of the Schedule hereto. In the event of any conflict or inconsistency between the standard terms of this Agreement and those special conditions, the latter shall prevail.",
+  };
 }
 
 // ─── Main builder ─────────────────────────────────────────────────────────
@@ -451,7 +488,7 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
     {
       number: clauseNum++,
       marginNote: "Monthly Rental and date payable",
-      text: "The monthly rental stipulated in Section 6(a) of the Schedule hereto shall be due and payable in advance in the manner and at the time stipulated in Section 6(c) respectively of the Schedule hereto.",
+      text: "The monthly rental stipulated in Section 6(a) of the Schedule hereto shall be due and payable in advance in the manner and at the time stipulated in Section 6(b) and (c) respectively of the Schedule hereto.",
     },
     {
       // Clause 3 — REVISED per drafting correction #7:
@@ -500,7 +537,7 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
     { section: "5(c)",   item: "Terminating",                   value: endDateFmt },
     { section: "6(a)",   item: "Monthly Rental",                value: ringgitWords(form.monthlyRent) },
     { section: "6(b)",   item: "Account No:",                   value: `${form.landlordBankName}: ${form.landlordBankAccountNumber} (${form.landlordBankAccountHolderName})` },
-    { section: "6(c)",   item: "Due on:",                       value: "DUE AND PAYABLE ON OR BEFORE THE 7TH DAY OF EACH CALENDAR MONTH" },
+    { section: "6(c)",   item: "Due on:",                       value: formatRentDueSentence(form.rentDueDayOfMonth) },
     { section: "7.",     item: "Security Deposit",              value: ringgitWords(form.securityDeposit) },
   ];
 
@@ -527,10 +564,14 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
     schedule.push({ section: "11.", item: "Access Card Deposit", value: ringgitWords(form.accessCardDeposit) });
   }
 
-  // Section 12: Special Conditions (moved from body provisos to Schedule)
-  if (form.specialConditions.trim()) {
-    schedule.push({ section: "12.", item: "Special Conditions", value: form.specialConditions.trim() });
-  }
+  // Section 12: Special Conditions — ALWAYS present (even when blank)
+  // When the user has not provided any special conditions, render "Nil" as a
+  // restrained placeholder so the numbering/structure stays stable and
+  // Clause 7.13 (which references Section 12) always has a valid referent.
+  const specialConditionsValue = form.specialConditions.trim()
+    ? form.specialConditions.trim()
+    : "Nil";
+  schedule.push({ section: "12.", item: "Special Conditions", value: specialConditionsValue });
 
   // ── Inventory ────────────────────────────────────────────────────────
   const inventoryUploadFileNames = form.inventoryUploadFiles.map((f) => f.name);
@@ -563,6 +604,8 @@ export function buildAgreement(form: TenancyFormData): AgreementDoc {
     landlordCovenants,
     provisosClauseNum,
     provisos,
+    specialConditionsProvisoSubNum: SPECIAL_CONDITIONS_SUB_NUM,
+    specialConditionsProviso: buildSpecialConditionsProviso(),
     interpretationClauseNum,
     interpretation,
     schedule,

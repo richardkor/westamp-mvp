@@ -85,7 +85,6 @@ export interface TenancyFormData {
   landlordName: string;
   landlordIdNumber: string;
   landlordAddress: string;
-  landlordPhone: string;
   landlordEmail: string;
   landlordBankName: string;
   landlordBankAccountNumber: string;
@@ -96,7 +95,6 @@ export interface TenancyFormData {
   tenantName: string;
   tenantIdNumber: string;
   tenantAddress: string;
-  tenantPhone: string;
   tenantEmail: string;
   tenantNricFront: File | null;
   tenantNricBack: File | null;
@@ -105,6 +103,8 @@ export interface TenancyFormData {
   monthlyRent: string;
   leaseMonths: string;
   commencementDate: string;
+  /** Recurring day-of-month the rent is due (1-31). Used for Schedule Section 6(c). */
+  rentDueDayOfMonth: number;
   securityDeposit: string;
   utilityDeposit: string;
   accessCardDeposit: string;
@@ -120,7 +120,6 @@ export interface TenancyFormData {
   airConServicingResponsibility: AirConServicingResponsibility;
 
   // ── Handover & Inventory ────────────────────────────────────────────
-  handoverDate: string;
   inventoryMode: InventoryMode;
   /** Files uploaded by user for inventory (in-memory only). */
   inventoryUploadFiles: File[];
@@ -152,7 +151,6 @@ export const TENANCY_FORM_DEFAULTS: TenancyFormData = {
   landlordName: "",
   landlordIdNumber: "",
   landlordAddress: "",
-  landlordPhone: "",
   landlordEmail: "",
   landlordBankName: "",
   landlordBankAccountNumber: "",
@@ -161,13 +159,13 @@ export const TENANCY_FORM_DEFAULTS: TenancyFormData = {
   tenantName: "",
   tenantIdNumber: "",
   tenantAddress: "",
-  tenantPhone: "",
   tenantEmail: "",
   tenantNricFront: null,
   tenantNricBack: null,
   monthlyRent: "",
   leaseMonths: "",
   commencementDate: "",
+  rentDueDayOfMonth: 7,
   securityDeposit: "",
   utilityDeposit: "",
   accessCardDeposit: "",
@@ -175,7 +173,6 @@ export const TENANCY_FORM_DEFAULTS: TenancyFormData = {
   optionToRenewTermMonths: null,
   utilityResponsibility: "tenant",
   airConServicingResponsibility: "tenant",
-  handoverDate: "",
   inventoryMode: "none",
   inventoryUploadFiles: [],
   inventoryItems: [],
