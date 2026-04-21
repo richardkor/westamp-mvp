@@ -16,6 +16,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { evaluateFulfilmentIntegrity } from "../../../lib/fulfilment-integrity";
 import { getLaneKnowledgeProfile } from "../../../lib/stsds-lane-knowledge";
+import { resolveConfirmedTenancyPreparationValues } from "../../../lib/tenancy-preparation-resolver";
 
 // ─── Types (mirrored from stamping-types for client use) ─────────────
 
@@ -7178,48 +7179,37 @@ export default function IntakeDetailsPage({
                 </div>
               )}
 
-              {/* ── Canonical internal basis summary ─────────────────── */}
-              {/* Mirrors src/lib/tenancy-preparation-resolver.ts precedence.
-                  Shows the exact tenancy preparation values the internal
-                  sewa_pajakan advisory stack is currently using. */}
-              {job.confirmedTenancyInputs && !reviewOpen && (() => {
-                const c = job.confirmedTenancyInputs!;
-                const sd = job.stampingDetails;
-                const sdRentValid =
-                  !!sd && typeof sd.monthlyRent === "number" && Number.isFinite(sd.monthlyRent);
-                const sdMonthsValid =
-                  !!sd && typeof sd.leaseMonths === "number" && Number.isFinite(sd.leaseMonths);
+              {/* ── Resolved tenancy preparation values (internal) ───── */}
+              {/* Canonical resolver output — single source of truth for the
+                  sewa_pajakan advisory stack. Does NOT duplicate precedence
+                  logic; always renders for tenancy jobs so operators can
+                  verify exactly what values the internal layers will use
+                  right now, regardless of confirmation state. */}
+              {!reviewOpen && (() => {
+                // Client StampingJob mirrors the server type shape used by
+                // the resolver. The resolver only reads fields that exist
+                // on the mirror (documentCategory, extractionResult,
+                // confirmedTenancyInputs, stampingDetails), so this cast is
+                // safe. Cast kept narrow to the resolver's input surface.
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const resolved = resolveConfirmedTenancyPreparationValues(job as any);
+                if (!resolved) return null;
 
-                const resolvedRent = sdRentValid
-                  ? sd!.monthlyRent
-                  : c.confirmedMonthlyRent;
-                const rentSource: "stamping_details" | "confirmed_input" | "none" = sdRentValid
-                  ? "stamping_details"
-                  : c.confirmedMonthlyRent !== null
-                    ? "confirmed_input"
-                    : "none";
+                const c = job.confirmedTenancyInputs ?? null;
 
-                const resolvedMonths = sdMonthsValid
-                  ? sd!.leaseMonths
-                  : c.confirmedLeaseMonths;
-                const monthsSource: "stamping_details" | "confirmed_input" | "none" = sdMonthsValid
-                  ? "stamping_details"
-                  : c.confirmedLeaseMonths !== null
-                    ? "confirmed_input"
-                    : "none";
-
-                const resolvedDate = c.confirmedAgreementDate
-                  ?? job.extractionResult?.suggestedAgreementDate.value
-                  ?? null;
-                const dateSource: "confirmed_input" | "extraction_suggestion" | "none" =
-                  c.confirmedAgreementDate
-                    ? "confirmed_input"
-                    : job.extractionResult?.suggestedAgreementDate.value
-                      ? "extraction_suggestion"
-                      : "none";
-
-                const rentOverridden = rentSource === "stamping_details" && c.confirmedMonthlyRent !== null;
-                const monthsOverridden = monthsSource === "stamping_details" && c.confirmedLeaseMonths !== null;
+                const labelForSource = (s: string): string => {
+                  switch (s) {
+                    case "stamping_details":
+                      return "stamping_details";
+                    case "confirmed_input":
+                      return "confirmed_input";
+                    case "extraction_suggestion":
+                      return "extraction_suggestion";
+                    case "none":
+                    default:
+                      return "not_set";
+                  }
+                };
 
                 return (
                   <div
@@ -7227,30 +7217,36 @@ export default function IntakeDetailsPage({
                     style={{ marginTop: 12, padding: 12, border: "1px solid #c9d6e8", borderRadius: 4, background: "#f4f8fd" }}
                   >
                     <p style={{ margin: "0 0 6px 0", fontWeight: 600 }}>
-                      Confirmed tenancy preparation values
+                      Resolved tenancy preparation values (internal)
                     </p>
                     <p style={{ margin: "0 0 8px 0", color: "#444", fontSize: 13 }}>
-                      These confirmed values are the current internal basis for tenancy stamping preparation.
+                      These are the exact values the internal sewa_pajakan
+                      advisory stack is using right now. Derived by the
+                      canonical resolver — precedence is not duplicated here.
                     </p>
                     <ul style={{ margin: "0 0 6px 0", paddingLeft: 18 }}>
                       <li>
                         Monthly rent:{" "}
-                        {resolvedRent !== null
-                          ? `RM ${resolvedRent.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        {resolved.monthlyRent !== null
+                          ? `RM ${resolved.monthlyRent.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : "—"}{" "}
-                        <em style={{ color: "#666" }}>({rentSource})</em>
-                        {rentOverridden && (
+                        <em style={{ color: "#666" }}>
+                          ({labelForSource(resolved.sources.monthlyRent)})
+                        </em>
+                        {resolved.stampingDetailsOverridesConfirmed.monthlyRent && c?.confirmedMonthlyRent != null && (
                           <span style={{ color: "#a05a00", marginLeft: 6 }}>
                             — Stamping Details is currently overriding the confirmed value
-                            (confirmed was RM {c.confirmedMonthlyRent!.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                            (confirmed was RM {c.confirmedMonthlyRent.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                           </span>
                         )}
                       </li>
                       <li>
                         Lease months:{" "}
-                        {resolvedMonths !== null ? `${resolvedMonths} months` : "—"}{" "}
-                        <em style={{ color: "#666" }}>({monthsSource})</em>
-                        {monthsOverridden && (
+                        {resolved.leaseMonths !== null ? `${resolved.leaseMonths} months` : "—"}{" "}
+                        <em style={{ color: "#666" }}>
+                          ({labelForSource(resolved.sources.leaseMonths)})
+                        </em>
+                        {resolved.stampingDetailsOverridesConfirmed.leaseMonths && c?.confirmedLeaseMonths != null && (
                           <span style={{ color: "#a05a00", marginLeft: 6 }}>
                             — Stamping Details is currently overriding the confirmed value
                             (confirmed was {c.confirmedLeaseMonths} months)
@@ -7259,17 +7255,31 @@ export default function IntakeDetailsPage({
                       </li>
                       <li>
                         Agreement date:{" "}
-                        {resolvedDate ?? "—"}{" "}
-                        <em style={{ color: "#666" }}>({dateSource})</em>
+                        {resolved.instrumentDate ?? "—"}{" "}
+                        <em style={{ color: "#666" }}>
+                          ({labelForSource(resolved.sources.instrumentDate)})
+                        </em>
                       </li>
-                      <li>
-                        Review status:{" "}
-                        {c.reviewStatus === "reviewed_confirmed" ? "reviewed — confirmed" : "reviewed — overridden"}
-                      </li>
-                      <li>
-                        Confirmed at:{" "}
-                        {new Date(c.confirmedAt).toLocaleString()}
-                      </li>
+                      {c && (
+                        <>
+                          <li>
+                            Review status:{" "}
+                            {c.reviewStatus === "reviewed_confirmed" ? "reviewed — confirmed" : "reviewed — overridden"}
+                          </li>
+                          <li>
+                            Confirmed at: {new Date(c.confirmedAt).toLocaleString()}
+                          </li>
+                        </>
+                      )}
+                      {!c && (
+                        <li style={{ color: "#666" }}>
+                          Operator confirmation not yet completed. Values
+                          above fall back to raw extraction only for the
+                          agreement date — rent and lease months remain
+                          unset until stamping details or confirmation
+                          provide them.
+                        </li>
+                      )}
                     </ul>
                     <p style={{ margin: "6px 0 0 0", color: "#666", fontSize: 12 }}>
                       Internal preparation only. This does not imply submission to any external system or live portal validation.
@@ -7382,6 +7392,104 @@ export default function IntakeDetailsPage({
                         Internal marker only. Does not imply submission to any external system or live portal validation.
                       </p>
                     )}
+                  </div>
+                );
+              })()}
+
+              {/* ── Advisory snapshot (sewa_pajakan) ─────────────────── */}
+              {/* Compact internal verification of the downstream advisory
+                  outputs: routing lane, portal draft tenancy fields (if
+                  drafted), and execution preview summary (if compiled).
+                  Reads persisted advisory output only — does not recompute
+                  or call the portal. */}
+              {(() => {
+                const lane = job.routingSuggestion?.suggestedLane ?? null;
+                const draft = job.portalDraft;
+                const ma = draft?.maklumatAmSewaPajakan;
+                const preview = job.executionPreview;
+                const hasAny = !!lane || !!draft || !!preview;
+                if (!hasAny) return null;
+
+                const draftDate = ma?.instrumentDate ?? null;
+                const draftRent =
+                  typeof ma?.monthlyRent === "number" ? ma.monthlyRent : null;
+                const draftMonths =
+                  typeof ma?.leaseMonths === "number" ? ma.leaseMonths : null;
+
+                const intendedCount = preview?.intendedInputs?.length ?? 0;
+                const unresolvedCount = preview?.unresolvedSteps?.length ?? 0;
+
+                return (
+                  <div
+                    className="tenancy-advisory-snapshot"
+                    style={{ marginTop: 16, padding: 12, border: "1px solid #d4dbe3", borderRadius: 4, background: "#fbfcfd" }}
+                  >
+                    <p style={{ margin: "0 0 6px 0", fontWeight: 600 }}>
+                      Advisory snapshot (sewa_pajakan)
+                    </p>
+                    <p style={{ margin: "0 0 8px 0", color: "#444", fontSize: 13 }}>
+                      Read-only summary of the internal advisory outputs for
+                      operator verification. No live portal interaction.
+                    </p>
+                    <ul style={{ margin: "0 0 6px 0", paddingLeft: 18, fontSize: 13 }}>
+                      <li>
+                        Routing lane:{" "}
+                        {lane ? lane : <em style={{ color: "#666" }}>not suggested yet</em>}
+                      </li>
+                      <li>
+                        Portal draft:{" "}
+                        {draft ? (
+                          <>
+                            {draft.status}
+                            {draft.draftedAt && (
+                              <span style={{ color: "#666" }}>
+                                {" "}
+                                ({new Date(draft.draftedAt).toLocaleString()})
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <em style={{ color: "#666" }}>not drafted yet</em>
+                        )}
+                      </li>
+                      {draft && lane === "sewa_pajakan" && (
+                        <>
+                          <li>
+                            Draft instrument date: {draftDate ?? "—"}
+                          </li>
+                          <li>
+                            Draft monthly rent:{" "}
+                            {draftRent !== null
+                              ? `RM ${draftRent.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : "—"}
+                          </li>
+                          <li>
+                            Draft lease months:{" "}
+                            {draftMonths !== null ? `${draftMonths} months` : "—"}
+                          </li>
+                        </>
+                      )}
+                      <li>
+                        Execution preview:{" "}
+                        {preview ? (
+                          <>
+                            {preview.status} — {intendedCount} intended input
+                            {intendedCount === 1 ? "" : "s"}, {unresolvedCount}{" "}
+                            unresolved step{unresolvedCount === 1 ? "" : "s"}
+                          </>
+                        ) : (
+                          <em style={{ color: "#666" }}>not compiled yet</em>
+                        )}
+                      </li>
+                      {preview && unresolvedCount > 0 && (
+                        <li style={{ color: "#a05a00" }}>
+                          Unresolved dependencies still block downstream steps.
+                        </li>
+                      )}
+                    </ul>
+                    <p style={{ margin: "6px 0 0 0", color: "#666", fontSize: 12 }}>
+                      Internal advisory only. No external system contacted.
+                    </p>
                   </div>
                 );
               })()}

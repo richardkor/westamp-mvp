@@ -214,12 +214,41 @@ export async function POST(
   if (dateSource) parts.push(`date:${dateSource}`);
   const note = `Tenancy inputs ${reviewStatus} (${parts.join(", ")}).`;
 
-  const event = createEvent("tenancy_inputs_confirmed", note);
+  const confirmEvent = createEvent("tenancy_inputs_confirmed", note);
 
-  const updated = await updateJobOrConflict(id, {
+  // If the job was previously marked as "Preparation review complete",
+  // a subsequent edit of the confirmed tenancy inputs invalidates that
+  // marker. Readiness is tied to a specific confirmed-inputs state; any
+  // edit (including a confirm-without-change resave) makes the prior
+  // basis snapshot stale, so we clear the readiness outright and record
+  // a separate invalidation event. The operator must mark it ready
+  // again before downstream layers should treat it as ready.
+  const hadReadiness = !!job.tenancyPreparationReadiness;
+  const invalidationEvent = hadReadiness
+    ? createEvent(
+        "tenancy_preparation_readiness_invalidated",
+        "Preparation review readiness invalidated because confirmed tenancy inputs changed.",
+      )
+    : null;
+
+  const nextEvents = invalidationEvent
+    ? appendEvent(appendEvent(job.events, confirmEvent), invalidationEvent)
+    : appendEvent(job.events, confirmEvent);
+
+  // When readiness existed, drop it by writing `undefined` for that
+  // field. Both storage backends (local JSON file + Supabase JSON
+  // payload) serialize `undefined` off the wire, so the field becomes
+  // absent on reload — matching the "never marked ready" shape that the
+  // UI panel already renders as "Awaiting preparation review mark".
+  const updates: Parameters<typeof updateJobOrConflict>[1] = {
     confirmedTenancyInputs,
-    events: appendEvent(job.events, event),
-  });
+    events: nextEvents,
+  };
+  if (hadReadiness) {
+    updates.tenancyPreparationReadiness = undefined;
+  }
+
+  const updated = await updateJobOrConflict(id, updates);
 
   if (updated instanceof Response) return updated;
 

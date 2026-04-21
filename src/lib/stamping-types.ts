@@ -77,6 +77,7 @@ export type JobEventType =
   | "extraction_suggestions_applied"
   | "tenancy_inputs_confirmed"
   | "tenancy_preparation_marked_ready"
+  | "tenancy_preparation_readiness_invalidated"
   | "routing_suggestion_saved"
   | "portal_draft_created"
   | "portal_draft_updated"
