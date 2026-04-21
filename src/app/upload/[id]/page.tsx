@@ -16,6 +16,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { evaluateFulfilmentIntegrity } from "../../../lib/fulfilment-integrity";
 import { getLaneKnowledgeProfile } from "../../../lib/stsds-lane-knowledge";
+import { getSewaPajakanGateChainView } from "../../../lib/sewa-pajakan-gate-chain";
 import { resolveConfirmedTenancyPreparationValues } from "../../../lib/tenancy-preparation-resolver";
 
 // ─── Types (mirrored from stamping-types for client use) ─────────────
@@ -3053,6 +3054,128 @@ export default function IntakeDetailsPage({
                 </p>
               )}
 
+              {/* ── Sewa/Pajakan Proven Hantar Gate Chain ──────────── */}
+              {/* Sewa/Pajakan-only panel. Shows the gate chain walked
+                  during live discovery (2026-04-22): which Hantar gates
+                  are proven, which step is currently blocking, and
+                  which fields are still known to be required but have
+                  not been enumerated as next gates. Read-only. */}
+              {job.submissionReadiness.lane === "sewa_pajakan" && (() => {
+                const view = getSewaPajakanGateChainView("sewa_pajakan");
+                if (!view) return null;
+                return (
+                  <div style={{ marginTop: 12 }}>
+                    {/* Proven Gate Chain */}
+                    <div className="intake-details-card">
+                      <h3 style={{ fontSize: 14, marginBottom: 8 }}>
+                        Proven Hantar Gate Chain (Sewa/Pajakan)
+                      </h3>
+                      <p style={{ fontSize: 12, color: "#78716c", margin: "0 0 8px" }}>
+                        Gates walked directly against the live e-Duti
+                        Setem Hantar button on 2026-04-22. Listed in the
+                        order they were observed.
+                      </p>
+                      {view.provenGates.map((g) => (
+                        <div key={g.index} className="intake-details-row">
+                          <span className="intake-details-label">
+                            Gate {g.index}: {g.fieldLabel}
+                            <span style={{ fontSize: 11, color: "#a8a29e", marginLeft: 6 }}>
+                              ({g.section})
+                            </span>
+                          </span>
+                          <span className="intake-details-value">
+                            <span style={{ color: "#16a34a" }}>Proven</span>
+                            <span style={{ fontSize: 11, color: "#78716c", marginLeft: 8, fontStyle: "italic" }}>
+                              &ldquo;{g.modalMessage}&rdquo;
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Current Blocking Step */}
+                    {view.currentBlockingStep && (
+                      <div
+                        className="intake-details-card"
+                        style={{ marginTop: 10, borderLeft: "3px solid #d97706" }}
+                      >
+                        <h3 style={{ fontSize: 14, marginBottom: 8 }}>
+                          Current Blocking Step
+                        </h3>
+                        <div className="intake-details-row">
+                          <span className="intake-details-label">Section</span>
+                          <span className="intake-details-value">
+                            {view.currentBlockingStep.section}
+                          </span>
+                        </div>
+                        <div className="intake-details-row">
+                          <span className="intake-details-label">Field</span>
+                          <span className="intake-details-value">
+                            {view.currentBlockingStep.fieldLabel}
+                            <span style={{ fontSize: 11, color: "#a8a29e", marginLeft: 6 }}>
+                              ({view.currentBlockingStep.field})
+                            </span>
+                          </span>
+                        </div>
+                        <div className="intake-details-row">
+                          <span className="intake-details-label">Requirement</span>
+                          <span className="intake-details-value">
+                            {view.currentBlockingStep.requirement}
+                          </span>
+                        </div>
+                        <p style={{ fontSize: 12, color: "#78716c", margin: "6px 0 0", fontStyle: "italic" }}>
+                          {view.currentBlockingStep.basis}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Still unresolved later gates */}
+                    {view.laterUnresolvedGates.length > 0 && (
+                      <div className="intake-details-card" style={{ marginTop: 10 }}>
+                        <h3 style={{ fontSize: 14, marginBottom: 4 }}>
+                          Still Unresolved Later Gates
+                        </h3>
+                        <p style={{ fontSize: 12, color: "#78716c", margin: "0 0 8px" }}>
+                          Fields remaining in the pre-Hantar :invalid set
+                          after gate&nbsp;2. Known to be required by HTML
+                          constraint validation; their Hantar gate order
+                          beyond Alamat Harta has not been enumerated.
+                        </p>
+                        {view.laterUnresolvedGates.map((g) => (
+                          <div key={g.field} className="intake-details-row">
+                            <span className="intake-details-label">
+                              {g.fieldLabel}
+                              <span style={{ fontSize: 11, color: "#a8a29e", marginLeft: 6 }}>
+                                ({g.field})
+                              </span>
+                            </span>
+                            <span className="intake-details-value" style={{ color: "#78716c" }}>
+                              {g.section}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Untested areas */}
+                    {view.untestedAreas.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <h3 style={{ fontSize: 14, marginBottom: 4 }}>
+                          Untested Areas
+                        </h3>
+                        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13 }}>
+                          {view.untestedAreas.map((a, idx) => (
+                            <li key={idx} style={{ marginBottom: 4, color: "#78716c" }}>
+                              {a}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Proven blockers — only shown when gates are proven */}
               {job.submissionReadiness.gatesProvenForLane &&
                 job.submissionReadiness.provenBlockers.length > 0 && (
@@ -3077,8 +3200,13 @@ export default function IntakeDetailsPage({
                 </div>
               )}
 
-              {/* Unresolved later checks */}
-              {job.submissionReadiness.unresolvedChecks.length > 0 && (
+              {/* Unresolved later checks (generic prose list).
+                  Suppressed for sewa_pajakan — the structured "Proven
+                  Hantar Gate Chain / Current Blocking Step / Still
+                  Unresolved Later Gates / Untested Areas" panel above
+                  presents the same evidence in a clearer form. */}
+              {job.submissionReadiness.lane !== "sewa_pajakan" &&
+                job.submissionReadiness.unresolvedChecks.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <h3 style={{ fontSize: 14, marginBottom: 4 }}>
                     Unresolved Later Checks
@@ -3996,6 +4124,18 @@ export default function IntakeDetailsPage({
                         </div>
                       ))}
                     </div>
+                    {lk.lane === "sewa_pajakan" && (
+                      <p style={{ fontSize: 12, color: "#78716c", margin: "6px 0 0", fontStyle: "italic" }}>
+                        Note: the &ldquo;Bahagian B&rdquo; rows above
+                        report only whether the Bahagian B tab is
+                        reachable and whether its save was exercised —
+                        they are not the save target for harta (property)
+                        fields on this lane. The gate&nbsp;2 modal
+                        observed on 2026-04-22 confirmed Alamat Harta
+                        lives on <strong>Bahagian C</strong>, not
+                        Bahagian B.
+                      </p>
+                    )}
                   </>
                 )}
 
