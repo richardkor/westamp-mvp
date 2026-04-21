@@ -97,14 +97,34 @@ function buildSewaPajakanDraft(
 ): StsdsPortalDraft {
   const maklumatAm: MaklumatAmSewaPajakan = {};
 
-  // Populate from stamping details if available
+  // Tenancy-inputs precedence rule:
+  //   1. operator-confirmed values (confirmedTenancyInputs)
+  //   2. extraction suggestions (extractionResult)
+  //   3. otherwise null / missing
+  // stampingDetails (user-entered form) is also operator-sourced and, when
+  // present, carries the duty-calculator-ready figures. It sits at the
+  // same tier as confirmedTenancyInputs and wins over raw extraction.
+  const confirmed = job.confirmedTenancyInputs;
+
+  // monthlyRent / leaseMonths: prefer stampingDetails, then confirmed, then nothing.
+  // (Raw extraction suggestions are never written directly into the draft
+  // here — they must be promoted through confirmation or stampingDetails.)
   if (job.stampingDetails) {
     maklumatAm.monthlyRent = job.stampingDetails.monthlyRent;
     maklumatAm.leaseMonths = job.stampingDetails.leaseMonths;
+  } else if (confirmed) {
+    if (confirmed.confirmedMonthlyRent !== null) {
+      maklumatAm.monthlyRent = confirmed.confirmedMonthlyRent;
+    }
+    if (confirmed.confirmedLeaseMonths !== null) {
+      maklumatAm.leaseMonths = confirmed.confirmedLeaseMonths;
+    }
   }
 
-  // Populate instrument date from extraction if available
-  if (job.extractionResult?.suggestedAgreementDate?.value) {
+  // instrumentDate: operator-confirmed first, then extraction suggestion.
+  if (confirmed?.confirmedAgreementDate) {
+    maklumatAm.instrumentDate = confirmed.confirmedAgreementDate;
+  } else if (job.extractionResult?.suggestedAgreementDate?.value) {
     maklumatAm.instrumentDate =
       job.extractionResult.suggestedAgreementDate.value;
   }

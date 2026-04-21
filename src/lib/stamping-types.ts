@@ -75,6 +75,7 @@ export type JobEventType =
   | "execution_attempt_initialized"
   | "extraction_completed"
   | "extraction_suggestions_applied"
+  | "tenancy_inputs_confirmed"
   | "routing_suggestion_saved"
   | "portal_draft_created"
   | "portal_draft_updated"
@@ -285,6 +286,62 @@ export interface TenancyExtractionResult {
    * not fall back to OCR — this is distinct from "OCR ran but found nothing."
    */
   ocrUnavailable?: boolean;
+}
+
+// ─── Confirmed Tenancy Inputs (operator-review layer) ────────────────
+
+/**
+ * Narrow per-field provenance marker for operator-confirmed tenancy inputs.
+ *
+ * - "extraction_confirmed" — operator accepted the extracted suggestion unchanged
+ * - "operator_override"    — operator changed the value from the extracted suggestion
+ * - "operator_entered"     — operator provided a value where no suggestion existed
+ */
+export type ConfirmedTenancyInputSource =
+  | "extraction_confirmed"
+  | "operator_override"
+  | "operator_entered";
+
+/**
+ * Overall review state for a tenancy job's extracted-inputs review step.
+ *
+ * - "not_reviewed"          — no confirmedTenancyInputs record yet
+ * - "reviewed_confirmed"    — operator accepted all present values unchanged
+ * - "reviewed_overridden"   — operator corrected at least one value
+ */
+export type TenancyReviewStatus =
+  | "not_reviewed"
+  | "reviewed_confirmed"
+  | "reviewed_overridden";
+
+/**
+ * Operator-confirmed tenancy preparation inputs.
+ *
+ * Persisted separately from extractionResult, stampingDetails, portalDraft,
+ * and submissionPayload. Represents the review layer where an operator
+ * confirms or overrides extraction suggestions before downstream draft /
+ * readiness logic consumes them.
+ *
+ * All three value fields are nullable — the operator may confirm only a
+ * subset of fields (e.g. rent/months but not date).
+ */
+export interface ConfirmedTenancyInputs {
+  /** ISO 8601 timestamp of the confirm/override action. */
+  confirmedAt: string;
+  /** Whole-record review state. */
+  reviewStatus: "reviewed_confirmed" | "reviewed_overridden";
+  /** Confirmed monthly rent in RM, or null if not confirmed. */
+  confirmedMonthlyRent: number | null;
+  /** Confirmed lease duration in months, or null. */
+  confirmedLeaseMonths: number | null;
+  /** Confirmed agreement date (YYYY-MM-DD), or null. */
+  confirmedAgreementDate: string | null;
+  /** Per-field provenance. null where the corresponding field was not confirmed. */
+  confirmedBySource: {
+    monthlyRent: ConfirmedTenancyInputSource | null;
+    leaseMonths: ConfirmedTenancyInputSource | null;
+    agreementDate: ConfirmedTenancyInputSource | null;
+  };
 }
 
 // ─── Field Provenance ────────────────────────────────────────────────
@@ -516,6 +573,14 @@ export interface StampingJob {
   executionAttempt?: ExecutionAttempt;
   /** Tenancy extraction result — suggested values from uploaded PDF. Unverified. */
   extractionResult?: TenancyExtractionResult;
+  /**
+   * Operator-confirmed tenancy preparation inputs.
+   * Persisted distinct from extractionResult, stampingDetails, portalDraft,
+   * and submissionPayload. Downstream draft / readiness layers prefer these
+   * values over raw extraction suggestions. Absent until an operator
+   * completes the extraction review step.
+   */
+  confirmedTenancyInputs?: ConfirmedTenancyInputs;
   /**
    * STSDS portal routing suggestion — unverified internal suggestion only.
    * Populated when WeStamp auto-suggests a lane (e.g. tenancy → sewa_pajakan)

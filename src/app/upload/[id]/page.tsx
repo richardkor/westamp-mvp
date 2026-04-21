@@ -108,6 +108,18 @@ interface StampingJob {
     textLengthChars: number;
     ocrAttempted?: boolean;
   };
+  confirmedTenancyInputs?: {
+    confirmedAt: string;
+    reviewStatus: "reviewed_confirmed" | "reviewed_overridden";
+    confirmedMonthlyRent: number | null;
+    confirmedLeaseMonths: number | null;
+    confirmedAgreementDate: string | null;
+    confirmedBySource: {
+      monthlyRent: "extraction_confirmed" | "operator_override" | "operator_entered" | null;
+      leaseMonths: "extraction_confirmed" | "operator_override" | "operator_entered" | null;
+      agreementDate: "extraction_confirmed" | "operator_override" | "operator_entered" | null;
+    };
+  };
   routingSuggestion?: {
     suggestedLane: "sewa_pajakan" | "penyeteman_am";
     suggestedPortalDocumentName: string | null;
@@ -1058,6 +1070,17 @@ export default function IntakeDetailsPage({
     monthlyRent: "user_entered",
     leaseMonths: "user_entered",
   });
+
+  // Extraction review / confirmation state (operator-confirmed tenancy inputs).
+  // Distinct from the Stamping Details form below — this layer persists
+  // operator-confirmed values on job.confirmedTenancyInputs and is consumed
+  // by downstream draft/readiness logic ahead of raw extraction suggestions.
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewRentStr, setReviewRentStr] = useState("");
+  const [reviewMonthsStr, setReviewMonthsStr] = useState("");
+  const [reviewDateStr, setReviewDateStr] = useState("");
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   // Resolve params (Next.js 15 async params)
   useEffect(() => {
@@ -7029,16 +7052,13 @@ export default function IntakeDetailsPage({
           {!extracting && job.extractionResult && job.extractionResult.fieldsExtracted > 0 && (
             <div className="extraction-suggestions-panel">
               <h3 className="extraction-suggestions-heading">
-                Suggested Details
+                Extracted tenancy details
               </h3>
               <p className="extraction-suggestions-note">
-                {job.extractionResult.ocrAttempted
-                  ? "WeStamp found suggested values from the uploaded PDF scan."
-                  : "WeStamp found suggested values in the uploaded PDF."}
-                {" "}
-                {suggestionsApplied
-                  ? "These suggestions have not been verified. Values have been applied to the form below. You may edit them before saving."
-                  : "These suggestions have not been verified. Please review before applying them."}
+                These values were suggested from the uploaded PDF and have not been verified.
+              </p>
+              <p className="extraction-suggestions-note">
+                Please confirm or correct them before using them for stamping preparation.
               </p>
               <div className="extraction-suggestions-values">
                 {job.extractionResult.suggestedMonthlyRent.value !== null && (
@@ -7100,6 +7120,185 @@ export default function IntakeDetailsPage({
                 <p className="extraction-applied-note">
                   Suggested values applied. Edit them below if needed.
                 </p>
+              )}
+
+              {/* ── Operator confirmation / override layer ─────────── */}
+              {/* Persists job.confirmedTenancyInputs. Distinct from the
+                  Stamping Details form — downstream draft/readiness logic
+                  prefers these confirmed values over raw extraction. */}
+              {job.confirmedTenancyInputs && !reviewOpen && (
+                <div className="extraction-review-summary" style={{ marginTop: 12, padding: 12, border: "1px solid #ccc", borderRadius: 4 }}>
+                  <p style={{ margin: "0 0 6px 0", fontWeight: 600 }}>
+                    Reviewed — {job.confirmedTenancyInputs.reviewStatus === "reviewed_confirmed" ? "confirmed" : "overridden"}
+                    {" "}
+                    <span style={{ fontWeight: 400, color: "#555" }}>
+                      ({new Date(job.confirmedTenancyInputs.confirmedAt).toLocaleString()})
+                    </span>
+                  </p>
+                  <ul style={{ margin: "0 0 6px 0", paddingLeft: 18 }}>
+                    {job.confirmedTenancyInputs.confirmedMonthlyRent !== null && (
+                      <li>Rent: RM {job.confirmedTenancyInputs.confirmedMonthlyRent.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <em style={{ color: "#666" }}>({job.confirmedTenancyInputs.confirmedBySource.monthlyRent})</em></li>
+                    )}
+                    {job.confirmedTenancyInputs.confirmedLeaseMonths !== null && (
+                      <li>Lease: {job.confirmedTenancyInputs.confirmedLeaseMonths} months <em style={{ color: "#666" }}>({job.confirmedTenancyInputs.confirmedBySource.leaseMonths})</em></li>
+                    )}
+                    {job.confirmedTenancyInputs.confirmedAgreementDate !== null && (
+                      <li>Agreement date: {job.confirmedTenancyInputs.confirmedAgreementDate} <em style={{ color: "#666" }}>({job.confirmedTenancyInputs.confirmedBySource.agreementDate})</em></li>
+                    )}
+                  </ul>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => {
+                      const c = job.confirmedTenancyInputs!;
+                      setReviewRentStr(c.confirmedMonthlyRent !== null ? String(c.confirmedMonthlyRent) : "");
+                      setReviewMonthsStr(c.confirmedLeaseMonths !== null ? String(c.confirmedLeaseMonths) : "");
+                      setReviewDateStr(c.confirmedAgreementDate ?? "");
+                      setReviewError(null);
+                      setReviewOpen(true);
+                    }}
+                  >
+                    Edit confirmed values
+                  </button>
+                </div>
+              )}
+
+              {!job.confirmedTenancyInputs && !reviewOpen && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ marginTop: 8 }}
+                  onClick={() => {
+                    const er = job.extractionResult!;
+                    setReviewRentStr(er.suggestedMonthlyRent.value !== null ? String(er.suggestedMonthlyRent.value) : "");
+                    setReviewMonthsStr(er.suggestedLeaseMonths.value !== null ? String(er.suggestedLeaseMonths.value) : "");
+                    setReviewDateStr(er.suggestedAgreementDate.value ?? "");
+                    setReviewError(null);
+                    setReviewOpen(true);
+                  }}
+                >
+                  Review &amp; confirm / override
+                </button>
+              )}
+
+              {reviewOpen && (
+                <div className="extraction-review-form" style={{ marginTop: 12, padding: 12, border: "1px solid #ccc", borderRadius: 4 }}>
+                  <p style={{ margin: "0 0 8px 0", fontWeight: 600 }}>
+                    Confirm or correct extracted tenancy details
+                  </p>
+                  <p style={{ margin: "0 0 12px 0", color: "#555", fontSize: 13 }}>
+                    Leave a field blank if it does not apply. These values are saved as your confirmed review and are not sent to any external system.
+                  </p>
+
+                  <div className="form-group">
+                    <label htmlFor="rv-rent">Monthly rent <span className="label-hint">(RM)</span></label>
+                    <input
+                      id="rv-rent"
+                      type="text"
+                      inputMode="decimal"
+                      value={reviewRentStr}
+                      onChange={(e) => setReviewRentStr(e.target.value)}
+                      disabled={reviewSaving}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="rv-months">Lease duration <span className="label-hint">(months)</span></label>
+                    <input
+                      id="rv-months"
+                      type="text"
+                      inputMode="numeric"
+                      value={reviewMonthsStr}
+                      onChange={(e) => setReviewMonthsStr(e.target.value)}
+                      disabled={reviewSaving}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="rv-date">Agreement date <span className="label-hint">(YYYY-MM-DD)</span></label>
+                    <input
+                      id="rv-date"
+                      type="text"
+                      value={reviewDateStr}
+                      onChange={(e) => setReviewDateStr(e.target.value)}
+                      placeholder="YYYY-MM-DD"
+                      disabled={reviewSaving}
+                    />
+                  </div>
+
+                  {reviewError && (
+                    <p className="field-error" style={{ color: "#a00", margin: "4px 0 8px 0" }}>{reviewError}</p>
+                  )}
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={reviewSaving}
+                      onClick={async () => {
+                        setReviewError(null);
+
+                        // Parse inputs; a blank field maps to null.
+                        const parseNum = (s: string): number | null => {
+                          const t = s.trim();
+                          if (!t) return null;
+                          const n = Number(t.replace(/,/g, ""));
+                          return Number.isFinite(n) ? n : NaN as unknown as number;
+                        };
+                        const rentVal = parseNum(reviewRentStr);
+                        const monthsRaw = reviewMonthsStr.trim();
+                        const monthsVal = monthsRaw === "" ? null : Number(monthsRaw);
+                        const dateVal = reviewDateStr.trim() === "" ? null : reviewDateStr.trim();
+
+                        if (rentVal !== null && !Number.isFinite(rentVal)) {
+                          setReviewError("Monthly rent must be a number.");
+                          return;
+                        }
+                        if (monthsVal !== null && (!Number.isFinite(monthsVal) || !Number.isInteger(monthsVal))) {
+                          setReviewError("Lease duration must be a whole number of months.");
+                          return;
+                        }
+                        if (rentVal === null && monthsVal === null && dateVal === null) {
+                          setReviewError("Enter at least one value to confirm.");
+                          return;
+                        }
+
+                        setReviewSaving(true);
+                        try {
+                          const res = await fetch(`/api/intake/${job.id}/confirm-tenancy`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              confirmedMonthlyRent: rentVal,
+                              confirmedLeaseMonths: monthsVal,
+                              confirmedAgreementDate: dateVal,
+                            }),
+                          });
+                          if (!res.ok) {
+                            const body = await res.json().catch(() => ({}));
+                            setReviewError(body.error ?? `Save failed (HTTP ${res.status}).`);
+                            return;
+                          }
+                          const updated = await res.json();
+                          setJob(updated as StampingJob);
+                          setReviewOpen(false);
+                        } catch (err) {
+                          setReviewError(err instanceof Error ? err.message : "Save failed.");
+                        } finally {
+                          setReviewSaving(false);
+                        }
+                      }}
+                    >
+                      {reviewSaving ? "Saving…" : "Save confirmed values"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={reviewSaving}
+                      onClick={() => { setReviewOpen(false); setReviewError(null); }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
