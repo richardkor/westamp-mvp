@@ -19,3 +19,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.env
+.env.local
+.env.*
+!.env.example
