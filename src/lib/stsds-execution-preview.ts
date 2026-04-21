@@ -180,14 +180,23 @@ export function compileExecutionPreview(
       unresolvedSteps.push("Instrument date not yet set");
     }
     unresolvedSteps.push(
-      "Hantar gates not yet proven for this lane"
+      "Portal Document Name (pds_suratcara) not captured in current portal draft — proven Hantar first-error gate will block until selected"
     );
     unresolvedSteps.push(
-      "Additional portal checks may still apply"
+      "Bahagian A party entry (par_id) required per Hantar :invalid evidence — identity/TIN flow still frozen"
+    );
+    unresolvedSteps.push(
+      "Bahagian B harta details (address, postcode, city, state, type, floor, mp, cat, perabot, lot, mukim, daerah, luas) required per Hantar :invalid evidence"
+    );
+    unresolvedSteps.push(
+      "Lampiran upload requirement conditions not yet determined (0 file inputs on default view)"
+    );
+    unresolvedSteps.push(
+      "Perakuan (pds_akuan) role as a Hantar gate not yet proven — Hantar blocked earlier by pds_suratcara"
     );
 
     notes.push(
-      "Limited preview — Hantar gates not yet independently proven for sewa_pajakan."
+      "Preview informed by live sewa_pajakan gate discovery (2026-04-22). MA→P5 advance proven; Hantar first-error gate proven: 'Sila pilih Nama Surat Cara' (pds_suratcara)."
     );
   }
 

@@ -48,32 +48,51 @@ describe("PortalLaneKnowledgeProfile", () => {
   });
 
   describe("sewa_pajakan", () => {
+    // Apr-22 live gate-discovery probe flipped several unknowns to
+    // "proven" based on observed behavior on /formv2/p5/. The facts
+    // that remain "unknown" do so because the probe was blocked by
+    // the Hantar pds_suratcara gate before those gates could be
+    // exercised.
     const profile = getLaneKnowledgeProfile("sewa_pajakan");
 
-    it("marks lane automation as NOT proven", () => {
-      expect(profile.laneAutomationProven).toBe(false);
+    it("marks lane automation as proven (MA→P5 + tabs + Hantar first gate)", () => {
+      expect(profile.laneAutomationProven).toBe(true);
     });
 
-    it("marks declaration gate as unknown", () => {
+    it("marks declaration gate as still unknown (Hantar blocked earlier)", () => {
       expect(profile.declarationGateProven).toBe("unknown");
     });
 
-    it("marks Bahagian A gate as unknown", () => {
-      expect(profile.bahagianAGateProven).toBe("unknown");
+    it("marks Bahagian A gate as proven (par_id in Hantar :invalid set)", () => {
+      expect(profile.bahagianAGateProven).toBe("proven");
     });
 
-    it("marks Bahagian B accessibility as unknown", () => {
-      expect(profile.bahagianBAccessibleWithEmptyA).toBe("unknown");
+    it("marks Bahagian B accessible-with-empty-A as proven (tab clicked, panel rendered)", () => {
+      expect(profile.bahagianBAccessibleWithEmptyA).toBe("proven");
     });
 
-    it("marks Rumusan accessibility as unknown", () => {
-      expect(profile.rumusanAccessible).toBe("unknown");
+    it("marks Rumusan accessibility as proven (tab clicked, panel rendered)", () => {
+      expect(profile.rumusanAccessible).toBe("proven");
     });
 
-    it("does NOT copy proven facts from penyeteman_am", () => {
+    it("marks Lampiran accessibility as proven (tab clicked, panel rendered)", () => {
+      expect(profile.lampiranAccessible).toBe("proven");
+    });
+
+    it("marks Perakuan accessibility as proven (tab clicked, pds_akuan checkbox visible)", () => {
+      expect(profile.perakuanAccessible).toBe("proven");
+    });
+
+    it("keeps Bahagian B save permissiveness unknown (save not attempted)", () => {
       expect(profile.bahagianBSavePermissive).toBe("unknown");
-      expect(profile.lampiranAccessible).toBe("unknown");
-      expect(profile.perakuanAccessible).toBe("unknown");
+    });
+
+    it("keeps party entry frozen (identity/TIN flow unchanged)", () => {
+      expect(profile.partyEntryFrozen).toBe(true);
+    });
+
+    it("keeps live execution not enabled", () => {
+      expect(profile.liveExecutionEnabled).toBe(false);
     });
   });
 });
@@ -92,7 +111,7 @@ describe("Submission readiness consistency with lane profile", () => {
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
 
-  it("returns assessment_limited for sewa_pajakan", () => {
+  it("returns blocked for sewa_pajakan with no preparation inputs (Bahagian A gate proven)", () => {
     const job: StampingJob = {
       ...baseJob,
       routingSuggestion: {
@@ -107,9 +126,14 @@ describe("Submission readiness consistency with lane profile", () => {
     };
     const result = evaluateSubmissionReadiness(job);
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("assessment_limited");
-    expect(result!.gatesProvenForLane).toBe(false);
-    expect(result!.provenBlockers).toHaveLength(0);
+    expect(result!.status).toBe("blocked");
+    expect(result!.gatesProvenForLane).toBe(true);
+    // Only Bahagian A is a proven blocker for sewa_pajakan today —
+    // declaration gate remains "unknown" because Hantar was blocked
+    // by pds_suratcara before Perakuan could be exercised.
+    expect(result!.provenBlockers).toHaveLength(1);
+    expect(result!.provenBlockers[0].key).toBe("bahagian_a_completeness");
+    expect(result!.provenBlockers[0].satisfied).toBe(false);
   });
 
   it("returns blocked for penyeteman_am with no preparation inputs", () => {

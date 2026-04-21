@@ -61,6 +61,14 @@ export function compileStsdsBrowserInstructions(
 
   // Short-circuit: plan is not yet proven for this lane
   if (job.automationPlan.status === "not_yet_proven") {
+    const advisoryNotes: string[] = lane === "sewa_pajakan"
+      ? [
+          "Browser instruction set not yet compiled for sewa_pajakan. Live gate discovery (2026-04-22) proved MA→P5 advance and Hantar first-error gate (pds_suratcara required), but the end-to-end instruction chain has not been authored.",
+          "Known required P5 fields per Hantar :invalid evidence: pds_suratcara, pds_jenis, pds_alamat_1, pds_poskod, pds_city, pds_harta_state, pds_harta_type, pds_floor, pds_mp, pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim, pds_daerah, pds_luas, par_id. Gate ordering beyond the first error has not been observed.",
+        ]
+      : [
+          "Browser instruction set not yet independently proven for this lane.",
+        ];
     return {
       status: "not_yet_proven",
       lane,
@@ -68,9 +76,7 @@ export function compileStsdsBrowserInstructions(
       instructions: [],
       instructionCount: 0,
       blockedReasons: [],
-      advisoryNotes: [
-        "Browser instruction set not yet independently proven for this lane.",
-      ],
+      advisoryNotes,
     };
   }
 

@@ -64,13 +64,26 @@ export function buildStsdsAutomationPlan(
 function buildUnprovenLanePlan(lane: PortalLane): PortalAutomationPlan {
   const now = new Date().toISOString();
 
+  // For sewa_pajakan the live gate discovery proved enough structure
+  // to name specific blockers, even though no end-to-end step chain
+  // has been authored. Other unproven lanes get an empty plan.
+  const stopReasons = lane === "sewa_pajakan"
+    ? ([
+        "portal_document_name_missing",
+        "bahagian_a_identity_flow_frozen",
+        "lampiran_upload_not_automated",
+        "hantar_automation_not_implemented",
+        "live_execution_not_enabled",
+      ] as PortalStopReason[])
+    : ([] as PortalStopReason[]);
+
   return {
     status: "not_yet_proven",
     lane,
     createdAt: now,
     steps: [],
     validationCheckpoints: [],
-    stopReasons: [],
+    stopReasons,
     stepCount: 0,
     intendedValues: {},
   };

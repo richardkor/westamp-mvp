@@ -27,10 +27,17 @@ export function evaluateSubmissionReadiness(
   const prep = job.preparationInputs;
   const notes: string[] = [...profile.notes];
 
-  const unresolvedChecks: string[] = [
-    "Lampiran (document uploads) may be required — not yet confirmed as a Hantar gate",
-    "Additional server-side validation may exist beyond the proven gates",
-  ];
+  const unresolvedChecks: string[] = lane === "sewa_pajakan"
+    ? [
+        "Lampiran tab renders with 0 file inputs on default view — upload requirement conditions not yet determined",
+        "Hantar gate chain beyond first-error 'Sila pilih Nama Surat Cara' (pds_suratcara) not yet enumerated; 15 additional fields were in :invalid set at that point (pds_jenis, pds_alamat_1, pds_poskod, pds_city, pds_harta_state, pds_harta_type, pds_floor, pds_mp, pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim, pds_daerah, pds_luas, par_id)",
+        "Perakuan (pds_akuan) role as a Hantar gate not yet proven — Hantar blocked earlier by pds_suratcara",
+        "Bahagian B save permissiveness with empty Bahagian A not yet tested for this lane",
+      ]
+    : [
+        "Lampiran (document uploads) may be required — not yet confirmed as a Hantar gate",
+        "Additional server-side validation may exist beyond the proven gates",
+      ];
 
   // ── Lane where gates are NOT proven ───────────────────────────────
   if (!profile.laneAutomationProven) {

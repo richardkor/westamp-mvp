@@ -84,7 +84,51 @@ export function getLaneKnowledgeProfile(
     };
   }
 
-  // sewa_pajakan and any other lane: not yet independently proven
+  if (lane === "sewa_pajakan") {
+    return {
+      lane: "sewa_pajakan",
+      // Gate structure proven via the Apr-22 live discovery probe.
+      // End-to-end Hantar submission is NOT proven (the probe stopped
+      // at the pre_hantar modal); but MA→P5 advance, the seven P5
+      // tabs' accessibility, and the Hantar first-error gate are all
+      // observed directly.
+      laneAutomationProven: true,
+      // Hantar was blocked by pds_suratcara before Perakuan could be
+      // tested — declaration enforcement unobserved.
+      declarationGateProven: "unknown",
+      // par_id appears in the Hantar :invalid set — Bahagian A is
+      // required for submission.
+      bahagianAGateProven: "proven",
+      // Bahagian B tab clicked successfully while Bahagian A was
+      // empty; panel rendered.
+      bahagianBAccessibleWithEmptyA: "proven",
+      // Save of Bahagian B was not attempted in this probe.
+      bahagianBSavePermissive: "unknown",
+      // Rumusan Pengiraan tab clicked successfully; panel rendered.
+      rumusanAccessible: "proven",
+      // Lampiran tab clicked successfully; panel rendered (0 file
+      // inputs surfaced on default view — upload conditions unknown).
+      lampiranAccessible: "proven",
+      // Perakuan tab clicked successfully; pds_akuan checkbox visible.
+      perakuanAccessible: "proven",
+      // Identity/TIN workflow unchanged from penyeteman_am.
+      partyEntryFrozen: true,
+      liveExecutionEnabled: false,
+      notes: [
+        "Hantar gate structure proven via live sewa_pajakan discovery (2026-04-22).",
+        "MA → P5 advance proven: Sewa/Pajakan lane + Pejabat Setem + Tarikh Surat Cara (YYYY-MM-DD input) + Seterusnya.",
+        "P5 exposes 7 tabs: Maklumat Am, Bahagian A, Bahagian B, Bahagian C, Rumusan Pengiraan, Lampiran, Perakuan — all accessible.",
+        "Hantar (id=pre_hantar) first-error gate: bootbox modal 'Gagal — Sila pilih Nama Surat Cara' (pds_suratcara required).",
+        "Hantar invalid-field set at first gate: pds_suratcara, pds_jenis, pds_alamat_1, pds_poskod, pds_city, pds_harta_state, pds_harta_type, pds_floor, pds_mp, pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim, pds_daerah, pds_luas, par_id. Gate chain beyond this first error not yet enumerated.",
+        "Lampiran tab renders with 0 file inputs on default view — upload requirement conditions not yet determined.",
+        "Perakuan tab has pds_akuan checkbox (HTML required=false); its role as a Hantar gate not yet proven because Hantar blocked earlier.",
+        "Hantar validation surfaces as a bootbox modal (not a native confirm) — dismiss-guard remains a secondary safety net.",
+        "Party entry depends on identity/TIN workflow (still frozen).",
+      ],
+    };
+  }
+
+  // any other lane: not yet independently proven
   return {
     lane,
     laneAutomationProven: false,
