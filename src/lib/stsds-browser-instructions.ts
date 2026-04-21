@@ -63,8 +63,10 @@ export function compileStsdsBrowserInstructions(
   if (job.automationPlan.status === "not_yet_proven") {
     const advisoryNotes: string[] = lane === "sewa_pajakan"
       ? [
-          "Browser instruction set not yet compiled for sewa_pajakan. Live gate discovery (2026-04-22) proved MA→P5 advance and Hantar first-error gate (pds_suratcara required), but the end-to-end instruction chain has not been authored.",
-          "Known required P5 fields per Hantar :invalid evidence: pds_suratcara, pds_jenis, pds_alamat_1, pds_poskod, pds_city, pds_harta_state, pds_harta_type, pds_floor, pds_mp, pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim, pds_daerah, pds_luas, par_id. Gate ordering beyond the first error has not been observed.",
+          "Browser instruction set not yet compiled for sewa_pajakan. Live gate-chain walk (2026-04-22) proved MA→P5 advance, Hantar gate 1 (pds_suratcara required), and Hantar gate 2 (pds_alamat_1 — Alamat Harta di Bahagian C — required). The end-to-end instruction chain has not been authored.",
+          "Known required P5 fields per Hantar :invalid evidence: pds_suratcara, pds_jenis, pds_alamat_1, pds_poskod, pds_city, pds_harta_state, pds_harta_type, pds_floor, pds_mp, pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim, pds_daerah, pds_luas, par_id. Observed gate order so far: pds_suratcara → pds_alamat_1; ordering of the remaining 14 fields beyond pds_alamat_1 not yet enumerated.",
+          "Harta detail fields live on Bahagian C (per gate 2 modal 'Sila masukkan Alamat Harta di Bahagian C terlebih dahulu'), not Bahagian B.",
+          "pds_jenis is NOT auto-populated by pds_suratcara — options are static (7 options present pre- and post-pds_suratcara selection).",
         ]
       : [
           "Browser instruction set not yet independently proven for this lane.",

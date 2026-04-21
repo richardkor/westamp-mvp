@@ -180,23 +180,29 @@ export function compileExecutionPreview(
       unresolvedSteps.push("Instrument date not yet set");
     }
     unresolvedSteps.push(
-      "Portal Document Name (pds_suratcara) not captured in current portal draft — proven Hantar first-error gate will block until selected"
+      "Portal Document Name (pds_suratcara) not captured in current portal draft — proven Hantar gate 1 will block until selected. Setting it alone does not cascade pds_jenis (options are static)."
+    );
+    unresolvedSteps.push(
+      "Bahagian C property address (pds_alamat_1) required per Hantar gate 2 evidence — surfaces as 'Sila masukkan Alamat Harta di Bahagian C terlebih dahulu' once pds_suratcara is resolved"
+    );
+    unresolvedSteps.push(
+      "Bahagian C harta details (pds_alamat_1, pds_poskod, pds_city, pds_harta_state, pds_harta_type, pds_floor, pds_mp, pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim, pds_daerah, pds_luas) required per Hantar :invalid evidence. Gate 2 modal text names Bahagian C, not Bahagian B."
+    );
+    unresolvedSteps.push(
+      "Jenis Surat Cara (pds_jenis) required per :invalid evidence — not auto-populated by pds_suratcara selection"
     );
     unresolvedSteps.push(
       "Bahagian A party entry (par_id) required per Hantar :invalid evidence — identity/TIN flow still frozen"
     );
     unresolvedSteps.push(
-      "Bahagian B harta details (address, postcode, city, state, type, floor, mp, cat, perabot, lot, mukim, daerah, luas) required per Hantar :invalid evidence"
-    );
-    unresolvedSteps.push(
       "Lampiran upload requirement conditions not yet determined (0 file inputs on default view)"
     );
     unresolvedSteps.push(
-      "Perakuan (pds_akuan) role as a Hantar gate not yet proven — Hantar blocked earlier by pds_suratcara"
+      "Perakuan (pds_akuan) role as a Hantar gate not yet proven — Hantar still blocks on earlier gates"
     );
 
     notes.push(
-      "Preview informed by live sewa_pajakan gate discovery (2026-04-22). MA→P5 advance proven; Hantar first-error gate proven: 'Sila pilih Nama Surat Cara' (pds_suratcara)."
+      "Preview informed by live sewa_pajakan gate-chain walk (2026-04-22). MA→P5 advance proven; Hantar gate 1 proven: 'Sila pilih Nama Surat Cara' (pds_suratcara). Hantar gate 2 proven: 'Sila masukkan Alamat Harta di Bahagian C terlebih dahulu' (pds_alamat_1)."
     );
   }
 

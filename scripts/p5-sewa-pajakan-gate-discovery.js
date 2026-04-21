@@ -919,6 +919,264 @@ async function run() {
       }
     }
 
+    // ── Phase 7b: Gate-chain walk — resolve pds_suratcara=1101, re-probe ──
+    //
+    // Goal (narrowly scoped): take the proven first Hantar gate
+    // ("Sila pilih Nama Surat Cara"), resolve only that one gate, and
+    // surface the NEXT first-error gate. No deeper speculative filling.
+    //
+    // Hard-stop discipline preserved:
+    //   - dismiss-guard still dismisses any native confirm/prompt
+    //   - if Hantar response stops looking like a validation modal,
+    //     we do NOT click further — we capture and stop
+    //   - we change exactly one field (pds_suratcara); the remaining
+    //     :invalid set (15 fields) guarantees Hantar cannot really submit
+    console.log("\nPhase 7b: Resolve pds_suratcara=1101, re-trigger Hantar (gate 2)");
+    if (!onP5) {
+      console.log(`  UNREACHABLE: gate-chain walk requires /formv2/p5/, at ${page.url()}.`);
+      writeMarker("P5_SEWA_GATE_CHAIN_UNREACHABLE", `reason=not_on_p5\nactualUrl=${page.url()}`);
+    } else {
+      // Step 1: Close any bootbox/modal left open from Phase 7.
+      const modalClosed = await page.evaluate(() => {
+        const out = { closedCount: 0, clicks: [] };
+        const modals = document.querySelectorAll(".modal.show, .modal.in, .bootbox");
+        for (const m of modals) {
+          const buttons = m.querySelectorAll("button, input[type='button'], a.btn");
+          for (const b of buttons) {
+            const txt = (b.textContent || b.value || "").trim();
+            if (/^(ok|tutup|close|batal|cancel)$/i.test(txt)) {
+              b.click();
+              out.clicks.push(txt);
+              out.closedCount++;
+              break;
+            }
+          }
+        }
+        return out;
+      });
+      console.log(`  dismiss-pre-state modal: ${JSON.stringify(modalClosed)}`);
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.waitForTimeout(1500);
+
+      // Step 1b: Activate the Maklumat Am tab before interacting with
+      // pds_suratcara. Phase 6's tab walk leaves the active pane set to
+      // whatever the last walk-step was (Rumusan Pengiraan). pds_suratcara
+      // lives on the Maklumat Am pane — selectOption will timeout on a
+      // hidden select unless we switch back first.
+      const maTabActivation = await page.evaluate(() => {
+        const anchors = document.querySelectorAll(".nav-tabs a, .nav-tabs li a, [role='tab']");
+        for (const a of anchors) {
+          const txt = (a.textContent || "").trim();
+          if (/^maklumat\s*am$/i.test(txt)) {
+            const r = a.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              a.click();
+              return { ok: true, text: txt, href: a.getAttribute("href") || "" };
+            }
+            return { ok: false, reason: "not_visible", text: txt };
+          }
+        }
+        return { ok: false, reason: "not_found" };
+      });
+      console.log(`  activate Maklumat Am tab: ${JSON.stringify(maTabActivation)}`);
+      await page.waitForTimeout(1500);
+
+      // Step 2: Capture pre-select state (pds_suratcara and pds_jenis cascade
+      // target).
+      const preSelect = await page.evaluate(() => {
+        const sc = document.getElementById("pds_suratcara");
+        const jenis = document.getElementById("pds_jenis");
+        const scOpts = sc ? Array.from(sc.options).map((o) => ({ v: o.value, t: (o.text || "").substring(0, 60) })) : [];
+        const jenisOpts = jenis ? Array.from(jenis.options).map((o) => ({ v: o.value, t: (o.text || "").substring(0, 60) })) : [];
+        const invalidsAll = [];
+        document.querySelectorAll("input:invalid, select:invalid, textarea:invalid").forEach((el) => {
+          const r = el.getBoundingClientRect();
+          invalidsAll.push({ tag: el.tagName.toLowerCase(), name: el.name || "", id: el.id || "", visible: r.width > 0 && r.height > 0 });
+        });
+        return {
+          suratcaraFound: !!sc,
+          suratcaraVal: sc?.value ?? "",
+          suratcaraSelectedText: sc?.options[sc.selectedIndex]?.text ?? "",
+          suratcaraOptionCount: sc?.options?.length ?? 0,
+          suratcaraOptions: scOpts,
+          jenisFound: !!jenis,
+          jenisVal: jenis?.value ?? "",
+          jenisOptionCount: jenis?.options?.length ?? 0,
+          jenisOptions: jenisOpts,
+          invalidCount: invalidsAll.length,
+          invalids: invalidsAll,
+        };
+      });
+      console.log(`  pre-select pds_suratcara found=${preSelect.suratcaraFound} val="${preSelect.suratcaraVal}" opts=${preSelect.suratcaraOptionCount}`);
+      console.log(`  pre-select pds_jenis found=${preSelect.jenisFound} val="${preSelect.jenisVal}" opts=${preSelect.jenisOptionCount}`);
+      console.log(`  pre-select :invalid count=${preSelect.invalidCount}`);
+
+      // Step 3: Select pds_suratcara = 1101 (Perjanjian Sewa) via native Playwright.
+      let selectErr = null;
+      if (preSelect.suratcaraFound) {
+        try {
+          await page.locator('#pds_suratcara').selectOption({ value: "1101" });
+          console.log(`  pds_suratcara.selectOption("1101") OK`);
+        } catch (e) {
+          selectErr = e.message;
+          console.log(`  pds_suratcara.selectOption ERR: ${e.message}`);
+        }
+      } else {
+        selectErr = "pds_suratcara element not found";
+        console.log(`  ABORT step 3: ${selectErr}`);
+      }
+      // Allow cascade time to settle.
+      await page.waitForTimeout(3000);
+
+      // Step 4: Capture cascade — jenis options, invalid-set diff, any new
+      // visible field groups.
+      const postSelect = await page.evaluate(() => {
+        const sc = document.getElementById("pds_suratcara");
+        const jenis = document.getElementById("pds_jenis");
+        const jenisOpts = jenis ? Array.from(jenis.options).map((o) => ({ v: o.value, t: (o.text || "").substring(0, 60) })) : [];
+        const invalidsAll = [];
+        document.querySelectorAll("input:invalid, select:invalid, textarea:invalid").forEach((el) => {
+          const r = el.getBoundingClientRect();
+          invalidsAll.push({ tag: el.tagName.toLowerCase(), name: el.name || "", id: el.id || "", visible: r.width > 0 && r.height > 0 });
+        });
+        return {
+          suratcaraVal: sc?.value ?? "",
+          suratcaraText: sc?.options[sc.selectedIndex]?.text ?? "",
+          jenisVal: jenis?.value ?? "",
+          jenisOptionCount: jenis?.options?.length ?? 0,
+          jenisOptions: jenisOpts,
+          invalidCount: invalidsAll.length,
+          invalids: invalidsAll,
+        };
+      });
+      console.log(`  post-select pds_suratcara val="${postSelect.suratcaraVal}" text="${postSelect.suratcaraText}"`);
+      console.log(`  post-select pds_jenis val="${postSelect.jenisVal}" opts=${postSelect.jenisOptionCount}`);
+      for (const o of postSelect.jenisOptions.slice(0, 15)) console.log(`    jenis: ${o.v}="${o.t}"`);
+      console.log(`  post-select :invalid count=${postSelect.invalidCount}`);
+
+      const preInvalidKeys = new Set(preSelect.invalids.map((i) => i.name || i.id));
+      const postInvalidKeys = new Set(postSelect.invalids.map((i) => i.name || i.id));
+      const invalidsRemovedByCascade = [...preInvalidKeys].filter((k) => !postInvalidKeys.has(k));
+      const invalidsAddedByCascade = [...postInvalidKeys].filter((k) => !preInvalidKeys.has(k));
+      console.log(`  cascade removed from :invalid: ${invalidsRemovedByCascade.join(", ") || "(none)"}`);
+      console.log(`  cascade added to :invalid:   ${invalidsAddedByCascade.join(", ") || "(none)"}`);
+
+      writeMarker("P5_SEWA_SURATCARA_CASCADE",
+        `selectErr=${selectErr ?? "(none)"}\n` +
+        `pre_suratcaraVal="${preSelect.suratcaraVal}"  post_suratcaraVal="${postSelect.suratcaraVal}"  post_suratcaraText="${postSelect.suratcaraText}"\n` +
+        `pre_jenis_optCount=${preSelect.jenisOptionCount}  post_jenis_optCount=${postSelect.jenisOptionCount}\n` +
+        `pre_jenis_val="${preSelect.jenisVal}"  post_jenis_val="${postSelect.jenisVal}"\n` +
+        `post_jenis_options=\n${postSelect.jenisOptions.map((o) => `  ${o.v}="${o.t}"`).join("\n") || "  (none)"}\n` +
+        `pre_invalidCount=${preSelect.invalidCount}  post_invalidCount=${postSelect.invalidCount}\n` +
+        `invalids_pre=${[...preInvalidKeys].join(", ") || "(none)"}\n` +
+        `invalids_post=${[...postInvalidKeys].join(", ") || "(none)"}\n` +
+        `invalids_removed_by_cascade=${invalidsRemovedByCascade.join(", ") || "(none)"}\n` +
+        `invalids_added_by_cascade=${invalidsAddedByCascade.join(", ") || "(none)"}`);
+      await shot(page, "p5_sewa_07b_after_suratcara");
+
+      // Step 5: Re-trigger Hantar (dismiss-guard still active).
+      console.log("\n  Re-clicking Hantar to surface next gate...");
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(1000);
+
+      const hantar2Pre = await page.evaluate(() => {
+        const btns = [];
+        document.querySelectorAll("button, input[type='submit'], input[type='button'], a.btn").forEach((el) => {
+          const r = el.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) return;
+          const txt = (el.textContent || el.value || "").trim();
+          if (!/^hantar$/i.test(txt) && !/\bhantar\b/i.test(txt)) return;
+          btns.push({
+            text: txt.substring(0, 40),
+            id: el.id || "",
+            tag: el.tagName.toLowerCase(),
+            type: el.type || "",
+            disabled: el.disabled || el.getAttribute("aria-disabled") === "true",
+            bbox: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+          });
+        });
+        const active = document.querySelector(".nav-tabs li.active a")?.textContent?.trim() || "";
+        return { buttons: btns, url: window.location.href, activeTab: active };
+      });
+      console.log(`  gate-2 pre state: activeTab="${hantar2Pre.activeTab}" url=${hantar2Pre.url} candidates=${hantar2Pre.buttons.length}`);
+      for (const b of hantar2Pre.buttons) {
+        console.log(`    "${b.text}" id="${b.id}" dis=${b.disabled}`);
+      }
+
+      const hantar2Btn = hantar2Pre.buttons.find((b) => /^hantar$/i.test(b.text) && !b.disabled)
+                      || hantar2Pre.buttons.find((b) => !b.disabled);
+
+      if (!hantar2Btn) {
+        console.log("  No enabled Hantar button on gate-2 re-probe — stop.");
+        writeMarker("P5_SEWA_HANTAR_GATE2_BTN_NOT_FOUND",
+          `url=${hantar2Pre.url}\nactiveTab="${hantar2Pre.activeTab}"\n` +
+          `candidates=${hantar2Pre.buttons.map((b) => `"${b.text}" id=${b.id} dis=${b.disabled}`).join("; ") || "(none)"}`);
+      } else {
+        const preClickDialogs2 = dialogLog.length;
+        const preHantar2Url = page.url();
+
+        try {
+          if (hantar2Btn.id && /^[A-Za-z][\w-]*$/.test(hantar2Btn.id)) {
+            await page.locator(`#${hantar2Btn.id}`).click({ timeout: 8000 });
+          } else {
+            await page.mouse.click(
+              hantar2Btn.bbox.x + hantar2Btn.bbox.w / 2,
+              hantar2Btn.bbox.y + hantar2Btn.bbox.h / 2,
+            );
+          }
+          console.log(`  gate-2 Hantar clicked: "${hantar2Btn.text}" id="${hantar2Btn.id}"`);
+        } catch (e) {
+          console.log(`    click error: ${e.message}`);
+        }
+        await page.waitForTimeout(8000);
+
+        const postHantar2Url = page.url();
+        const postHantar2Active = await page.evaluate(() =>
+          document.querySelector(".nav-tabs li.active a")?.textContent?.trim() || "");
+        const postHantar2Msgs = await captureAlertsAndModals(page);
+        const postHantar2Buttons = await captureActionButtons(page);
+        await shot(page, "p5_sewa_07c_post_hantar_gate2");
+        const newDialogs2 = dialogLog.slice(preClickDialogs2);
+
+        // Post-hoc safety assertion: URL must not have changed to a
+        // /sijil/ or /pembayaran/ path (indicates real submission). If
+        // that ever happens, mark loudly and stop.
+        const urlIsSubmission = /\/(sijil|pembayaran|payment|certificate|acknowledg)/i.test(postHantar2Url);
+        if (urlIsSubmission) {
+          console.log(`  !!! UNEXPECTED URL SHIFT: ${postHantar2Url} — marking and stopping gate-chain.`);
+          writeMarker("P5_SEWA_HANTAR_GATE2_UNEXPECTED_URL",
+            `preUrl=${preHantar2Url}\npostUrl=${postHantar2Url}\nThis may indicate a real submission path — HALT further probing.`);
+        }
+
+        console.log(`  post-gate-2 URL: ${postHantar2Url} (changed=${postHantar2Url !== preHantar2Url})`);
+        console.log(`  post-gate-2 activeTab: "${postHantar2Active}"`);
+        console.log(`  dialogs in gate-2 click: ${newDialogs2.length}`);
+        for (const d of newDialogs2) console.log(`    ${d.type} ${d.decision}: "${d.message.substring(0, 200)}"`);
+        console.log(`  modals: ${postHantar2Msgs.modals.length}`);
+        for (const m of postHantar2Msgs.modals) console.log(`    title="${m.title}" body="${m.body.substring(0, 200)}" buttons=[${m.buttons.join(",")}]`);
+        console.log(`  alerts: ${postHantar2Msgs.alerts.length}`);
+        for (const a of postHantar2Msgs.alerts) console.log(`    "${a.text.substring(0, 200)}" class="${a.className.substring(0, 30)}"`);
+        console.log(`  invalids: ${postHantar2Msgs.invalids.length}`);
+        for (const f of postHantar2Msgs.invalids) console.log(`    ${f.tag} ${f.name || f.id} vis=${f.visible}`);
+
+        writeMarker("P5_SEWA_HANTAR_GATE2_BOUNDARY",
+          `preHantar2Url=${preHantar2Url}\npostHantar2Url=${postHantar2Url}\nurlChanged=${postHantar2Url !== preHantar2Url}\n` +
+          `urlSuspectedSubmission=${urlIsSubmission}\n` +
+          `preActiveTab="${hantar2Pre.activeTab}"\npostActiveTab="${postHantar2Active}"\n` +
+          `dialogsCaptured=${newDialogs2.length}\n` +
+          `${newDialogs2.map((d) => `  ${d.type} ${d.decision}: "${d.message.substring(0, 300)}"`).join("\n")}\n` +
+          `modals=${postHantar2Msgs.modals.length}\n` +
+          `${postHantar2Msgs.modals.map((m) => `  title="${m.title}" body="${m.body.substring(0, 300)}" buttons=[${m.buttons.join(",")}]`).join("\n")}\n` +
+          `alerts=${postHantar2Msgs.alerts.length}\n` +
+          `${postHantar2Msgs.alerts.map((a) => `  "${a.text.substring(0, 300)}" class="${a.className.substring(0, 40)}"`).join("\n")}\n` +
+          `invalidFields(${postHantar2Msgs.invalids.length})=${postHantar2Msgs.invalids.map((f) => f.name || f.id).join(", ")}\n` +
+          `postButtons=${postHantar2Buttons.map((b) => `"${b.text}" dis=${b.disabled}`).join("; ")}`);
+
+        await page.keyboard.press("Escape").catch(() => {});
+        await page.waitForTimeout(500);
+      }
+    }
+
     // ── Phase 8: Final summary ────────────────────────────────────
     console.log("\nPhase 8: Final summary");
     writeMarker("P5_SEWA_GATE_SUMMARY",

@@ -30,9 +30,10 @@ export function evaluateSubmissionReadiness(
   const unresolvedChecks: string[] = lane === "sewa_pajakan"
     ? [
         "Lampiran tab renders with 0 file inputs on default view — upload requirement conditions not yet determined",
-        "Hantar gate chain beyond first-error 'Sila pilih Nama Surat Cara' (pds_suratcara) not yet enumerated; 15 additional fields were in :invalid set at that point (pds_jenis, pds_alamat_1, pds_poskod, pds_city, pds_harta_state, pds_harta_type, pds_floor, pds_mp, pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim, pds_daerah, pds_luas, par_id)",
-        "Perakuan (pds_akuan) role as a Hantar gate not yet proven — Hantar blocked earlier by pds_suratcara",
+        "Hantar gate chain walked 2 levels deep (2026-04-22): gate 1 pds_suratcara (Nama Surat Cara) proven; gate 2 pds_alamat_1 (Alamat Harta di Bahagian C) proven. 14 additional :invalid fields remained at gate 2 (pds_jenis, pds_poskod, pds_city, pds_harta_state, pds_harta_type, pds_floor, pds_mp, pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim, pds_daerah, pds_luas, par_id) — their first-error ordering beyond pds_alamat_1 not yet enumerated",
+        "Perakuan (pds_akuan) role as a Hantar gate not yet proven — Hantar still blocks on earlier gates",
         "Bahagian B save permissiveness with empty Bahagian A not yet tested for this lane",
+        "pds_jenis options are static (not cascade-populated from pds_suratcara) — operator must explicitly choose Jenis Surat Cara",
       ]
     : [
         "Lampiran (document uploads) may be required — not yet confirmed as a Hantar gate",
