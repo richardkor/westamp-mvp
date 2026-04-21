@@ -30,6 +30,7 @@ import {
   PortalStateFieldValue,
 } from "./stsds-types";
 import { PORTAL_FIELD_KEYS } from "./stsds-portal-schema";
+import { resolveConfirmedTenancyPreparationValues } from "./tenancy-preparation-resolver";
 
 // ─── Assertion Registry ─────────────────────────────────────────────
 
@@ -201,10 +202,15 @@ function resolveExpectedValue(
     }
 
     case PORTAL_FIELD_KEYS.INSTRUMENT_DATE: {
-      const am = lane === "sewa_pajakan"
-        ? draft?.maklumatAmSewaPajakan
-        : draft?.maklumatAmPenyetemanAm;
-      return am?.instrumentDate ?? null;
+      // For sewa_pajakan, the canonical resolver is authoritative — it
+      // cannot drift from the portal draft because the draft is also
+      // built from the resolver. For penyeteman_am, read from the draft
+      // (no tenancy-review layer applies to that lane in this pass).
+      if (lane === "sewa_pajakan") {
+        const resolved = resolveConfirmedTenancyPreparationValues(job);
+        return resolved?.instrumentDate ?? null;
+      }
+      return draft?.maklumatAmPenyetemanAm?.instrumentDate ?? null;
     }
 
     case PORTAL_FIELD_KEYS.DUTY_PAYABLE:

@@ -16,6 +16,10 @@ import {
   PortalExecutionPreviewStatus,
 } from "./stsds-types";
 import { getLaneKnowledgeProfile } from "./stsds-lane-knowledge";
+import {
+  resolveConfirmedTenancyPreparationValues,
+  ResolvedTenancyFieldSource,
+} from "./tenancy-preparation-resolver";
 
 export function compileExecutionPreview(
   job: StampingJob
@@ -128,6 +132,12 @@ export function compileExecutionPreview(
   } else if (lane === "sewa_pajakan") {
     const ma = draft?.maklumatAmSewaPajakan;
 
+    // Pull tenancy preparation values through the single canonical
+    // resolver so this preview cannot drift from the portal draft or
+    // other sewa_pajakan advisory layers. Per-field provenance is
+    // surfaced truthfully via `source`.
+    const resolved = resolveConfirmedTenancyPreparationValues(job);
+
     // ── Intended inputs ─────────────────────────────────────────
     intendedInputs.push({
       field: "Stamp Office (Pejabat Setem Negeri)",
@@ -136,21 +146,21 @@ export function compileExecutionPreview(
     });
     intendedInputs.push({
       field: "Instrument Date (Tarikh Surat Cara)",
-      value: ma?.instrumentDate ?? null,
-      source: ma?.instrumentDate ? "user_entered" : "not_set",
+      value: resolved?.instrumentDate ?? null,
+      source: tenancySourceLabel(resolved?.sources.instrumentDate ?? "none"),
     });
-    if (ma?.monthlyRent != null) {
+    if (resolved?.monthlyRent != null) {
       intendedInputs.push({
         field: "Monthly Rent (RM)",
-        value: ma.monthlyRent,
-        source: "stamping_details",
+        value: resolved.monthlyRent,
+        source: tenancySourceLabel(resolved.sources.monthlyRent),
       });
     }
-    if (ma?.leaseMonths != null) {
+    if (resolved?.leaseMonths != null) {
       intendedInputs.push({
         field: "Lease Duration (months)",
-        value: ma.leaseMonths,
-        source: "stamping_details",
+        value: resolved.leaseMonths,
+        source: tenancySourceLabel(resolved.sources.leaseMonths),
       });
     }
 
@@ -166,7 +176,7 @@ export function compileExecutionPreview(
     if (!ma?.stampOffice) {
       unresolvedSteps.push("Stamp office not yet set");
     }
-    if (!ma?.instrumentDate) {
+    if (!resolved?.instrumentDate) {
       unresolvedSteps.push("Instrument date not yet set");
     }
     unresolvedSteps.push(
@@ -208,4 +218,24 @@ export function compileExecutionPreview(
     unresolvedSteps,
     notes,
   };
+}
+
+/**
+ * Map a resolver provenance tag onto the wire-friendly source label used
+ * by PortalExecutionPreviewIntendedInput.source. Kept here (rather than
+ * in the resolver) because the resolver is advisory-neutral — these
+ * labels are a preview-layer concern.
+ */
+function tenancySourceLabel(source: ResolvedTenancyFieldSource): string {
+  switch (source) {
+    case "stamping_details":
+      return "stamping_details";
+    case "confirmed_input":
+      return "confirmed_tenancy_input";
+    case "extraction_suggestion":
+      return "extraction_suggestion";
+    case "none":
+    default:
+      return "not_set";
+  }
 }

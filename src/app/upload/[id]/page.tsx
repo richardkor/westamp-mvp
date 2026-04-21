@@ -120,6 +120,15 @@ interface StampingJob {
       agreementDate: "extraction_confirmed" | "operator_override" | "operator_entered" | null;
     };
   };
+  tenancyPreparationReadiness?: {
+    markedReadyAt: string;
+    source: "operator_marked";
+    basis: {
+      hasExtraction: boolean;
+      hasConfirmedInputs: boolean;
+      reviewStatus: "reviewed_confirmed" | "reviewed_overridden";
+    };
+  };
   routingSuggestion?: {
     suggestedLane: "sewa_pajakan" | "penyeteman_am";
     suggestedPortalDocumentName: string | null;
@@ -1081,6 +1090,12 @@ export default function IntakeDetailsPage({
   const [reviewDateStr, setReviewDateStr] = useState("");
   const [reviewSaving, setReviewSaving] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+
+  // State for the "Mark preparation review complete" action.
+  // Drives the POST to /api/intake/[id]/mark-tenancy-preparation-ready.
+  // Does NOT submit anything externally — internal WeStamp marker only.
+  const [markReadySaving, setMarkReadySaving] = useState(false);
+  const [markReadyError, setMarkReadyError] = useState<string | null>(null);
 
   // Resolve params (Next.js 15 async params)
   useEffect(() => {
@@ -7162,6 +7177,214 @@ export default function IntakeDetailsPage({
                   </button>
                 </div>
               )}
+
+              {/* ── Canonical internal basis summary ─────────────────── */}
+              {/* Mirrors src/lib/tenancy-preparation-resolver.ts precedence.
+                  Shows the exact tenancy preparation values the internal
+                  sewa_pajakan advisory stack is currently using. */}
+              {job.confirmedTenancyInputs && !reviewOpen && (() => {
+                const c = job.confirmedTenancyInputs!;
+                const sd = job.stampingDetails;
+                const sdRentValid =
+                  !!sd && typeof sd.monthlyRent === "number" && Number.isFinite(sd.monthlyRent);
+                const sdMonthsValid =
+                  !!sd && typeof sd.leaseMonths === "number" && Number.isFinite(sd.leaseMonths);
+
+                const resolvedRent = sdRentValid
+                  ? sd!.monthlyRent
+                  : c.confirmedMonthlyRent;
+                const rentSource: "stamping_details" | "confirmed_input" | "none" = sdRentValid
+                  ? "stamping_details"
+                  : c.confirmedMonthlyRent !== null
+                    ? "confirmed_input"
+                    : "none";
+
+                const resolvedMonths = sdMonthsValid
+                  ? sd!.leaseMonths
+                  : c.confirmedLeaseMonths;
+                const monthsSource: "stamping_details" | "confirmed_input" | "none" = sdMonthsValid
+                  ? "stamping_details"
+                  : c.confirmedLeaseMonths !== null
+                    ? "confirmed_input"
+                    : "none";
+
+                const resolvedDate = c.confirmedAgreementDate
+                  ?? job.extractionResult?.suggestedAgreementDate.value
+                  ?? null;
+                const dateSource: "confirmed_input" | "extraction_suggestion" | "none" =
+                  c.confirmedAgreementDate
+                    ? "confirmed_input"
+                    : job.extractionResult?.suggestedAgreementDate.value
+                      ? "extraction_suggestion"
+                      : "none";
+
+                const rentOverridden = rentSource === "stamping_details" && c.confirmedMonthlyRent !== null;
+                const monthsOverridden = monthsSource === "stamping_details" && c.confirmedLeaseMonths !== null;
+
+                return (
+                  <div
+                    className="tenancy-prep-basis-summary"
+                    style={{ marginTop: 12, padding: 12, border: "1px solid #c9d6e8", borderRadius: 4, background: "#f4f8fd" }}
+                  >
+                    <p style={{ margin: "0 0 6px 0", fontWeight: 600 }}>
+                      Confirmed tenancy preparation values
+                    </p>
+                    <p style={{ margin: "0 0 8px 0", color: "#444", fontSize: 13 }}>
+                      These confirmed values are the current internal basis for tenancy stamping preparation.
+                    </p>
+                    <ul style={{ margin: "0 0 6px 0", paddingLeft: 18 }}>
+                      <li>
+                        Monthly rent:{" "}
+                        {resolvedRent !== null
+                          ? `RM ${resolvedRent.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : "—"}{" "}
+                        <em style={{ color: "#666" }}>({rentSource})</em>
+                        {rentOverridden && (
+                          <span style={{ color: "#a05a00", marginLeft: 6 }}>
+                            — Stamping Details is currently overriding the confirmed value
+                            (confirmed was RM {c.confirmedMonthlyRent!.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                          </span>
+                        )}
+                      </li>
+                      <li>
+                        Lease months:{" "}
+                        {resolvedMonths !== null ? `${resolvedMonths} months` : "—"}{" "}
+                        <em style={{ color: "#666" }}>({monthsSource})</em>
+                        {monthsOverridden && (
+                          <span style={{ color: "#a05a00", marginLeft: 6 }}>
+                            — Stamping Details is currently overriding the confirmed value
+                            (confirmed was {c.confirmedLeaseMonths} months)
+                          </span>
+                        )}
+                      </li>
+                      <li>
+                        Agreement date:{" "}
+                        {resolvedDate ?? "—"}{" "}
+                        <em style={{ color: "#666" }}>({dateSource})</em>
+                      </li>
+                      <li>
+                        Review status:{" "}
+                        {c.reviewStatus === "reviewed_confirmed" ? "reviewed — confirmed" : "reviewed — overridden"}
+                      </li>
+                      <li>
+                        Confirmed at:{" "}
+                        {new Date(c.confirmedAt).toLocaleString()}
+                      </li>
+                    </ul>
+                    <p style={{ margin: "6px 0 0 0", color: "#666", fontSize: 12 }}>
+                      Internal preparation only. This does not imply submission to any external system or live portal validation.
+                    </p>
+                  </div>
+                );
+              })()}
+
+              {/* ── Tenancy Preparation Status panel ─────────────────── */}
+              {/* Truthful internal rollup: extraction present? confirmation
+                  completed? internally marked ready? Plus an operator-only
+                  mark-ready action. No external system is contacted. */}
+              {(() => {
+                const hasExtraction = !!job.extractionResult;
+                const hasConfirmation = !!job.confirmedTenancyInputs;
+                const readiness = job.tenancyPreparationReadiness;
+                const isMarkedReady = !!readiness;
+
+                let statusLabel: string;
+                if (isMarkedReady) {
+                  statusLabel = "Preparation review complete";
+                } else if (hasConfirmation) {
+                  statusLabel = "Awaiting preparation review mark";
+                } else if (hasExtraction) {
+                  statusLabel = "Awaiting confirmation of extracted values";
+                } else {
+                  statusLabel = "Awaiting extraction";
+                }
+
+                return (
+                  <div
+                    className="tenancy-preparation-status-panel"
+                    style={{ marginTop: 16, padding: 12, border: "1px solid #ccd6e0", borderRadius: 4, background: "#fafcfe" }}
+                  >
+                    <p style={{ margin: "0 0 6px 0", fontWeight: 600 }}>
+                      Tenancy preparation status (internal)
+                    </p>
+                    <p style={{ margin: "0 0 8px 0", color: "#333" }}>
+                      {statusLabel}
+                    </p>
+                    <ul style={{ margin: "0 0 8px 0", paddingLeft: 18, fontSize: 13 }}>
+                      <li>
+                        Extraction: {hasExtraction ? "present" : "not present"}
+                      </li>
+                      <li>
+                        Confirmation: {hasConfirmation
+                          ? `completed (${job.confirmedTenancyInputs!.reviewStatus === "reviewed_confirmed" ? "confirmed" : "overridden"})`
+                          : "not yet completed"}
+                      </li>
+                      <li>
+                        Marked internally ready for preparation:{" "}
+                        {isMarkedReady
+                          ? `yes (${new Date(readiness!.markedReadyAt).toLocaleString()})`
+                          : "no"}
+                      </li>
+                    </ul>
+
+                    {!isMarkedReady && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={!hasConfirmation || markReadySaving}
+                          title={!hasConfirmation ? "Confirm or override the extracted values first." : undefined}
+                          onClick={async () => {
+                            setMarkReadyError(null);
+                            setMarkReadySaving(true);
+                            try {
+                              const res = await fetch(
+                                `/api/intake/${job.id}/mark-tenancy-preparation-ready`,
+                                {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({}),
+                                },
+                              );
+                              if (!res.ok) {
+                                const body = await res.json().catch(() => ({}));
+                                setMarkReadyError(body.error ?? `Action failed (HTTP ${res.status}).`);
+                                return;
+                              }
+                              const updated = await res.json();
+                              setJob(updated as StampingJob);
+                            } catch (err) {
+                              setMarkReadyError(
+                                err instanceof Error ? err.message : "Action failed.",
+                              );
+                            } finally {
+                              setMarkReadySaving(false);
+                            }
+                          }}
+                        >
+                          {markReadySaving ? "Marking…" : "Mark preparation review complete"}
+                        </button>
+                        {!hasConfirmation && (
+                          <p style={{ margin: "6px 0 0 0", color: "#666", fontSize: 12 }}>
+                            Confirm or override the extracted tenancy values first.
+                          </p>
+                        )}
+                        {markReadyError && (
+                          <p style={{ margin: "6px 0 0 0", color: "#a00", fontSize: 12 }}>
+                            {markReadyError}
+                          </p>
+                        )}
+                      </>
+                    )}
+
+                    {isMarkedReady && (
+                      <p style={{ margin: "6px 0 0 0", color: "#666", fontSize: 12 }}>
+                        Internal marker only. Does not imply submission to any external system or live portal validation.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {!job.confirmedTenancyInputs && !reviewOpen && (
                 <button

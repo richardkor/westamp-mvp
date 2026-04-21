@@ -76,6 +76,7 @@ export type JobEventType =
   | "extraction_completed"
   | "extraction_suggestions_applied"
   | "tenancy_inputs_confirmed"
+  | "tenancy_preparation_marked_ready"
   | "routing_suggestion_saved"
   | "portal_draft_created"
   | "portal_draft_updated"
@@ -344,6 +345,44 @@ export interface ConfirmedTenancyInputs {
   };
 }
 
+// ─── Tenancy Preparation Readiness (internal status) ─────────────────
+
+/**
+ * Narrow internal flag that the operator has explicitly marked a
+ * tenancy job as "Preparation review complete" — i.e. the internal
+ * preparation stack (extraction review → confirmed inputs → canonical
+ * resolver → portal draft) has been reviewed and is internally ready
+ * for the next preparation step.
+ *
+ * This is NOT a submission status, NOT a portal transaction, and does
+ * NOT imply any external system has accepted, validated, or received
+ * anything. It is a WeStamp-internal workflow marker only.
+ *
+ * Absent until the operator explicitly marks the job ready.
+ */
+export interface TenancyPreparationReadiness {
+  /** ISO 8601 timestamp of the operator mark-ready action. */
+  markedReadyAt: string;
+  /**
+   * Provenance of the mark-ready action. Only "operator_marked" is
+   * supported in this pass; no automated path exists.
+   */
+  source: "operator_marked";
+  /**
+   * Snapshot of the internal basis at the moment the operator marked
+   * the job ready — captured so the event log stays auditable even if
+   * later state changes reshape the job.
+   */
+  basis: {
+    /** Whether an extractionResult existed at mark time. */
+    hasExtraction: boolean;
+    /** Whether confirmedTenancyInputs existed at mark time. */
+    hasConfirmedInputs: boolean;
+    /** Review status of the confirmed inputs at mark time. */
+    reviewStatus: "reviewed_confirmed" | "reviewed_overridden";
+  };
+}
+
 // ─── Field Provenance ────────────────────────────────────────────────
 
 /**
@@ -581,6 +620,14 @@ export interface StampingJob {
    * completes the extraction review step.
    */
   confirmedTenancyInputs?: ConfirmedTenancyInputs;
+  /**
+   * Operator mark that tenancy preparation has been reviewed and is
+   * internally ready for the next preparation step.
+   *
+   * Absent until the operator explicitly marks it ready. Never set by
+   * any automated flow. Does NOT imply external submission.
+   */
+  tenancyPreparationReadiness?: TenancyPreparationReadiness;
   /**
    * STSDS portal routing suggestion — unverified internal suggestion only.
    * Populated when WeStamp auto-suggests a lane (e.g. tenancy → sewa_pajakan)
