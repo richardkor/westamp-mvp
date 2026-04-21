@@ -172,7 +172,9 @@ export default function HomePage() {
         <a href="/upload" className="lane-card">
           <p className="lane-card-heading">Upload Signed Document for Stamping</p>
           <p className="lane-card-body">
-            Already have a signed tenancy agreement or other document? Upload it for LHDN stamping.
+            Already have a signed residential tenancy agreement? Upload
+            it and our team will handle LHDN stamping. Pilot — reviewed
+            by a human, not instant.
           </p>
           <span className="lane-card-action">Upload document &rarr;</span>
         </a>

@@ -104,6 +104,29 @@ export default function UploadPage() {
         <p className="upload-intro">
           Upload your signed document for LHDN stamping. Accepted format: PDF only.
         </p>
+        {/* Pilot expectations — sets the right mental model before the
+            user uploads. The hosted MVP routes every upload through a
+            human review step and is focused on residential tenancy
+            agreements; anything else is accepted but handled manually. */}
+        <p
+          style={{
+            marginTop: -8,
+            marginBottom: 16,
+            padding: "8px 10px",
+            background: "#f5f7fb",
+            border: "1px solid #d9e1ec",
+            borderRadius: 4,
+            fontSize: 13,
+            color: "#333",
+            lineHeight: 1.45,
+          }}
+        >
+          <strong>Pilot notice:</strong> WeStamp is currently running a
+          Malaysian residential tenancy pilot. Every upload is reviewed
+          by our team before anything is submitted to LHDN — stamping
+          is not instant. You will be contacted if we need more
+          information.
+        </p>
 
         <div className="upload-zone">
           <label htmlFor="upload-file" className="upload-zone-label">
@@ -180,6 +203,22 @@ export default function UploadPage() {
               disabled={view === "submitting"}
             />
             {label}
+            {val !== "tenancy_agreement" && (
+              <span
+                style={{
+                  display: "block",
+                  marginLeft: 24,
+                  fontSize: 12,
+                  color: "#78716c",
+                  fontStyle: "italic",
+                  marginTop: 2,
+                }}
+              >
+                Accepted, but outside the current WeStamp tenancy pilot
+                — our team will review manually and contact you before
+                anything is submitted to LHDN.
+              </span>
+            )}
           </label>
         ))}
       </div>

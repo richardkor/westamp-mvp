@@ -171,6 +171,47 @@ export default function ReceiptPage({
         </div>
       </div>
 
+      {/* What happens next — pilot expectation-setting.
+          The receipt page otherwise jumps straight from the status
+          badge to "save this link" without explaining what WeStamp
+          will actually do. For a pilot, this silence causes support
+          questions and impatience. Keep it short and honest: human
+          review first, contact on issues, no promise of instant
+          turnaround. Suppressed once the job is delivered. */}
+      {receipt.publicStatus !== "Completed" && (
+        <div
+          style={{
+            marginTop: 20,
+            padding: "12px 14px",
+            background: "#f5f7fb",
+            border: "1px solid #d9e1ec",
+            borderRadius: 6,
+            fontSize: 14,
+            color: "#333",
+            lineHeight: 1.5,
+          }}
+        >
+          <p style={{ margin: "0 0 6px", fontWeight: 600 }}>
+            What happens next
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            <li>Our team reviews your upload.</li>
+            <li>
+              We contact you if we need more information or if anything
+              needs confirming.
+            </li>
+            <li>
+              Stamping involves manual steps with LHDN and is not
+              instant. Please allow time during the pilot.
+            </li>
+            <li>
+              This status page will update as your submission
+              progresses.
+            </li>
+          </ul>
+        </div>
+      )}
+
       {/* Save receipt link */}
       <div style={{ marginTop: "20px", fontSize: "14px", color: "#555" }}>
         <p style={{ margin: "0 0 8px" }}>

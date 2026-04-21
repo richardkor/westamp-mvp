@@ -2362,6 +2362,40 @@ export default function IntakeDetailsPage({
       </div>
       <h1>{pageHeading}</h1>
 
+      {/* ── Pilot safety banner ───────────────────────────────────────
+          Persistent, page-level reminder that every panel on this
+          operator view is internal/advisory. Many sections below
+          ("Portal Draft", "Automation Plan", "Browser Instruction
+          Set", "Mock Execution", etc.) read as if they could act on
+          the live portal — they do not. Individual panels still carry
+          their own scoped disclaimers; this banner is the single
+          always-visible reminder so an operator cannot miss it. */}
+      <div
+        role="note"
+        aria-label="Internal advisory view — no live portal actions are performed"
+        style={{
+          marginTop: 12,
+          marginBottom: 16,
+          padding: "10px 12px",
+          border: "1px solid #f1b27a",
+          borderLeft: "4px solid #d97706",
+          background: "#fff8ec",
+          borderRadius: 4,
+          fontSize: 13,
+          lineHeight: 1.45,
+          color: "#4a3108",
+        }}
+      >
+        <strong style={{ display: "block", marginBottom: 2 }}>
+          Internal advisory view — no live portal actions.
+        </strong>
+        Nothing on this page has been submitted to e-Duti Setem. No
+        payment has been made. No certificate has been retrieved. All
+        panels below (Portal Draft, Automation Plan, Browser
+        Instruction Set, Mock Execution, and similar) describe WeStamp&rsquo;s
+        internal preparation state only.
+      </div>
+
       {/* ── Record summary ──────────────────────────────────────────── */}
       <div className="intake-details-card">
         <div className="intake-details-row">
