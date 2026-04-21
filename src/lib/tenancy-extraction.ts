@@ -67,9 +67,17 @@ export async function extractTenancyDetails(
       return emptyResult;
     }
 
-    // pdf-parse v1 is a CommonJS module — require it
+    // pdf-parse v1 is a CommonJS module. We intentionally require the
+    // internal lib file rather than the package root: the package's
+    // index.js runs a module-level debug block (`if (!module.parent)`)
+    // which synchronously calls Fs.readFileSync("./test/data/05-versions-space.pdf").
+    // In bundled/serverless runtimes (Next.js server build, Vercel) the
+    // module has no parent and cwd does not contain that test fixture,
+    // so the require throws ENOENT and the outer catch below silently
+    // returns an empty result with textLengthChars=0. Requiring the
+    // internal implementation bypasses the debug block entirely.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
+    const pdfParse = require("pdf-parse/lib/pdf-parse.js") as (buf: Buffer) => Promise<{ text: string }>;
     const parsed = await pdfParse(fileBuffer);
 
     const text = parsed.text ?? "";
@@ -314,6 +322,29 @@ function extractAgreementDate(text: string): InternalExtraction<string> | null {
     const dateStr = `${formalMatch[1]} ${formalMatch[2]} ${formalMatch[3]}`;
     const parsed = tryParseDate(dateStr);
     if (parsed) return { value: parsed, confidence: "high", matchNote: "dated this Xth day of Month Year" };
+  }
+
+  // High confidence: Schedule-form "Date of Agreement <D Month Year>".
+  // Allow zero whitespace between "Agreement" and the day, because PDF
+  // text extraction often concatenates Schedule label with value.
+  const scheduleMatch = normalized.match(
+    /Date\s+of\s+Agreement\s*(\d{1,2})\s+(\w+)\s*,?\s*(\d{4})/i
+  );
+  if (scheduleMatch) {
+    const dateStr = `${scheduleMatch[1]} ${scheduleMatch[2]} ${scheduleMatch[3]}`;
+    const parsed = tryParseDate(dateStr);
+    if (parsed) return { value: parsed, confidence: "high", matchNote: "Schedule: Date of Agreement D Month Year" };
+  }
+
+  // High confidence: cover-page "<D>ST/ND/RD/TH DAY OF <MONTH> <YYYY>"
+  // without a leading "dated" — WeStamp cover pages use this form.
+  const coverMatch = normalized.match(
+    /\b(\d{1,2})(?:st|nd|rd|th)\s+day\s+of\s+(\w+)\s*,?\s*(\d{4})/i
+  );
+  if (coverMatch) {
+    const dateStr = `${coverMatch[1]} ${coverMatch[2]} ${coverMatch[3]}`;
+    const parsed = tryParseDate(dateStr);
+    if (parsed) return { value: parsed, confidence: "high", matchNote: "Xth day of Month Year (cover)" };
   }
 
   // Medium confidence: simple dated/made on
