@@ -171,13 +171,10 @@ export default function ReceiptPage({
         </div>
       </div>
 
-      {/* What happens next — pilot expectation-setting.
-          The receipt page otherwise jumps straight from the status
-          badge to "save this link" without explaining what WeStamp
-          will actually do. For a pilot, this silence causes support
-          questions and impatience. Keep it short and honest: human
-          review first, contact on issues, no promise of instant
-          turnaround. Suppressed once the job is delivered. */}
+      {/* What happens next — calm, public-facing progress framing.
+          Keeps backend mechanics out of sight; surfaces a soft
+          turnaround guidance without promising instant stamping.
+          Suppressed once the job is delivered. */}
       {receipt.publicStatus !== "Completed" && (
         <div
           style={{
@@ -195,18 +192,18 @@ export default function ReceiptPage({
             What happens next
           </p>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li>Our team reviews your upload.</li>
+            <li>Your document has been received.</li>
             <li>
-              We contact you if we need more information or if anything
-              needs confirming.
+              WeStamp will process your submission and update this
+              page as it progresses.
+            </li>
+            <li>Most submissions are updated within around 2 hours.</li>
+            <li>
+              We may contact you if any details need to be confirmed.
             </li>
             <li>
-              Stamping involves manual steps with LHDN and is not
-              instant. Please allow time during the pilot.
-            </li>
-            <li>
-              This status page will update as your submission
-              progresses.
+              You can return to this page anytime to check the latest
+              status.
             </li>
           </ul>
         </div>

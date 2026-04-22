@@ -170,11 +170,10 @@ export default function HomePage() {
         </a>
 
         <a href="/upload" className="lane-card">
-          <p className="lane-card-heading">Upload Signed Document for Stamping</p>
+          <p className="lane-card-heading">Upload for Stamping</p>
           <p className="lane-card-body">
             Already have a signed residential tenancy agreement? Upload
-            it and our team will handle LHDN stamping. Pilot — reviewed
-            by a human, not instant.
+            it to WeStamp and track your stamping progress online.
           </p>
           <span className="lane-card-action">Upload document &rarr;</span>
         </a>

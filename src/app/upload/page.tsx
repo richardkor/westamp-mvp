@@ -101,32 +101,34 @@ export default function UploadPage() {
           &larr; Back to Home
         </a>
         <h1>Upload Signed Document for Stamping</h1>
-        <p className="upload-intro">
-          Upload your signed document for LHDN stamping. Accepted format: PDF only.
-        </p>
-        {/* Pilot expectations — sets the right mental model before the
-            user uploads. The hosted MVP routes every upload through a
-            human review step and is focused on residential tenancy
-            agreements; anything else is accepted but handled manually. */}
-        <p
+        {/* Calm, public-facing framing — short, reassuring, and keeps
+            backend mechanics out of sight. The soft turnaround line is
+            a guidance, not a guarantee. */}
+        <div
           style={{
-            marginTop: -8,
-            marginBottom: 16,
-            padding: "8px 10px",
+            marginTop: 4,
+            marginBottom: 20,
+            padding: "10px 12px",
             background: "#f5f7fb",
             border: "1px solid #d9e1ec",
             borderRadius: 4,
-            fontSize: 13,
+            fontSize: 14,
             color: "#333",
-            lineHeight: 1.45,
+            lineHeight: 1.5,
           }}
         >
-          <strong>Pilot notice:</strong> WeStamp is currently running a
-          Malaysian residential tenancy pilot. Every upload is reviewed
-          by our team before anything is submitted to LHDN — stamping
-          is not instant. You will be contacted if we need more
-          information.
-        </p>
+          <p style={{ margin: "0 0 6px", fontWeight: 600 }}>
+            Before you upload
+          </p>
+          <p style={{ margin: "0 0 6px" }}>
+            Please upload your signed document in PDF format. WeStamp
+            will guide your submission and keep you updated along the
+            way.
+          </p>
+          <p style={{ margin: 0, color: "#555" }}>
+            Most submissions are updated within around 2 hours.
+          </p>
+        </div>
 
         <div className="upload-zone">
           <label htmlFor="upload-file" className="upload-zone-label">
@@ -214,9 +216,8 @@ export default function UploadPage() {
                   marginTop: 2,
                 }}
               >
-                Accepted, but outside the current WeStamp tenancy pilot
-                — our team will review manually and contact you before
-                anything is submitted to LHDN.
+                WeStamp will review your document type and guide the
+                next step if anything needs to be confirmed.
               </span>
             )}
           </label>
