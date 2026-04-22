@@ -2394,6 +2394,24 @@ export default function IntakeDetailsPage({
         panels below (Portal Draft, Automation Plan, Browser
         Instruction Set, Mock Execution, and similar) describe WeStamp&rsquo;s
         internal preparation state only.
+        {/* Operator pointer to the pilot SOP + checklist.
+            Kept inside the existing amber banner so it adds zero
+            extra page chrome. Points at repo-relative paths — the
+            hosted UI does not serve docs; operators read them at
+            source, same as setup.md / supabase-cutover-runbook.md. */}
+        <span
+          style={{
+            display: "block",
+            marginTop: 6,
+            fontSize: 12,
+            color: "#6b4a0a",
+          }}
+        >
+          Operator reference: <code>docs/pilot-operator-sop.md</code>{" "}
+          (full SOP) &middot;{" "}
+          <code>docs/pilot-operator-checklist.md</code> (in-flight
+          checklist).
+        </span>
       </div>
 
       {/* ── Record summary ──────────────────────────────────────────── */}
