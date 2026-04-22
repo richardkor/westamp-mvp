@@ -87,7 +87,8 @@ The authoritative list of categories that qualify as "nominal-duty
 assisted-path" is `src/lib/nominal-duty-registry.ts`. Only categories
 in that registry get the shared nominal-duty operator panel on
 `/upload/[id]`. A category is added to the registry only after it has
-been deliberately approved as safe to carry via the assisted path.
+been deliberately approved as safe to carry via the assisted path,
+per `docs/nominal-duty-admission-rules.md`.
 
 Do not re-route a non-tenancy job through the tenancy advisory stack
 just because the operator advisory is available. The advisory stack
@@ -258,6 +259,12 @@ happens, this section (and the checklist) must be updated alongside
 the registry. Do not invent a category that is not in the registry
 just because an upload category label exists (for example, "Other /
 Not Sure" is **not** in the registry).
+
+Admission of any new category is gated by
+`docs/nominal-duty-admission-rules.md`. If you have an off-registry
+category in hand that looks like a nominal-duty candidate, do not
+add it on the fly — route the question to the admission-rules
+document and propose it through a separate approved milestone.
 
 ### 4A.3 Verify first (before any portal work)
 
@@ -449,3 +456,7 @@ as done in any external communication.
   Employment Contract is now one entry in the registry rather than
   a one-off case. Revised §3.2 classifier row accordingly. No new
   categories added in this pass.
+- 2026-04-22 — Added pointer to
+  `docs/nominal-duty-admission-rules.md` from §3.2 and §4A.2. No
+  operator flow or registry contents changed; this is a
+  gate-discipline cross-reference only.

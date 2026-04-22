@@ -32,7 +32,10 @@ Contract. These jobs do not use the sewa_pajakan advisory stack.
       registered category: stop — deploy or registry issue.)
 - [ ] The shown category is present in the nominal-duty registry.
       (If a category is not in the registry, do not invent
-      handling — follow §3.2's "Other / Not Sure" row.)
+      handling — follow §3.2's "Other / Not Sure" row. Admission
+      of new categories is gated by
+      `docs/nominal-duty-admission-rules.md`, not by in-flight
+      operator decisions.)
 - [ ] PDF really is the registered category (for Employment
       Contract: an employer–employee employment contract, not a
       service, secondment, internship, or consultancy agreement).
