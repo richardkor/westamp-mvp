@@ -17,9 +17,25 @@ before continuing.
 
 ### Document sanity
 - [ ] Category matches document (Tenancy Agreement ↔ actual tenancy
-      PDF). If mismatched: contact user.
+      PDF; Employment Contract ↔ actual employment contract PDF). If
+      mismatched: contact user.
 - [ ] PDF opens, is legible, not redacted, not upside-down.
 - [ ] Document appears signed / complete enough to stamp.
+
+### Employment Contract (employment_contract jobs only)
+- [ ] "Employment Contract Handling" panel is visible on
+      `/upload/[id]`. (If missing for an employment_contract job:
+      stop — deploy issue.)
+- [ ] PDF is in fact an employment contract — not a service,
+      secondment, internship, or consultancy agreement.
+- [ ] PDF is signed and complete (signatures, dates, parties).
+- [ ] Nothing about the document suggests it should be reclassified
+      (for example, it is actually a tenancy).
+- [ ] Duty profile reads "Likely fixed-duty document (operator to
+      confirm)" — treat this as tentative, not a quotable duty.
+- [ ] Sewa/Pajakan advisory panels (Proven Hantar Gate Chain, lane
+      readiness, Bahagian C preflight) are ignored for this job.
+- [ ] Proceed only via manual handling in e-Duti Setem per SOP §4A.
 
 ### Tenancy preparation values (tenancy jobs only)
 - [ ] `instrumentDate` resolved from confirmed or extraction source
@@ -30,7 +46,7 @@ before continuing.
       **not** from `extraction_suggestion`.
 - [ ] Duty breakdown present and consistent with rent + lease months.
 
-### Readiness
+### Readiness (tenancy jobs only)
 - [ ] "Portal Submission Readiness" badge is "Ready (with caveats)".
       (If "Blocked" or "Assessment Limited": stop.)
 - [ ] "Proven Submit Blockers" — every row reads Satisfied.
@@ -40,6 +56,9 @@ before continuing.
 - [ ] "Still Unresolved Later Gates" is read as **open**, not
       proven-safe.
 - [ ] "Untested Areas" is read — do not treat as resolved.
+
+*(Employment Contract jobs skip this section entirely — the
+sewa_pajakan readiness and gate-chain signals do not apply.)*
 
 ### Decide
 - [ ] Any stop condition from SOP §6 matched? If yes: do not proceed.
@@ -69,11 +88,15 @@ before continuing.
 
 ## Stop triggers — do not proceed past these
 
-- Missing or implausible tenancy preparation value.
-- Readiness = "Blocked" or "Assessment Limited".
+- Missing or implausible tenancy preparation value (tenancy jobs).
+- Readiness = "Blocked" or "Assessment Limited" (tenancy jobs).
 - Any panel output you do not understand.
 - Document sanity check failed.
-- Non-tenancy category with a non-tenancy document.
+- Category shown does not match the document contents (for example,
+  Employment Contract selected but the PDF is a tenancy, or vice
+  versa).
+- Employment contract that is unsigned, redacted, illegible, or
+  clearly mixed with a different instrument.
 - Any UI state that disagrees with this checklist or the SOP.
 
 When a stop trigger hits: contact the user if user-fixable, otherwise
@@ -88,3 +111,6 @@ escalate internally. Do not guess.
 - "Certificate retrieved" unless you hold the certificate PDF.
 - "Guaranteed in N hours" — no guaranteed turnaround.
 - Any description of internal advisory panels as already-done actions.
+- For employment contracts: "Fixed duty of RMX confirmed" or
+  "Calculated by WeStamp" unless the operator has personally
+  confirmed the duty against the live portal and the document.

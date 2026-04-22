@@ -80,12 +80,13 @@ Category is set by the uploader on `/upload`:
 | Category shown | Handling |
 |---|---|
 | Tenancy Agreement | Proceed with the sewa_pajakan operator flow (§4). |
-| Employment Contract | Out of scope for the pilot. Contact the user (§7) and explain WeStamp cannot process it right now. |
-| Other / Not Sure | Read the file. If it is clearly a residential tenancy agreement, re-handle as Tenancy. Otherwise, contact the user and ask what they need. |
+| Employment Contract | Proceed with the assisted operator flow (§4A). Handled manually in e-Duti Setem — not through the sewa_pajakan advisory stack. |
+| Other / Not Sure | Read the file. If it is clearly a residential tenancy agreement, re-handle as Tenancy. If it is clearly an employment contract, re-handle as Employment Contract. Otherwise, contact the user and ask what they need. |
 
 Do not re-route a non-tenancy job through the tenancy advisory stack
 just because the operator advisory is available. The advisory stack
-is sewa_pajakan-only.
+is sewa_pajakan-only. Employment Contract has its own narrow
+handling in §4A.
 
 ### 3.3 Document sanity (all categories)
 
@@ -214,6 +215,104 @@ pilot job — probes are their own milestone, handled separately.
 
 ---
 
+## 4A. Employment Contract assisted handling
+
+For jobs where category = Employment Contract. This is a deliberately
+narrow non-tenancy lane. It is **not** an automated lane and does
+**not** go through the sewa_pajakan advisory stack.
+
+### 4A.1 What this lane is (and isn't)
+
+- Employment contracts are handled manually by the operator in
+  e-Duti Setem, start to finish.
+- WeStamp does not draft, submit, pay, or retrieve certificates for
+  employment contracts.
+- The "Employment Contract Handling" panel on `/upload/[id]` is a
+  compact operator reference. It is not a readiness gate, not a
+  draft, and not a plan. Treat it as a label on the job, nothing
+  more.
+- The Proven Hantar Gate Chain, lane-specific readiness panels, and
+  Bahagian C preflight panels do not apply. Do not reason about
+  employment-contract jobs using sewa_pajakan evidence.
+
+### 4A.2 Verify first (before any portal work)
+
+Confirm each of the following against the uploaded PDF:
+
+- The document is in fact an employment contract (employment
+  relationship between an employer and an employee; not a service
+  agreement, secondment letter, internship letter, or consultancy
+  agreement).
+- The PDF is signed and complete: signatures, dates, and party
+  details are present on the relevant pages.
+- The document appears legible, not redacted, not upside-down, and
+  not a partially-scanned fragment.
+- Nothing about the instrument suggests it should be reclassified
+  (for example, if it is actually a tenancy or a document outside
+  the pilot's narrow handling).
+
+If any of the above fails, stop and contact the user (§7) before
+touching the portal.
+
+### 4A.3 Fixed-duty framing
+
+Employment contracts are commonly fixed-duty instruments under the
+Stamp Act. WeStamp surfaces this as **"Likely fixed-duty document
+(operator to confirm)"**.
+
+- Do **not** quote a fixed duty amount to the user until it has been
+  confirmed against the live portal and the document itself.
+- Do **not** tell the user WeStamp has "calculated" their duty — no
+  calculator runs for this category.
+- If the document or the portal disagrees with the fixed-duty
+  assumption, treat it as a non-standard case and escalate
+  internally before proceeding.
+
+### 4A.4 Category looks wrong or mixed
+
+If the document is obviously not an employment contract, or is a
+mixed instrument (for example, an employment contract bundled with a
+separate agreement):
+
+- Do not re-classify silently. Contact the user (§7), explain
+  neutrally that the uploaded document does not appear to match the
+  selected category, and ask how they want to proceed.
+- Do not re-route the job into the sewa_pajakan tenancy lane just
+  because "Tenancy" exists as a supported category. Sewa/Pajakan
+  advisory evidence is not applicable to a non-tenancy instrument.
+
+### 4A.5 Stop and contact the user when
+
+- You cannot confirm the document is an employment contract.
+- The PDF is unsigned, redacted, illegible, or obviously incomplete.
+- The selected category does not match the document.
+- Anything about the case falls outside the narrow "standard signed
+  employment contract" shape that this lane is intended to cover.
+
+Keep the user message short, specific, and free of backend mechanics
+(same rules as §7). Do not describe the operator panel, do not
+promise a duty amount, do not promise a turnaround beyond the public
+"most submissions are updated within around 2 hours" guidance.
+
+### 4A.6 Never-represent-as-done (Employment Contract)
+
+The invariants in §2 apply in full. Specifically, for an employment
+contract job, do not tell the user any of the following until the
+matching real-world action has happened:
+
+- "Submitted to LHDN" — only after the operator has personally
+  submitted in e-Duti Setem.
+- "Paid" — only after the operator has personally paid.
+- "Stamped certificate retrieved" — only after the operator holds
+  the certificate PDF.
+- "Fixed duty of RMX confirmed" — only after the duty has been
+  confirmed against the live portal/document by the operator.
+
+"Received", "under review", or "in progress" are the acceptable
+neutral framings until those real-world actions happen.
+
+---
+
 ## 5. Stamping details and duty calculator
 
 Section: "Stamping Details" / "Stamp Duty Breakdown".
@@ -306,3 +405,7 @@ as done in any external communication.
 - 2026-04-22 — Initial SOP. Reflects the post-sewa_pajakan gate-2
   evidence state (`00e28a9`). Update this file whenever a milestone
   changes operator-visible behavior.
+- 2026-04-22 — Added §4A Employment Contract assisted handling as
+  the first deliberately supported non-tenancy lane. Revised §3.2
+  classifier row for Employment Contract. Behavior is manual
+  handling only; no automation, no sewa_pajakan advisory reuse.

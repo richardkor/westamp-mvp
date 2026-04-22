@@ -2334,6 +2334,8 @@ export default function IntakeDetailsPage({
   // ── Render ───────────────────────────────────────────────────────
 
   const isTenancy = job.documentCategory === "tenancy_agreement";
+  const isEmploymentContract =
+    job.documentCategory === "employment_contract";
   const needsDetails = isTenancy && job.status === "uploaded";
   const hasDetails = isTenancy && !!job.stampingDetails;
   const canPrepare = isTenancy && job.status === "intake_reviewed";
@@ -8411,13 +8413,137 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── Unsupported categories ──────────────────────────────────── */}
-      {!isTenancy && !isManualReview && !isFailed && (
+      {/* ── Employment Contract handling (internal, operator-only) ───
+          Dedicated non-tenancy handling panel. Employment contracts
+          are the first deliberately supported non-tenancy lane and
+          are handled end-to-end by an operator in e-Duti Setem — the
+          sewa_pajakan advisory stack (Proven Hantar Gate Chain,
+          lane-specific readiness gates, Bahagian C preflights, etc.)
+          does NOT apply here. The "Likely fixed-duty document"
+          framing is deliberately tentative: duty is confirmed by the
+          operator against the live portal and the document itself,
+          not assumed. */}
+      {isEmploymentContract && !isManualReview && !isFailed && (
+        <div
+          className="intake-details-card"
+          style={{ marginTop: 16 }}
+          role="region"
+          aria-label="Employment Contract Handling — internal operator view"
+        >
+          <h2 style={{ fontSize: 16, margin: "0 0 4px" }}>
+            Employment Contract Handling
+          </h2>
+          <p style={{ fontSize: 12, color: "#78716c", margin: "0 0 12px" }}>
+            Internal operator view. Nothing here has been submitted,
+            paid, or certified.
+          </p>
+
+          <div className="intake-details-row">
+            <span className="intake-details-label">Handling mode</span>
+            <span className="intake-details-value">
+              Assisted operator handling
+            </span>
+          </div>
+          <div className="intake-details-row">
+            <span className="intake-details-label">Duty profile</span>
+            <span className="intake-details-value">
+              Likely fixed-duty document (operator to confirm)
+            </span>
+          </div>
+          <div className="intake-details-row">
+            <span className="intake-details-label">Portal path</span>
+            <span className="intake-details-value">
+              Handled manually in e-Duti Setem (not via the
+              sewa_pajakan advisory stack)
+            </span>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <p
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                margin: "0 0 6px",
+                color: "#3f3f46",
+              }}
+            >
+              Operator must confirm before proceeding
+            </p>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 20,
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "#3f3f46",
+              }}
+            >
+              <li>
+                The uploaded PDF is in fact an employment contract —
+                not a tenancy, service, secondment, or other
+                instrument misfiled under this category.
+              </li>
+              <li>
+                The PDF is signed and complete enough to proceed
+                (signatures, dates, and party details present).
+              </li>
+              <li>
+                Nothing about the instrument suggests it should be
+                treated as a different category or lane before any
+                portal work begins.
+              </li>
+            </ul>
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 12px",
+              background: "#fafaf9",
+              border: "1px solid #e7e5e4",
+              borderRadius: 4,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "#57534e",
+            }}
+          >
+            <strong style={{ display: "block", marginBottom: 2 }}>
+              Sewa/Pajakan portal evidence does not apply here.
+            </strong>
+            The Proven Hantar Gate Chain, lane-specific readiness
+            gates, and Bahagian C preflight panels on WeStamp cover
+            the sewa_pajakan tenancy lane only. Employment contracts
+            are taken through e-Duti Setem manually by the operator.
+            Follow the Employment Contract section of{" "}
+            <code>docs/pilot-operator-sop.md</code> and{" "}
+            <code>docs/pilot-operator-checklist.md</code>.
+          </div>
+
+          <p
+            style={{
+              fontSize: 12,
+              color: "#78716c",
+              margin: "12px 0 0",
+              fontStyle: "italic",
+            }}
+          >
+            If any confirmation above fails, stop and contact the user
+            per the SOP before touching the portal. Do not represent
+            this job as submitted, paid, or certified until those
+            steps are actually performed.
+          </p>
+        </div>
+      )}
+
+      {/* ── Other / Not Sure (no automated lane) ─────────────────────
+          Retained for the "Other / Not Sure" category only. This
+          lane is intentionally narrow: no advisory, no automation,
+          no commitment beyond confirming the file was received. */}
+      {!isTenancy && !isEmploymentContract && !isManualReview && !isFailed && (
         <div className="intake-next-note">
           <p>
-            Your document has been saved. Automated stamping workflow is not
-            yet available for this document category. This will be added in
-            a future update.
+            Your document has been saved. An operator will review the
+            category and follow up if anything needs to be confirmed.
           </p>
         </div>
       )}
