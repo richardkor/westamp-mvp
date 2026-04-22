@@ -17,22 +17,34 @@ before continuing.
 
 ### Document sanity
 - [ ] Category matches document (Tenancy Agreement ↔ actual tenancy
-      PDF; Employment Contract ↔ actual employment contract PDF). If
-      mismatched: contact user.
+      PDF; nominal-duty registry category ↔ actual matching PDF).
+      If mismatched: contact user.
 - [ ] PDF opens, is legible, not redacted, not upside-down.
 - [ ] Document appears signed / complete enough to stamp.
 
-### Employment Contract (employment_contract jobs only)
-- [ ] "Employment Contract Handling" panel is visible on
-      `/upload/[id]`. (If missing for an employment_contract job:
-      stop — deploy issue.)
-- [ ] PDF is in fact an employment contract — not a service,
-      secondment, internship, or consultancy agreement.
+### Nominal-duty category (registry-driven, if applicable)
+Applies to any category present in
+`src/lib/nominal-duty-registry.ts`. Current registry: Employment
+Contract. These jobs do not use the sewa_pajakan advisory stack.
+
+- [ ] "Nominal Duty Handling" panel is visible on `/upload/[id]`
+      with the category shown in the heading. (If missing for a
+      registered category: stop — deploy or registry issue.)
+- [ ] The shown category is present in the nominal-duty registry.
+      (If a category is not in the registry, do not invent
+      handling — follow §3.2's "Other / Not Sure" row.)
+- [ ] PDF really is the registered category (for Employment
+      Contract: an employer–employee employment contract, not a
+      service, secondment, internship, or consultancy agreement).
 - [ ] PDF is signed and complete (signatures, dates, parties).
-- [ ] Nothing about the document suggests it should be reclassified
-      (for example, it is actually a tenancy).
-- [ ] Duty profile reads "Likely fixed-duty document (operator to
-      confirm)" — treat this as tentative, not a quotable duty.
+- [ ] Nothing about the document suggests it should be
+      reclassified (for example, it is actually a tenancy).
+- [ ] Duty profile reads "Likely nominal/fixed-duty document
+      (operator to confirm)" — treat this as tentative, not a
+      quotable duty.
+- [ ] Each "Operator must confirm" bullet on the panel has been
+      personally verified against the PDF.
+- [ ] None of the panel's "Stop and contact user if" triggers apply.
 - [ ] Sewa/Pajakan advisory panels (Proven Hantar Gate Chain, lane
       readiness, Bahagian C preflight) are ignored for this job.
 - [ ] Proceed only via manual handling in e-Duti Setem per SOP §4A.
@@ -57,7 +69,7 @@ before continuing.
       proven-safe.
 - [ ] "Untested Areas" is read — do not treat as resolved.
 
-*(Employment Contract jobs skip this section entirely — the
+*(Nominal-duty registry jobs skip this section entirely — the
 sewa_pajakan readiness and gate-chain signals do not apply.)*
 
 ### Decide
@@ -93,10 +105,12 @@ sewa_pajakan readiness and gate-chain signals do not apply.)*
 - Any panel output you do not understand.
 - Document sanity check failed.
 - Category shown does not match the document contents (for example,
-  Employment Contract selected but the PDF is a tenancy, or vice
-  versa).
-- Employment contract that is unsigned, redacted, illegible, or
-  clearly mixed with a different instrument.
+  a nominal-duty registry category selected but the PDF is a
+  tenancy, or vice versa).
+- Nominal-duty registry job where the PDF is unsigned, redacted,
+  illegible, or clearly a mixed/different instrument.
+- Category appears to need nominal-duty handling but is not in
+  `src/lib/nominal-duty-registry.ts` — do not invent handling.
 - Any UI state that disagrees with this checklist or the SOP.
 
 When a stop trigger hits: contact the user if user-fixable, otherwise
@@ -111,6 +125,7 @@ escalate internally. Do not guess.
 - "Certificate retrieved" unless you hold the certificate PDF.
 - "Guaranteed in N hours" — no guaranteed turnaround.
 - Any description of internal advisory panels as already-done actions.
-- For employment contracts: "Fixed duty of RMX confirmed" or
-  "Calculated by WeStamp" unless the operator has personally
-  confirmed the duty against the live portal and the document.
+- For nominal-duty registry categories (including Employment
+  Contract): "Duty of RMX confirmed" or "Calculated by WeStamp"
+  unless the operator has personally confirmed the duty against
+  the live portal and the document.

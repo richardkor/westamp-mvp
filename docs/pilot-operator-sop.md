@@ -80,13 +80,19 @@ Category is set by the uploader on `/upload`:
 | Category shown | Handling |
 |---|---|
 | Tenancy Agreement | Proceed with the sewa_pajakan operator flow (§4). |
-| Employment Contract | Proceed with the assisted operator flow (§4A). Handled manually in e-Duti Setem — not through the sewa_pajakan advisory stack. |
-| Other / Not Sure | Read the file. If it is clearly a residential tenancy agreement, re-handle as Tenancy. If it is clearly an employment contract, re-handle as Employment Contract. Otherwise, contact the user and ask what they need. |
+| Nominal-duty registry category (currently: Employment Contract) | Proceed with the nominal fixed-duty assisted operator flow (§4A). Handled manually in e-Duti Setem — not through the sewa_pajakan advisory stack. |
+| Other / Not Sure | Read the file. If it is clearly a residential tenancy agreement, re-handle as Tenancy. If it is clearly a category in the nominal-duty registry (see §4A), re-handle under that category. Otherwise, contact the user and ask what they need. |
+
+The authoritative list of categories that qualify as "nominal-duty
+assisted-path" is `src/lib/nominal-duty-registry.ts`. Only categories
+in that registry get the shared nominal-duty operator panel on
+`/upload/[id]`. A category is added to the registry only after it has
+been deliberately approved as safe to carry via the assisted path.
 
 Do not re-route a non-tenancy job through the tenancy advisory stack
 just because the operator advisory is available. The advisory stack
-is sewa_pajakan-only. Employment Contract has its own narrow
-handling in §4A.
+is sewa_pajakan-only. Nominal-duty registry categories have their
+own shared handling model in §4A.
 
 ### 3.3 Document sanity (all categories)
 
@@ -215,64 +221,88 @@ pilot job — probes are their own milestone, handled separately.
 
 ---
 
-## 4A. Employment Contract assisted handling
+## 4A. Nominal fixed-duty assisted handling
 
-For jobs where category = Employment Contract. This is a deliberately
-narrow non-tenancy lane. It is **not** an automated lane and does
+For jobs where the document category is in the **nominal-duty
+registry** (`src/lib/nominal-duty-registry.ts`). This is the curated
+non-tenancy assisted lane. It is **not** an automated lane and does
 **not** go through the sewa_pajakan advisory stack.
 
 ### 4A.1 What this lane is (and isn't)
 
-- Employment contracts are handled manually by the operator in
-  e-Duti Setem, start to finish.
+- These jobs are handled manually by the operator in e-Duti Setem,
+  start to finish.
 - WeStamp does not draft, submit, pay, or retrieve certificates for
-  employment contracts.
-- The "Employment Contract Handling" panel on `/upload/[id]` is a
-  compact operator reference. It is not a readiness gate, not a
-  draft, and not a plan. Treat it as a label on the job, nothing
-  more.
+  these categories.
+- The "Nominal Duty Handling" panel on `/upload/[id]` is a compact
+  operator reference shared across all registered categories. It is
+  not a readiness gate, not a draft, and not a plan. Treat it as a
+  label on the job, nothing more.
 - The Proven Hantar Gate Chain, lane-specific readiness panels, and
   Bahagian C preflight panels do not apply. Do not reason about
-  employment-contract jobs using sewa_pajakan evidence.
+  nominal-duty jobs using sewa_pajakan evidence.
+- Any duty framing shown ("Likely nominal/fixed-duty document") is
+  tentative. The operator confirms the actual duty against the live
+  portal and the document.
 
-### 4A.2 Verify first (before any portal work)
+### 4A.2 What's in the registry right now
+
+As of this commit, the registry contains exactly one entry:
+
+- **Employment Contract** — `employment_contract`. Standard signed
+  employment contract between an employer and an employee. Likely
+  nominal/fixed-duty instrument; confirmed by the operator.
+
+Additional categories may be added to the registry later. When that
+happens, this section (and the checklist) must be updated alongside
+the registry. Do not invent a category that is not in the registry
+just because an upload category label exists (for example, "Other /
+Not Sure" is **not** in the registry).
+
+### 4A.3 Verify first (before any portal work)
 
 Confirm each of the following against the uploaded PDF:
 
-- The document is in fact an employment contract (employment
-  relationship between an employer and an employee; not a service
-  agreement, secondment letter, internship letter, or consultancy
-  agreement).
+- The category selected by the user matches the registry entry's
+  definition (for example, Employment Contract really is an
+  employment relationship between an employer and an employee —
+  not a service agreement, secondment letter, internship letter, or
+  consultancy agreement).
 - The PDF is signed and complete: signatures, dates, and party
   details are present on the relevant pages.
 - The document appears legible, not redacted, not upside-down, and
   not a partially-scanned fragment.
 - Nothing about the instrument suggests it should be reclassified
-  (for example, if it is actually a tenancy or a document outside
-  the pilot's narrow handling).
+  (for example, it is actually a tenancy, or a document outside the
+  pilot's narrow handling).
+
+The operator page's "Operator must confirm before proceeding"
+bullets and "Stop and contact user if" bullets are sourced directly
+from the registry entry — treat them as the authoritative
+per-category checklist.
 
 If any of the above fails, stop and contact the user (§7) before
 touching the portal.
 
-### 4A.3 Fixed-duty framing
+### 4A.4 Nominal/fixed-duty framing
 
-Employment contracts are commonly fixed-duty instruments under the
-Stamp Act. WeStamp surfaces this as **"Likely fixed-duty document
-(operator to confirm)"**.
+Categories in the registry are commonly nominal or fixed-duty
+instruments under the Stamp Act. WeStamp surfaces this as **"Likely
+nominal/fixed-duty document (operator to confirm)"**.
 
-- Do **not** quote a fixed duty amount to the user until it has been
+- Do **not** quote a duty amount to the user until it has been
   confirmed against the live portal and the document itself.
 - Do **not** tell the user WeStamp has "calculated" their duty — no
-  calculator runs for this category.
-- If the document or the portal disagrees with the fixed-duty
+  calculator runs for these categories.
+- If the document or the portal disagrees with the nominal/fixed-duty
   assumption, treat it as a non-standard case and escalate
   internally before proceeding.
 
-### 4A.4 Category looks wrong or mixed
+### 4A.5 Category looks wrong or mixed
 
-If the document is obviously not an employment contract, or is a
-mixed instrument (for example, an employment contract bundled with a
-separate agreement):
+If the document is obviously not the registered category, or is a
+mixed instrument (for example, an employment contract bundled with
+a separate agreement):
 
 - Do not re-classify silently. Contact the user (§7), explain
   neutrally that the uploaded document does not appear to match the
@@ -280,33 +310,38 @@ separate agreement):
 - Do not re-route the job into the sewa_pajakan tenancy lane just
   because "Tenancy" exists as a supported category. Sewa/Pajakan
   advisory evidence is not applicable to a non-tenancy instrument.
+- Do not fabricate handling for a category that is not in the
+  nominal-duty registry. If a user's document does not fit the
+  registered categories, handle it under §3.2's "Other / Not Sure"
+  row.
 
-### 4A.5 Stop and contact the user when
+### 4A.6 Stop and contact the user when
 
-- You cannot confirm the document is an employment contract.
+- You cannot confirm the document matches the registered category.
 - The PDF is unsigned, redacted, illegible, or obviously incomplete.
 - The selected category does not match the document.
-- Anything about the case falls outside the narrow "standard signed
-  employment contract" shape that this lane is intended to cover.
+- Anything about the case falls outside the narrow shape the
+  registry entry is intended to cover.
 
 Keep the user message short, specific, and free of backend mechanics
 (same rules as §7). Do not describe the operator panel, do not
 promise a duty amount, do not promise a turnaround beyond the public
 "most submissions are updated within around 2 hours" guidance.
 
-### 4A.6 Never-represent-as-done (Employment Contract)
+### 4A.7 Never-represent-as-done (nominal-duty categories)
 
-The invariants in §2 apply in full. Specifically, for an employment
-contract job, do not tell the user any of the following until the
-matching real-world action has happened:
+The invariants in §2 apply in full. For any nominal-duty job, do not
+tell the user any of the following until the matching real-world
+action has happened:
 
 - "Submitted to LHDN" — only after the operator has personally
   submitted in e-Duti Setem.
 - "Paid" — only after the operator has personally paid.
 - "Stamped certificate retrieved" — only after the operator holds
   the certificate PDF.
-- "Fixed duty of RMX confirmed" — only after the duty has been
-  confirmed against the live portal/document by the operator.
+- "Duty of RMX confirmed" or "Calculated by WeStamp" — only after
+  the duty has been confirmed against the live portal/document by
+  the operator.
 
 "Received", "under review", or "in progress" are the acceptable
 neutral framings until those real-world actions happen.
@@ -409,3 +444,8 @@ as done in any external communication.
   the first deliberately supported non-tenancy lane. Revised §3.2
   classifier row for Employment Contract. Behavior is manual
   handling only; no automation, no sewa_pajakan advisory reuse.
+- 2026-04-22 — Generalised §4A to **Nominal fixed-duty assisted
+  handling**, backed by `src/lib/nominal-duty-registry.ts`.
+  Employment Contract is now one entry in the registry rather than
+  a one-off case. Revised §3.2 classifier row accordingly. No new
+  categories added in this pass.

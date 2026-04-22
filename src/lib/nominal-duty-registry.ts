@@ -1,0 +1,137 @@
+/**
+ * WeStamp — Nominal Fixed-Duty Registry
+ *
+ * Small, explicit registry of document categories that WeStamp treats
+ * as "nominal / fixed-duty candidates handled via an assisted operator
+ * path" — the curated non-tenancy lane.
+ *
+ * This registry exists so non-tenancy categories that an operator can
+ * carry end-to-end through e-Duti Setem manually (for a likely
+ * fixed-duty instrument) share ONE handling model, instead of each
+ * category being a one-off special case in the operator UI.
+ *
+ * What this registry is NOT:
+ *   - It is NOT an automation framework. None of these categories are
+ *     driven through WeStamp's submission/payment/certificate flow.
+ *   - It is NOT a duty calculator. The "nominal/fixed-duty" framing is
+ *     a *likely* profile — every entry still requires the operator to
+ *     confirm the duty against the live portal and the document.
+ *   - It does NOT reuse sewa_pajakan advisory evidence. The Proven
+ *     Hantar Gate Chain, lane readiness gates, and Bahagian C
+ *     preflights are sewa_pajakan-only and do not apply to anything
+ *     in this registry.
+ *   - It does NOT reopen OCR/extraction. Entries are classified by
+ *     the uploader's declared category, then confirmed by the operator.
+ *
+ * Adding a new entry:
+ *   1. Add the `DocumentCategory` key (defined in `stamping-types.ts`).
+ *   2. Provide the six fields below.
+ *   3. Update the SOP and operator checklist to list the new example.
+ *   4. Do not reuse this registry to imply automation or guaranteed
+ *      duty treatment.
+ */
+
+import type { DocumentCategory } from "./stamping-types";
+
+/**
+ * Shared note about why sewa_pajakan portal evidence does not apply to
+ * these categories. Kept as a single constant so UI and docs cannot
+ * drift on the separation rule.
+ */
+export const NOMINAL_DUTY_SEWA_PAJAKAN_SEPARATION_NOTE =
+  "The Proven Hantar Gate Chain, lane-specific readiness gates, and " +
+  "Bahagian C preflight panels on WeStamp cover the sewa_pajakan " +
+  "tenancy lane only. Nominal-duty categories are taken through " +
+  "e-Duti Setem manually by the operator.";
+
+export interface NominalDutyRegistryEntry {
+  /** Document category key (matches `DocumentCategory`). */
+  categoryKey: DocumentCategory;
+  /** Internal, operator-facing display label for the panel heading. */
+  internalLabel: string;
+  /** Handling mode label shown in the operator panel's first row. */
+  handlingModeLabel: string;
+  /** Duty profile label shown in the operator panel. Must be tentative. */
+  dutyFramingLabel: string;
+  /**
+   * Items the operator must personally verify before any portal work.
+   * Each bullet is a full operator-visible sentence.
+   */
+  operatorConfirmationBullets: readonly string[];
+  /**
+   * Conditions that should stop the operator and trigger user contact
+   * (or internal escalation) instead of proceeding.
+   */
+  stopTriggers: readonly string[];
+}
+
+// ── Registry entries ─────────────────────────────────────────────────
+
+const EMPLOYMENT_CONTRACT_ENTRY: NominalDutyRegistryEntry = {
+  categoryKey: "employment_contract",
+  internalLabel: "Employment Contract",
+  handlingModeLabel: "Assisted operator handling",
+  dutyFramingLabel: "Likely nominal/fixed-duty document (operator to confirm)",
+  operatorConfirmationBullets: [
+    "The uploaded PDF is in fact an employment contract — not a " +
+      "tenancy, service, secondment, internship, or consultancy " +
+      "agreement misfiled under this category.",
+    "The PDF is signed and complete enough to proceed (signatures, " +
+      "dates, and party details present).",
+    "Nothing about the instrument suggests it should be treated as " +
+      "a different category or duty treatment before any portal " +
+      "work begins.",
+  ],
+  stopTriggers: [
+    "The category looks wrong or the document is a mixed instrument.",
+    "The PDF is unsigned, redacted, illegible, or obviously incomplete.",
+    "The operator cannot confidently confirm the instrument type.",
+  ],
+};
+
+/**
+ * Ordered registry of nominal-duty categories. Only categories whose
+ * handling has been deliberately approved should appear here.
+ */
+const NOMINAL_DUTY_REGISTRY: readonly NominalDutyRegistryEntry[] = [
+  EMPLOYMENT_CONTRACT_ENTRY,
+];
+
+// ── Public helpers ───────────────────────────────────────────────────
+
+/**
+ * Returns the registry entry for a document category, or `null` if
+ * the category is not part of the nominal-duty assisted path.
+ *
+ * Accepts a plain `string | null | undefined` because some call sites
+ * (job DTOs on the hosted pages) hold `documentCategory` as `string`
+ * rather than the strict `DocumentCategory` union. The comparison is
+ * a safe runtime `.find` against the known registry keys, so unknown
+ * strings simply return `null`.
+ */
+export function getNominalDutyEntry(
+  category: string | null | undefined
+): NominalDutyRegistryEntry | null {
+  if (!category) return null;
+  return (
+    NOMINAL_DUTY_REGISTRY.find((entry) => entry.categoryKey === category) ??
+    null
+  );
+}
+
+/**
+ * Whether a document category is part of the nominal-duty assisted path.
+ */
+export function isNominalDutyCategory(
+  category: string | null | undefined
+): boolean {
+  return getNominalDutyEntry(category) !== null;
+}
+
+/**
+ * Full registry, for docs/tests that want to enumerate supported
+ * nominal-duty categories. Do not mutate.
+ */
+export function listNominalDutyEntries(): readonly NominalDutyRegistryEntry[] {
+  return NOMINAL_DUTY_REGISTRY;
+}

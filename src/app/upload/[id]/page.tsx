@@ -17,6 +17,10 @@ import React, { useState, useEffect, useRef } from "react";
 import { evaluateFulfilmentIntegrity } from "../../../lib/fulfilment-integrity";
 import { getLaneKnowledgeProfile } from "../../../lib/stsds-lane-knowledge";
 import { getSewaPajakanGateChainView } from "../../../lib/sewa-pajakan-gate-chain";
+import {
+  getNominalDutyEntry,
+  NOMINAL_DUTY_SEWA_PAJAKAN_SEPARATION_NOTE,
+} from "../../../lib/nominal-duty-registry";
 import { resolveConfirmedTenancyPreparationValues } from "../../../lib/tenancy-preparation-resolver";
 
 // ─── Types (mirrored from stamping-types for client use) ─────────────
@@ -2334,8 +2338,12 @@ export default function IntakeDetailsPage({
   // ── Render ───────────────────────────────────────────────────────
 
   const isTenancy = job.documentCategory === "tenancy_agreement";
-  const isEmploymentContract =
-    job.documentCategory === "employment_contract";
+  // Nominal-duty assisted lane lookup. `null` for tenancy or any
+  // category not in the nominal-duty registry. Drives the shared
+  // operator handling panel below — not a substitute for operator
+  // confirmation.
+  const nominalDutyEntry = getNominalDutyEntry(job.documentCategory);
+  const isNominalDuty = nominalDutyEntry !== null;
   const needsDetails = isTenancy && job.status === "uploaded";
   const hasDetails = isTenancy && !!job.stampingDetails;
   const canPrepare = isTenancy && job.status === "intake_reviewed";
@@ -8413,25 +8421,29 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── Employment Contract handling (internal, operator-only) ───
-          Dedicated non-tenancy handling panel. Employment contracts
-          are the first deliberately supported non-tenancy lane and
-          are handled end-to-end by an operator in e-Duti Setem — the
-          sewa_pajakan advisory stack (Proven Hantar Gate Chain,
-          lane-specific readiness gates, Bahagian C preflights, etc.)
-          does NOT apply here. The "Likely fixed-duty document"
-          framing is deliberately tentative: duty is confirmed by the
-          operator against the live portal and the document itself,
-          not assumed. */}
-      {isEmploymentContract && !isManualReview && !isFailed && (
+      {/* ── Nominal Duty Handling (internal, operator-only) ──────────
+          Registry-driven assisted handling panel. Rendered for any
+          document category in `nominal-duty-registry.ts`. Entries
+          share one handling model so new nominal/fixed-duty-style
+          categories can be added without duplicating UI.
+
+          Employment Contract is currently the only registered entry.
+          All such categories are taken through e-Duti Setem manually
+          by the operator — they are NOT part of the sewa_pajakan
+          advisory stack (Proven Hantar Gate Chain, lane readiness
+          gates, Bahagian C preflights). The "Likely nominal/fixed-
+          duty" framing is deliberately tentative: duty is confirmed
+          by the operator against the live portal and the document
+          itself, not assumed. */}
+      {nominalDutyEntry && !isManualReview && !isFailed && (
         <div
           className="intake-details-card"
           style={{ marginTop: 16 }}
           role="region"
-          aria-label="Employment Contract Handling — internal operator view"
+          aria-label={`${nominalDutyEntry.internalLabel} — nominal duty assisted handling, internal operator view`}
         >
           <h2 style={{ fontSize: 16, margin: "0 0 4px" }}>
-            Employment Contract Handling
+            Nominal Duty Handling &middot; {nominalDutyEntry.internalLabel}
           </h2>
           <p style={{ fontSize: 12, color: "#78716c", margin: "0 0 12px" }}>
             Internal operator view. Nothing here has been submitted,
@@ -8439,15 +8451,21 @@ export default function IntakeDetailsPage({
           </p>
 
           <div className="intake-details-row">
+            <span className="intake-details-label">Category</span>
+            <span className="intake-details-value">
+              {nominalDutyEntry.internalLabel}
+            </span>
+          </div>
+          <div className="intake-details-row">
             <span className="intake-details-label">Handling mode</span>
             <span className="intake-details-value">
-              Assisted operator handling
+              {nominalDutyEntry.handlingModeLabel}
             </span>
           </div>
           <div className="intake-details-row">
             <span className="intake-details-label">Duty profile</span>
             <span className="intake-details-value">
-              Likely fixed-duty document (operator to confirm)
+              {nominalDutyEntry.dutyFramingLabel}
             </span>
           </div>
           <div className="intake-details-row">
@@ -8478,20 +8496,37 @@ export default function IntakeDetailsPage({
                 color: "#3f3f46",
               }}
             >
-              <li>
-                The uploaded PDF is in fact an employment contract —
-                not a tenancy, service, secondment, or other
-                instrument misfiled under this category.
-              </li>
-              <li>
-                The PDF is signed and complete enough to proceed
-                (signatures, dates, and party details present).
-              </li>
-              <li>
-                Nothing about the instrument suggests it should be
-                treated as a different category or lane before any
-                portal work begins.
-              </li>
+              {nominalDutyEntry.operatorConfirmationBullets.map(
+                (bullet, i) => (
+                  <li key={i}>{bullet}</li>
+                )
+              )}
+            </ul>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <p
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                margin: "0 0 6px",
+                color: "#3f3f46",
+              }}
+            >
+              Stop and contact user if
+            </p>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 20,
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "#3f3f46",
+              }}
+            >
+              {nominalDutyEntry.stopTriggers.map((trigger, i) => (
+                <li key={i}>{trigger}</li>
+              ))}
             </ul>
           </div>
 
@@ -8510,11 +8545,8 @@ export default function IntakeDetailsPage({
             <strong style={{ display: "block", marginBottom: 2 }}>
               Sewa/Pajakan portal evidence does not apply here.
             </strong>
-            The Proven Hantar Gate Chain, lane-specific readiness
-            gates, and Bahagian C preflight panels on WeStamp cover
-            the sewa_pajakan tenancy lane only. Employment contracts
-            are taken through e-Duti Setem manually by the operator.
-            Follow the Employment Contract section of{" "}
+            {NOMINAL_DUTY_SEWA_PAJAKAN_SEPARATION_NOTE} Follow the
+            Nominal Fixed-Duty section of{" "}
             <code>docs/pilot-operator-sop.md</code> and{" "}
             <code>docs/pilot-operator-checklist.md</code>.
           </div>
@@ -8536,10 +8568,11 @@ export default function IntakeDetailsPage({
       )}
 
       {/* ── Other / Not Sure (no automated lane) ─────────────────────
-          Retained for the "Other / Not Sure" category only. This
-          lane is intentionally narrow: no advisory, no automation,
-          no commitment beyond confirming the file was received. */}
-      {!isTenancy && !isEmploymentContract && !isManualReview && !isFailed && (
+          Catch-all for non-tenancy categories that are NOT in the
+          nominal-duty registry (for example, "Other / Not Sure").
+          Intentionally narrow: no advisory, no automation, no
+          commitment beyond confirming the file was received. */}
+      {!isTenancy && !isNominalDuty && !isManualReview && !isFailed && (
         <div className="intake-next-note">
           <p>
             Your document has been saved. An operator will review the
