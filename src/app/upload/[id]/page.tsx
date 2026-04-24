@@ -6851,8 +6851,19 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── Payment & Certificate Lifecycle ───────────────────────────── */}
-      {job.routingSuggestion && !isManualReview && !isFailed && (
+      {/* ── Payment & Certificate Lifecycle ─────────────────────────────
+          Shown for any operator-worked job regardless of lane: tenancy
+          jobs (which acquire `routingSuggestion` via the Portal Routing
+          flow) AND nominal-duty registry jobs (which never acquire a
+          routing suggestion because the Portal Routing panel is hidden
+          for them, but are still taken through e-Duti Setem manually by
+          the operator). Without this, SOP §8 "what done looks like"
+          cannot be executed in the UI for nominal-duty lanes — the
+          operator has no way to record adjudication, mark payment
+          done, upload the certificate, or mark delivered, and the
+          public receipt stays on "Received" forever. Hidden for manual
+          review / failed jobs as before. */}
+      {(job.routingSuggestion || isNominalDuty) && !isManualReview && !isFailed && (
         <div id="fulfilment-lifecycle" className="fulfilment-section">
           <h2>Payment &amp; Certificate Lifecycle</h2>
           <p style={{ fontSize: 13, color: "#78716c" }}>
