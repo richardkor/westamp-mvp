@@ -2464,7 +2464,14 @@ export default function IntakeDetailsPage({
       </div>
 
       {/* ── STSDS Portal Routing ──────────────────────────────────── */}
-      {!isManualReview && !isFailed && (
+      {/* Hidden for nominal-duty registry categories (e.g. Employment
+          Contract, Statutory Declaration). Those are handled manually
+          by the operator in e-Duti Setem per SOP §4A; they do not go
+          through the sewa_pajakan advisory stack, and the catalogue
+          search / Build Portal Draft flow below does not apply to
+          them. The dedicated "Nominal Duty Handling" panel further
+          down is the correct anchor for those jobs. */}
+      {!isNominalDuty && !isManualReview && !isFailed && (
         <div className="routing-section">
           <h2 className="routing-heading">Portal Routing</h2>
 
@@ -8428,13 +8435,17 @@ export default function IntakeDetailsPage({
           share one handling model so new nominal/fixed-duty-style
           categories can be added without duplicating UI.
 
-          Employment Contract is currently the only registered entry.
-          All such categories are taken through e-Duti Setem manually
-          by the operator — they are NOT part of the sewa_pajakan
-          advisory stack (Proven Hantar Gate Chain, lane readiness
-          gates, Bahagian C preflights). The "Likely nominal/fixed-
-          duty" framing is deliberately tentative: duty is confirmed
-          by the operator against the live portal and the document
+          Registry contents at time of writing: Employment Contract
+          and Statutory Declaration. The authoritative list lives in
+          `src/lib/nominal-duty-registry.ts` — this panel renders
+          whatever is in that registry, so no code change here is
+          needed when a new admitted category is added. All such
+          categories are taken through e-Duti Setem manually by the
+          operator — they are NOT part of the sewa_pajakan advisory
+          stack (Proven Hantar Gate Chain, lane readiness gates,
+          Bahagian C preflights). The "Likely nominal/fixed-duty"
+          framing is deliberately tentative: duty is confirmed by
+          the operator against the live portal and the document
           itself, not assumed. */}
       {nominalDutyEntry && !isManualReview && !isFailed && (
         <div
