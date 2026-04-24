@@ -6858,6 +6858,72 @@ section[data-section] {
   color: #2e7d32;
 }
 
+/* Pipeline-state badges used by the /jobs operator inbox. Visual
+   language matches the existing fulfilment-badge pattern so the
+   operator learns one vocabulary. */
+
+.fulfilment-badge-new {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.fulfilment-badge-needs_user {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.fulfilment-badge-ready_to_deliver {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.fulfilment-badge-completed {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.fulfilment-badge-idle {
+  background: #f5f5f4;
+  color: #78716c;
+}
+
+/* Jobs search box */
+
+.jobs-search-wrap {
+  margin-bottom: 16px;
+}
+
+.jobs-search {
+  width: 100%;
+  max-width: 360px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #333;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.jobs-search:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.15);
+}
+
+/* Nominal-duty handling cell in the jobs table */
+
+.jobs-handling-cell {
+  font-size: 12px;
+  color: #555;
+  max-width: 220px;
+}
+
+.jobs-handling-text {
+  display: inline-block;
+  line-height: 1.35;
+}
+
 /* ─── Public Receipt Page ────────────────────────────────────────────── */
 
 .receipt-intro {

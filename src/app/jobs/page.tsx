@@ -1,21 +1,33 @@
 /**
- * /jobs — Stamping Jobs Queue
+ * /jobs — Stamping Jobs Operator Inbox
  *
- * Server Component that loads all stamping jobs from the store
- * and passes them to the client-side queue UI for filtering.
+ * Server Component that loads all stamping jobs from the store and
+ * passes a serialised, lightweight shape to the client-side queue UI
+ * for filtering, sorting, and searching.
  *
- * This is a minimal internal operational queue — not a dashboard.
- * It lets an operator quickly identify jobs by fulfilment status:
- * awaiting payment, waiting for certificate, or certificate retrieved.
+ * Gated behind operator middleware (see `src/middleware.ts`) — not
+ * publicly reachable. This page is the operator's primary inbox:
+ * find new uploads, open jobs that need action, track fulfilment
+ * across the three pilot lanes (tenancy, employment contract,
+ * statutory declaration). It is not a dashboard, not analytics, not
+ * a management report.
  */
 
 import { listJobs } from "../../lib/stamping-store";
-import { DOCUMENT_CATEGORY_LABELS, STAMPING_JOB_STATUS_LABELS } from "../../lib/stamping-types";
+import {
+  DOCUMENT_CATEGORY_LABELS,
+  STAMPING_JOB_STATUS_LABELS,
+} from "../../lib/stamping-types";
 import type { StampingJob } from "../../lib/stamping-types";
 import { evaluateFulfilmentIntegrity } from "../../lib/fulfilment-integrity";
 import { JobsQueueClient } from "./jobs-queue-client";
+import type { NominalDutyState } from "../../lib/nominal-duty-lifecycle";
 
-/** Lightweight shape passed to the client — avoids serialising the full StampingJob. */
+/**
+ * Lightweight shape passed to the client — avoids serialising the full
+ * StampingJob across the server/client boundary. Only fields the
+ * queue UI needs are included.
+ */
 export interface JobListItem {
   id: string;
   originalFileName: string;
@@ -34,6 +46,16 @@ export interface JobListItem {
     certificateStoragePath: string | null;
     delivered: boolean;
   } | null;
+  /**
+   * Internal nominal-duty lifecycle state for registry categories
+   * (Employment Contract, Statutory Declaration). Null for tenancy,
+   * for "Other / Not Sure", and for nominal-duty jobs the operator
+   * has not yet touched (the backend default is `received`, but the
+   * persisted field is only set after an explicit operator write).
+   */
+  nominalDutyState: NominalDutyState | null;
+  /** ISO timestamp of the most recent nominal-duty state write. */
+  nominalDutyStateUpdatedAt: string | null;
   /** Number of fulfilment integrity anomalies detected (0 = healthy). */
   integrityAnomalyCount: number;
   /** Anomaly messages derived from fulfilment integrity evaluation. */
@@ -55,7 +77,8 @@ function toListItem(job: StampingJob): JobListItem {
     id: job.id,
     originalFileName: job.originalFileName,
     documentCategory: job.documentCategory,
-    categoryLabel: DOCUMENT_CATEGORY_LABELS[job.documentCategory] ?? job.documentCategory,
+    categoryLabel:
+      DOCUMENT_CATEGORY_LABELS[job.documentCategory] ?? job.documentCategory,
     status: job.status,
     statusLabel: STAMPING_JOB_STATUS_LABELS[job.status] ?? job.status,
     createdAt: job.createdAt,
@@ -71,6 +94,8 @@ function toListItem(job: StampingJob): JobListItem {
           delivered: job.fulfilmentState.delivered ?? false,
         }
       : null,
+    nominalDutyState: job.nominalDutyState ?? null,
+    nominalDutyStateUpdatedAt: job.nominalDutyStateUpdatedAt ?? null,
     integrityAnomalyCount: integrity.anomalies.length,
     integrityAnomalies: integrity.anomalies,
   };
@@ -82,12 +107,13 @@ export default async function JobsPage() {
 
   return (
     <main>
-      <a href="/upload" className="back-link">
-        &larr; Upload Document
+      <a href="/" className="back-link">
+        &larr; Home
       </a>
       <h1>Stamping Jobs</h1>
       <p className="jobs-intro">
-        Internal operational queue for stamping fulfilment tracking.
+        Operator inbox. Find new uploads, open jobs that need action,
+        and track fulfilment across the pilot lanes. Internal view only.
       </p>
       <JobsQueueClient items={items} />
     </main>

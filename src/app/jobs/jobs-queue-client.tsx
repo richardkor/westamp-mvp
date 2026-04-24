@@ -3,117 +3,219 @@
 /**
  * JobsQueueClient — Client Component for the stamping jobs queue.
  *
- * Handles filter chip interaction and renders the job table.
- * Receives pre-serialised job list items from the Server Component.
+ * Operator inbox UI. Renders the jobs table with three orthogonal
+ * controls:
+ *   1. Pipeline chips — what needs doing next (new / needs user /
+ *      awaiting payment / waiting for certificate / ready to deliver /
+ *      completed / integrity issues).
+ *   2. Lane chips — which document category (tenancy / employment
+ *      contract / statutory declaration / other).
+ *   3. Text search — matches filename or job id (case-insensitive).
  *
- * Fulfilment queue categories are derived at render time from
- * each job's fulfilmentState — nothing is stored separately.
+ * The "pipeline state" is derived at render time from each job's
+ * `fulfilmentState` and `nominalDutyState`. Nothing is persisted
+ * separately; this is purely a presentation-layer bucketisation for
+ * the operator.
+ *
+ * Sort order: newest-first by `createdAt`, tiebreak on id for
+ * stability. The primary sort is deliberately time-based because the
+ * top operator question is "what's new?" — the pipeline chip is how
+ * the operator narrows to "what needs action?".
+ *
+ * URL sync: `?queue=<pipeline>`, `?lane=<category>`, `?q=<search>`.
+ * Invalid values are ignored and fall back to defaults.
  */
 
 import { useState, useEffect } from "react";
 import type { JobListItem } from "./page";
+import { NOMINAL_DUTY_STATE_LABELS } from "../../lib/nominal-duty-lifecycle";
+import { DOCUMENT_CATEGORY_LABELS } from "../../lib/stamping-types";
 
-// ─── Fulfilment queue derivation ────────────────────────────────────
+// ─── Pipeline state derivation ──────────────────────────────────────
 
-type FulfilmentQueue =
+/**
+ * Coarse operator-facing pipeline bucket for a job. Derived, not
+ * stored. Priority is important: `needs_user` and `ready_to_deliver`
+ * outrank mid-flow states because the operator needs to see them.
+ */
+type PipelineState =
+  | "new"
+  | "needs_user"
   | "awaiting_payment"
   | "waiting_for_certificate"
-  | "certificate_retrieved"
-  | "none";
+  | "ready_to_deliver"
+  | "completed"
+  | "idle";
 
-function deriveFulfilmentQueue(item: JobListItem): FulfilmentQueue {
-  if (!item.fulfilmentState) return "none";
-  const { paymentStatus, certificateStatus } = item.fulfilmentState;
-  if (certificateStatus === "certificate_retrieved") return "certificate_retrieved";
-  if (paymentStatus === "payment_marked_done" && certificateStatus === "waiting_for_certificate")
-    return "waiting_for_certificate";
-  if (paymentStatus === "awaiting_payment") return "awaiting_payment";
-  return "none";
-}
-
-const QUEUE_LABELS: Record<FulfilmentQueue, string> = {
+const PIPELINE_LABELS: Record<PipelineState, string> = {
+  new: "New",
+  needs_user: "Needs User",
   awaiting_payment: "Awaiting Payment",
   waiting_for_certificate: "Waiting for Certificate",
-  certificate_retrieved: "Certificate Retrieved",
-  none: "—",
+  ready_to_deliver: "Ready to Deliver",
+  completed: "Completed",
+  idle: "In Handling",
 };
 
-// ─── Sort: most-actionable first ────────────────────────────────────
+function derivePipelineState(item: JobListItem): PipelineState {
+  const fs = item.fulfilmentState;
+  const nd = item.nominalDutyState;
 
-const QUEUE_SORT_ORDER: Record<FulfilmentQueue, number> = {
-  awaiting_payment: 0,
-  waiting_for_certificate: 1,
-  none: 2,
-  certificate_retrieved: 3,
-};
+  // Delivered — fully done from the operator's inbox POV.
+  if (fs?.delivered) return "completed";
 
-function sortJobs(items: JobListItem[]): JobListItem[] {
-  return [...items].sort((a, b) => {
-    const qa = deriveFulfilmentQueue(a);
-    const qb = deriveFulfilmentQueue(b);
-    const orderDiff = QUEUE_SORT_ORDER[qa] - QUEUE_SORT_ORDER[qb];
-    if (orderDiff !== 0) return orderDiff;
-    // Within awaiting_payment and waiting_for_certificate: longest-waiting first
-    if (qa === "awaiting_payment" || qa === "waiting_for_certificate") {
-      const sinceA = deriveWaitingSince(a, qa);
-      const sinceB = deriveWaitingSince(b, qb);
-      if (sinceA && sinceB) {
-        return new Date(sinceA).getTime() - new Date(sinceB).getTime();
-      }
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  // Nominal-duty job that the operator has attested is externally
+  // stamped. Leaves the inbox as completed even if no fulfilmentState
+  // exists (not every nominal-duty job will have one recorded).
+  if (nd === "completed") return "completed";
+
+  // Needs-user bucket: the operator has reached out (or marked the
+  // job as stuck) and needs a reply from the user before anything
+  // else can happen. This outranks any fulfilment progress because
+  // nothing else will move until the user is back.
+  if (nd === "awaiting_user" || nd === "cannot_proceed") {
+    return "needs_user";
+  }
+
+  // Fulfilment-lifecycle buckets.
+  if (fs) {
+    if (fs.certificateStatus === "certificate_retrieved") {
+      return "ready_to_deliver";
     }
-    // Within none and certificate_retrieved: newest first
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-  });
+    if (
+      fs.paymentStatus === "payment_marked_done" &&
+      fs.certificateStatus === "waiting_for_certificate"
+    ) {
+      return "waiting_for_certificate";
+    }
+    if (fs.paymentStatus === "awaiting_payment") {
+      return "awaiting_payment";
+    }
+  }
+
+  // Truly untouched: no fulfilment recorded and the operator has not
+  // written any nominal-duty state yet. This is the "new upload"
+  // bucket that operators most want to find fast.
+  if (!fs && nd === null) return "new";
+
+  // Operator has started something (nominal-duty under_review or
+  // external_portal_in_progress, or partial fulfilment state) but the
+  // job is not in one of the named actionable buckets above.
+  return "idle";
 }
 
-// ─── Filter types ───────────────────────────────────────────────────
+// ─── Pipeline filter ────────────────────────────────────────────────
 
-type FilterKey = "all" | FulfilmentQueue | "integrity_issues";
+type PipelineFilterKey = "all" | PipelineState | "integrity_issues";
 
-const FILTER_OPTIONS: { key: FilterKey; label: string }[] = [
+const PIPELINE_FILTER_OPTIONS: { key: PipelineFilterKey; label: string }[] = [
   { key: "all", label: "All" },
+  { key: "new", label: "New" },
+  { key: "needs_user", label: "Needs User" },
   { key: "awaiting_payment", label: "Awaiting Payment" },
   { key: "waiting_for_certificate", label: "Waiting for Certificate" },
-  { key: "certificate_retrieved", label: "Certificate Retrieved" },
+  { key: "ready_to_deliver", label: "Ready to Deliver" },
+  { key: "completed", label: "Completed" },
   { key: "integrity_issues", label: "Integrity Issues" },
 ];
 
-const VALID_FILTER_KEYS = new Set<string>(FILTER_OPTIONS.map((o) => o.key));
+const VALID_PIPELINE_KEYS = new Set<string>(
+  PIPELINE_FILTER_OPTIONS.map((o) => o.key)
+);
+
+// ─── Lane filter ────────────────────────────────────────────────────
+
+type LaneFilterKey = "all" | keyof typeof DOCUMENT_CATEGORY_LABELS;
+
+const LANE_FILTER_OPTIONS: { key: LaneFilterKey; label: string }[] = [
+  { key: "all", label: "All Lanes" },
+  { key: "tenancy_agreement", label: "Tenancy" },
+  { key: "employment_contract", label: "Employment Contract" },
+  { key: "statutory_declaration", label: "Statutory Declaration" },
+  { key: "other", label: "Other / Not Sure" },
+];
+
+const VALID_LANE_KEYS = new Set<string>(LANE_FILTER_OPTIONS.map((o) => o.key));
+
+// ─── Sort: newest first ─────────────────────────────────────────────
+
+function sortJobs(items: JobListItem[]): JobListItem[] {
+  return [...items].sort((a, b) => {
+    const diff =
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (diff !== 0) return diff;
+    // Stable tiebreak on id so the order doesn't shuffle between
+    // renders when two jobs share a timestamp.
+    return a.id.localeCompare(b.id);
+  });
+}
 
 // ─── Next action derivation ─────────────────────────────────────────
 
-function deriveNextAction(item: JobListItem): string {
-  if (!item.fulfilmentState || !item.fulfilmentState.adjudicationNumber) {
-    return "Record adjudication";
+/**
+ * Short action phrase for the "Next Action" cell. Pairs with a link
+ * fragment (see `deriveNextActionFragment`) so the operator lands at
+ * the relevant panel on the detail page.
+ */
+function deriveNextAction(item: JobListItem, state: PipelineState): string {
+  if (state === "new") return "Open";
+  if (state === "needs_user") return "Follow up";
+  if (state === "awaiting_payment") {
+    // Adjudication isn't recorded yet — that's the precondition for
+    // "Mark payment done", so surface the real first step.
+    if (!item.fulfilmentState?.adjudicationNumber) return "Record adjudication";
+    return "Mark payment done";
   }
-  const { paymentStatus, certificateStatus, delivered } = item.fulfilmentState;
-  if (delivered) return "Delivered";
-  if (paymentStatus === "awaiting_payment") return "Mark payment done";
-  if (paymentStatus === "payment_marked_done" && certificateStatus === "waiting_for_certificate")
-    return "Upload certificate";
-  if (certificateStatus === "certificate_retrieved") return "View lifecycle";
-  return "View lifecycle";
+  if (state === "waiting_for_certificate") return "Upload certificate";
+  if (state === "ready_to_deliver") return "Mark delivered";
+  if (state === "completed") return "View lifecycle";
+  return "Open";
+}
+
+/**
+ * Hash fragment to append to the detail-page link. Fulfilment-lifecycle
+ * states deep-link to that panel; other states (new, needs_user, idle)
+ * open the page top so the operator sees the whole job.
+ */
+function deriveNextActionFragment(state: PipelineState): string {
+  switch (state) {
+    case "awaiting_payment":
+    case "waiting_for_certificate":
+    case "ready_to_deliver":
+    case "completed":
+      return "#fulfilment-lifecycle";
+    default:
+      return "";
+  }
 }
 
 // ─── Ageing derivation ──────────────────────────────────────────────
 
 /**
- * Returns the ISO timestamp from which to measure waiting age,
- * or null if no age should be shown.
+ * Returns the ISO timestamp from which to measure waiting age, or
+ * null if no age should be shown for this state.
  */
-function deriveWaitingSince(item: JobListItem, queue: FulfilmentQueue): string | null {
-  if (!item.fulfilmentState) return null;
-  switch (queue) {
+function deriveWaitingSince(
+  item: JobListItem,
+  state: PipelineState
+): string | null {
+  switch (state) {
     case "awaiting_payment":
-      // Age since adjudication was recorded (which set awaiting_payment)
-      return item.fulfilmentState.lastFulfilmentUpdateAt;
+      return item.fulfilmentState?.lastFulfilmentUpdateAt ?? null;
     case "waiting_for_certificate":
-      // Age since payment was marked done
-      return item.fulfilmentState.paymentMarkedAt ?? item.fulfilmentState.lastFulfilmentUpdateAt;
-    case "certificate_retrieved":
-      // No waiting age — show completed timestamp instead
-      return null;
+      return (
+        item.fulfilmentState?.paymentMarkedAt ??
+        item.fulfilmentState?.lastFulfilmentUpdateAt ??
+        null
+      );
+    case "ready_to_deliver":
+      return item.fulfilmentState?.certificateRetrievedAt ?? null;
+    case "needs_user":
+      // Age since the operator marked the job as needing user input.
+      return item.nominalDutyStateUpdatedAt;
+    case "new":
+      // Age since upload, so an "aged new" job stands out.
+      return item.createdAt;
     default:
       return null;
   }
@@ -162,71 +264,131 @@ function truncateFileName(name: string, maxLen: number = 32): string {
   return name.slice(0, maxLen - 1) + "…";
 }
 
+// ─── Search matching ────────────────────────────────────────────────
+
+function matchesSearch(item: JobListItem, query: string): boolean {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return (
+    item.originalFileName.toLowerCase().includes(q) ||
+    item.id.toLowerCase().includes(q)
+  );
+}
+
 // ─── Component ──────────────────────────────────────────────────────
 
 export function JobsQueueClient({ items }: { items: JobListItem[] }) {
-  // Initialise filter from URL query param ?queue=...
-  const [filter, setFilter] = useState<FilterKey>(() => {
+  // Initialise pipeline filter from URL query param ?queue=...
+  const [pipelineFilter, setPipelineFilter] = useState<PipelineFilterKey>(() => {
     if (typeof window === "undefined") return "all";
     const param = new URLSearchParams(window.location.search).get("queue");
-    return param && VALID_FILTER_KEYS.has(param) ? (param as FilterKey) : "all";
+    return param && VALID_PIPELINE_KEYS.has(param)
+      ? (param as PipelineFilterKey)
+      : "all";
   });
 
-  // Sync filter changes back to URL without full navigation
+  // Initialise lane filter from URL query param ?lane=...
+  const [laneFilter, setLaneFilter] = useState<LaneFilterKey>(() => {
+    if (typeof window === "undefined") return "all";
+    const param = new URLSearchParams(window.location.search).get("lane");
+    return param && VALID_LANE_KEYS.has(param) ? (param as LaneFilterKey) : "all";
+  });
+
+  // Initialise search query from URL query param ?q=...
+  const [searchQuery, setSearchQuery] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("q") ?? "";
+  });
+
+  // Sync all three filter controls back to the URL without full
+  // navigation. Keeps links in the address bar meaningful and makes
+  // browser back/forward reflect filter state.
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (filter === "all") {
-      url.searchParams.delete("queue");
-    } else {
-      url.searchParams.set("queue", filter);
-    }
+    if (pipelineFilter === "all") url.searchParams.delete("queue");
+    else url.searchParams.set("queue", pipelineFilter);
+    if (laneFilter === "all") url.searchParams.delete("lane");
+    else url.searchParams.set("lane", laneFilter);
+    if (searchQuery.trim() === "") url.searchParams.delete("q");
+    else url.searchParams.set("q", searchQuery.trim());
     window.history.replaceState({}, "", url.toString());
-  }, [filter]);
+  }, [pipelineFilter, laneFilter, searchQuery]);
 
-  // Compute counts
-  const counts: Record<FulfilmentQueue, number> = {
+  // Apply lane filter first so pipeline counts reflect the selected
+  // lane. The operator's mental model is typically "I'm in the
+  // tenancy lane — what's new / needs user / etc. in that lane?".
+  const laneFiltered =
+    laneFilter === "all"
+      ? items
+      : items.filter((item) => item.documentCategory === laneFilter);
+
+  // Compute pipeline counts over the lane-filtered subset.
+  const pipelineCounts: Record<PipelineState, number> = {
+    new: 0,
+    needs_user: 0,
     awaiting_payment: 0,
     waiting_for_certificate: 0,
-    certificate_retrieved: 0,
-    none: 0,
+    ready_to_deliver: 0,
+    completed: 0,
+    idle: 0,
   };
   let integrityIssueCount = 0;
-  for (const item of items) {
-    counts[deriveFulfilmentQueue(item)]++;
+  for (const item of laneFiltered) {
+    pipelineCounts[derivePipelineState(item)]++;
     if (item.integrityAnomalyCount > 0) integrityIssueCount++;
   }
 
-  // Filter
-  const filtered =
-    filter === "all"
-      ? items
-      : filter === "integrity_issues"
-        ? items.filter((item) => item.integrityAnomalyCount > 0)
-        : items.filter((item) => deriveFulfilmentQueue(item) === filter);
+  // Compute lane counts over the full item list (before any filter)
+  // so the lane chip counts always show the true totals regardless of
+  // which pipeline chip is active.
+  const laneCounts: Record<string, number> = {};
+  for (const item of items) {
+    laneCounts[item.documentCategory] =
+      (laneCounts[item.documentCategory] ?? 0) + 1;
+  }
 
-  // Sort
+  // Apply pipeline filter + search to lane-filtered set.
+  const filtered = laneFiltered.filter((item) => {
+    if (!matchesSearch(item, searchQuery.trim())) return false;
+    if (pipelineFilter === "all") return true;
+    if (pipelineFilter === "integrity_issues") {
+      return item.integrityAnomalyCount > 0;
+    }
+    return derivePipelineState(item) === pipelineFilter;
+  });
+
   const sorted = sortJobs(filtered);
 
-  // Build the return URL for queue context on detail-page links
-  const returnQueue = filter === "all" ? "/jobs" : `/jobs?queue=${filter}`;
+  // Build the return URL for queue context on detail-page links.
+  // Preserves pipeline + lane + search so "back to queue" feels right.
+  const returnUrl = (() => {
+    const url = new URL("/jobs", "http://placeholder");
+    if (pipelineFilter !== "all") url.searchParams.set("queue", pipelineFilter);
+    if (laneFilter !== "all") url.searchParams.set("lane", laneFilter);
+    if (searchQuery.trim() !== "") url.searchParams.set("q", searchQuery.trim());
+    return url.pathname + (url.search ? url.search : "");
+  })();
+
+  const anyFilterActive =
+    pipelineFilter !== "all" || laneFilter !== "all" || searchQuery.trim() !== "";
 
   return (
     <>
-      {/* Filter chips */}
+      {/* Pipeline chips — what needs doing next */}
       <div className="filter-chips">
-        {FILTER_OPTIONS.map((opt) => {
+        {PIPELINE_FILTER_OPTIONS.map((opt) => {
           const count =
             opt.key === "all"
-              ? items.length
+              ? laneFiltered.length
               : opt.key === "integrity_issues"
                 ? integrityIssueCount
-                : counts[opt.key as FulfilmentQueue];
+                : pipelineCounts[opt.key as PipelineState];
           return (
             <button
               key={opt.key}
               type="button"
-              className={`filter-chip${filter === opt.key ? " filter-chip-active" : ""}`}
-              onClick={() => setFilter(opt.key)}
+              className={`filter-chip${pipelineFilter === opt.key ? " filter-chip-active" : ""}`}
+              onClick={() => setPipelineFilter(opt.key)}
             >
               {opt.label} ({count})
             </button>
@@ -234,9 +396,45 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
         })}
       </div>
 
+      {/* Lane chips — which document category */}
+      <div className="filter-chips">
+        {LANE_FILTER_OPTIONS.map((opt) => {
+          const count =
+            opt.key === "all" ? items.length : (laneCounts[opt.key] ?? 0);
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              className={`filter-chip${laneFilter === opt.key ? " filter-chip-active" : ""}`}
+              onClick={() => setLaneFilter(opt.key)}
+            >
+              {opt.label} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search box */}
+      <div className="jobs-search-wrap">
+        <input
+          type="search"
+          className="jobs-search"
+          placeholder="Search filename or job id…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          aria-label="Search jobs by filename or id"
+        />
+      </div>
+
       {/* Jobs table */}
       {sorted.length === 0 ? (
-        <p className="jobs-empty">No jobs match this filter.</p>
+        <p className="jobs-empty">
+          {items.length === 0
+            ? "No jobs yet. Uploads will appear here as they arrive."
+            : anyFilterActive
+              ? "No jobs match the current filters."
+              : "No jobs to show."}
+        </p>
       ) : (
         <div className="jobs-table-wrap">
           <table className="jobs-table">
@@ -245,7 +443,8 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
                 <th>File</th>
                 <th>Category</th>
                 <th>Status</th>
-                <th>Fulfilment</th>
+                <th>Handling</th>
+                <th>Pipeline</th>
                 <th>Waiting</th>
                 <th>Adj. No.</th>
                 <th>Next Action</th>
@@ -256,40 +455,64 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
             </thead>
             <tbody>
               {sorted.map((item) => {
-                const queue = deriveFulfilmentQueue(item);
+                const state = derivePipelineState(item);
+                const fragment = deriveNextActionFragment(state);
+                const detailHref = `/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}${fragment}`;
+                const integrityHref = `/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}#fulfilment-integrity`;
                 return (
                   <tr key={item.id}>
                     <td>
-                      <a href={`/upload/${item.id}?fromQueue=${encodeURIComponent(returnQueue)}`} className="jobs-file-link">
+                      <a
+                        href={`/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}`}
+                        className="jobs-file-link"
+                      >
                         {truncateFileName(item.originalFileName)}
                       </a>
                     </td>
                     <td>{item.categoryLabel}</td>
                     <td>
-                      <span className={`intake-status-badge intake-status-${item.status}`}>
+                      <span
+                        className={`intake-status-badge intake-status-${item.status}`}
+                      >
                         {item.statusLabel}
                       </span>
                     </td>
-                    <td>
-                      {queue !== "none" ? (
-                        <span className={`fulfilment-badge fulfilment-badge-${queue}`}>
-                          {QUEUE_LABELS[queue]}
+                    <td className="jobs-handling-cell">
+                      {item.nominalDutyState ? (
+                        <span className="jobs-handling-text">
+                          {NOMINAL_DUTY_STATE_LABELS[item.nominalDutyState]}
                         </span>
                       ) : (
                         <span className="jobs-no-fulfilment">—</span>
                       )}
+                    </td>
+                    <td>
+                      <span
+                        className={`fulfilment-badge fulfilment-badge-${state}`}
+                      >
+                        {PIPELINE_LABELS[state]}
+                      </span>
                       {item.integrityAnomalyCount > 0 && (
-                        <span className="jobs-integrity-warn" title="Fulfilment integrity issue detected">
-                          {" "}⚠
+                        <span
+                          className="jobs-integrity-warn"
+                          title={item.integrityAnomalies.join(" • ")}
+                        >
+                          {" "}
+                          ⚠
                         </span>
                       )}
                     </td>
                     <td className="jobs-waiting-age">
                       {(() => {
-                        const since = deriveWaitingSince(item, queue);
+                        const since = deriveWaitingSince(item, state);
                         if (since) return formatAge(since);
-                        if (queue === "certificate_retrieved" && item.fulfilmentState?.certificateRetrievedAt) {
-                          return formatDate(item.fulfilmentState.certificateRetrievedAt);
+                        if (
+                          state === "completed" &&
+                          item.fulfilmentState?.certificateRetrievedAt
+                        ) {
+                          return formatDate(
+                            item.fulfilmentState.certificateRetrievedAt
+                          );
                         }
                         return "—";
                       })()}
@@ -300,22 +523,19 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
                     <td>
                       {item.integrityAnomalyCount > 0 ? (
                         <a
-                          href={`/upload/${item.id}?fromQueue=${encodeURIComponent(returnQueue)}#fulfilment-integrity`}
+                          href={integrityHref}
                           className="jobs-next-action jobs-next-action-integrity"
                         >
                           Review issue →
                         </a>
                       ) : (
-                        <a
-                          href={`/upload/${item.id}?fromQueue=${encodeURIComponent(returnQueue)}#fulfilment-lifecycle`}
-                          className="jobs-next-action"
-                        >
-                          {deriveNextAction(item)} →
+                        <a href={detailHref} className="jobs-next-action">
+                          {deriveNextAction(item, state)} →
                         </a>
                       )}
                     </td>
                     <td>
-                      {queue === "certificate_retrieved" && item.fulfilmentState?.certificateStoragePath ? (
+                      {item.fulfilmentState?.certificateStoragePath ? (
                         <a
                           href={`/api/intake/${item.id}/certificate-download`}
                           target="_blank"
@@ -331,9 +551,14 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
                     <td className="jobs-integrity-summary">
                       {item.integrityAnomalyCount > 0 ? (
                         <>
-                          <span className="jobs-integrity-text">{item.integrityAnomalies[0]}</span>
+                          <span className="jobs-integrity-text">
+                            {item.integrityAnomalies[0]}
+                          </span>
                           {item.integrityAnomalyCount > 1 && (
-                            <span className="jobs-integrity-more"> +{item.integrityAnomalyCount - 1} more</span>
+                            <span className="jobs-integrity-more">
+                              {" "}
+                              +{item.integrityAnomalyCount - 1} more
+                            </span>
                           )}
                         </>
                       ) : (
