@@ -21,6 +21,13 @@ import {
   getNominalDutyEntry,
   NOMINAL_DUTY_SEWA_PAJAKAN_SEPARATION_NOTE,
 } from "../../../lib/nominal-duty-registry";
+import {
+  NominalDutyState,
+  NOMINAL_DUTY_STATE_LABELS,
+  NOMINAL_DUTY_STATE_DESCRIPTIONS,
+  NOMINAL_DUTY_STATE_ORDER,
+  NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH,
+} from "../../../lib/nominal-duty-lifecycle";
 import { resolveConfirmedTenancyPreparationValues } from "../../../lib/tenancy-preparation-resolver";
 
 // ─── Types (mirrored from stamping-types for client use) ─────────────
@@ -820,6 +827,12 @@ interface StampingJob {
     unresolvedSteps: string[];
     notes: string[];
   };
+  // Internal operator lifecycle for nominal-duty registry jobs
+  // (Employment Contract, Statutory Declaration, future admissions).
+  // Parallel to `status`; not a public-receipt input.
+  nominalDutyState?: NominalDutyState;
+  nominalDutyStateUpdatedAt?: string;
+  nominalDutyStateNote?: string;
 }
 
 interface CatalogueSearchResult {
@@ -1104,6 +1117,16 @@ export default function IntakeDetailsPage({
   const [markReadySaving, setMarkReadySaving] = useState(false);
   const [markReadyError, setMarkReadyError] = useState<string | null>(null);
 
+  // Internal nominal-duty lifecycle state (operator-facing only).
+  // Drives POST /api/intake/[id]/nominal-duty-state. Does NOT submit
+  // anything to e-Duti Setem and is NOT a public-status input —
+  // it only reflects what the operator is actually doing internally.
+  const [nominalDutySelectedState, setNominalDutySelectedState] =
+    useState<NominalDutyState>("received");
+  const [nominalDutyNoteInput, setNominalDutyNoteInput] = useState("");
+  const [nominalDutySaving, setNominalDutySaving] = useState(false);
+  const [nominalDutyError, setNominalDutyError] = useState<string | null>(null);
+
   // Resolve params (Next.js 15 async params)
   useEffect(() => {
     params.then((p) => setJobId(p.id));
@@ -1223,6 +1246,14 @@ export default function IntakeDetailsPage({
     return () => clearTimeout(timer);
   }, [routingSearchQuery]);
 
+  // Keep the nominal-duty lifecycle dropdown in sync with the server
+  // value whenever the job record refreshes. Default to "received" for
+  // jobs that have never had an internal transition recorded.
+  useEffect(() => {
+    if (!job) return;
+    setNominalDutySelectedState(job.nominalDutyState ?? "received");
+  }, [job?.id, job?.nominalDutyState]);
+
   // ── Routing selection handler ──────────────────────────────────────
 
   function handleSelectRoutingDocument(result: CatalogueSearchResult) {
@@ -1262,6 +1293,70 @@ export default function IntakeDetailsPage({
         );
       })
       .finally(() => setRoutingSaving(false));
+  }
+
+  // ── Nominal-duty internal lifecycle save handler ──────────────────
+  // Posts the operator's selected internal state (and optional note)
+  // to /api/intake/[id]/nominal-duty-state. The route appends a
+  // `nominal_duty_state_changed` event server-side and returns the
+  // updated triple, which we splice into the current job state. This
+  // never touches e-Duti Setem and is not a public-status input.
+
+  function handleSaveNominalDutyState() {
+    if (!job) return;
+    if (nominalDutyNoteInput.length > NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH) {
+      setNominalDutyError(
+        `Note exceeds the ${NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}-character limit.`
+      );
+      return;
+    }
+
+    setNominalDutySaving(true);
+    setNominalDutyError(null);
+
+    const trimmedNote = nominalDutyNoteInput.trim();
+    const body: { state: NominalDutyState; note?: string } = {
+      state: nominalDutySelectedState,
+    };
+    if (trimmedNote.length > 0) {
+      body.note = trimmedNote;
+    }
+
+    fetch(`/api/intake/${job.id}/nominal-duty-state`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(
+            data.error ?? "Failed to update internal handling state."
+          );
+        }
+        return res.json();
+      })
+      .then(() => {
+        // Re-fetch full job so the `events[]` log picks up the new
+        // `nominal_duty_state_changed` entry in addition to the
+        // updated state/timestamp/note triple returned by the route.
+        return fetch(`/api/intake/${job.id}`).then(async (res) => {
+          if (!res.ok) return;
+          const updated = await res.json();
+          setJob(updated as StampingJob);
+          setNominalDutyNoteInput("");
+        });
+      })
+      .catch((err) => {
+        setNominalDutyError(
+          err instanceof Error
+            ? err.message
+            : "Failed to update internal handling state."
+        );
+      })
+      .finally(() => setNominalDutySaving(false));
   }
 
   // ── Create/update portal draft action ─────────────────────────────
@@ -8561,6 +8656,239 @@ export default function IntakeDetailsPage({
                 <li key={i}>{trigger}</li>
               ))}
             </ul>
+          </div>
+
+          {/* ── Internal handling state (operator-only lifecycle) ──────
+              Minimal, truthful internal lifecycle for nominal-duty
+              registry jobs. Phrased to avoid implying automation,
+              portal submission, payment, or certificate retrieval.
+              This is NOT surfaced on the public receipt — the public
+              status is still driven by `status` + `fulfilmentState`
+              via `derivePublicStatus`, not by this field. Operators
+              use it to reflect real progress (e.g. "under review",
+              "external portal in progress", "completed —
+              operator-attested") that would otherwise leave the job
+              stuck at "Uploaded" for its entire handling. */}
+          <div
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: "#fff",
+              border: "1px solid #e7e5e4",
+              borderRadius: 4,
+            }}
+          >
+            <h3
+              style={{
+                fontSize: 14,
+                margin: "0 0 4px",
+                color: "#292524",
+              }}
+            >
+              Internal handling state
+            </h3>
+            <p
+              style={{
+                fontSize: 12,
+                color: "#78716c",
+                margin: "0 0 12px",
+                lineHeight: 1.5,
+              }}
+            >
+              Reflects what the operator is actually doing with this
+              job. This is an internal lifecycle only — it is not
+              e-Duti Setem automation, not a public-completion signal,
+              and does not change the public receipt status. The
+              public receipt still reads &quot;Received&quot; until
+              the operator marks fulfilment delivered via the
+              existing fulfilment controls.
+            </p>
+
+            <div className="intake-details-row">
+              <span className="intake-details-label">Current state</span>
+              <span className="intake-details-value">
+                {
+                  NOMINAL_DUTY_STATE_LABELS[
+                    job.nominalDutyState ?? "received"
+                  ]
+                }
+              </span>
+            </div>
+            <p
+              style={{
+                fontSize: 12,
+                color: "#57534e",
+                margin: "4px 0 8px",
+                lineHeight: 1.5,
+              }}
+            >
+              {
+                NOMINAL_DUTY_STATE_DESCRIPTIONS[
+                  job.nominalDutyState ?? "received"
+                ]
+              }
+            </p>
+            {job.nominalDutyStateUpdatedAt && (
+              <div className="intake-details-row">
+                <span className="intake-details-label">Last updated</span>
+                <span className="intake-details-value">
+                  {new Date(job.nominalDutyStateUpdatedAt).toLocaleString()}
+                </span>
+              </div>
+            )}
+            {job.nominalDutyStateNote && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "8px 10px",
+                  background: "#fafaf9",
+                  border: "1px solid #e7e5e4",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: "#3f3f46",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 2 }}>
+                  Latest operator note
+                </strong>
+                {job.nominalDutyStateNote}
+              </div>
+            )}
+
+            <div style={{ marginTop: 12 }}>
+              <label
+                htmlFor="nominal-duty-state-select"
+                style={{
+                  display: "block",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#3f3f46",
+                  marginBottom: 4,
+                }}
+              >
+                Update internal state
+              </label>
+              <select
+                id="nominal-duty-state-select"
+                value={nominalDutySelectedState}
+                onChange={(e) =>
+                  setNominalDutySelectedState(
+                    e.target.value as NominalDutyState
+                  )
+                }
+                disabled={nominalDutySaving}
+                style={{
+                  width: "100%",
+                  padding: "6px 8px",
+                  fontSize: 13,
+                  border: "1px solid #d6d3d1",
+                  borderRadius: 4,
+                  background: "#fff",
+                }}
+              >
+                {NOMINAL_DUTY_STATE_ORDER.map((s) => (
+                  <option key={s} value={s}>
+                    {NOMINAL_DUTY_STATE_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+
+              <label
+                htmlFor="nominal-duty-state-note"
+                style={{
+                  display: "block",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#3f3f46",
+                  margin: "10px 0 4px",
+                }}
+              >
+                Operator note (optional,{" "}
+                {NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}-char limit)
+              </label>
+              <textarea
+                id="nominal-duty-state-note"
+                value={nominalDutyNoteInput}
+                onChange={(e) => setNominalDutyNoteInput(e.target.value)}
+                disabled={nominalDutySaving}
+                maxLength={NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}
+                rows={3}
+                placeholder="Short internal note for the audit log (e.g. what was checked, what you asked the user)."
+                style={{
+                  width: "100%",
+                  padding: "6px 8px",
+                  fontSize: 13,
+                  border: "1px solid #d6d3d1",
+                  borderRadius: 4,
+                  background: "#fff",
+                  fontFamily: "inherit",
+                  resize: "vertical",
+                }}
+              />
+              <p
+                style={{
+                  fontSize: 11,
+                  color: "#78716c",
+                  margin: "2px 0 0",
+                  textAlign: "right",
+                }}
+              >
+                {nominalDutyNoteInput.length}/
+                {NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}
+              </p>
+
+              <button
+                type="button"
+                onClick={handleSaveNominalDutyState}
+                disabled={nominalDutySaving}
+                style={{
+                  marginTop: 8,
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#fff",
+                  background: nominalDutySaving ? "#a8a29e" : "#44403c",
+                  border: "none",
+                  borderRadius: 4,
+                  cursor: nominalDutySaving ? "default" : "pointer",
+                }}
+              >
+                {nominalDutySaving
+                  ? "Saving…"
+                  : "Update internal state"}
+              </button>
+
+              {nominalDutyError && (
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: "#b91c1c",
+                    margin: "8px 0 0",
+                  }}
+                  role="alert"
+                >
+                  {nominalDutyError}
+                </p>
+              )}
+            </div>
+
+            <p
+              style={{
+                fontSize: 11,
+                color: "#78716c",
+                margin: "12px 0 0",
+                fontStyle: "italic",
+                lineHeight: 1.5,
+              }}
+            >
+              Each update is appended to the job&apos;s event log as a
+              timestamped <code>nominal_duty_state_changed</code>{" "}
+              entry. Selecting &quot;Completed&quot; is an operator
+              attestation that external e-Duti Setem stamping was
+              done — WeStamp does not detect this automatically.
+            </p>
           </div>
 
           <div

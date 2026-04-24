@@ -135,7 +135,10 @@ export type JobEventType =
   | "payment_marked_done"
   | "certificate_marked_waiting"
   | "certificate_marked_retrieved"
-  | "delivered";
+  | "delivered"
+  // Nominal-duty internal lifecycle transitions (operator-driven,
+  // category-scoped; see `src/lib/nominal-duty-lifecycle.ts`).
+  | "nominal_duty_state_changed";
 
 export interface JobEvent {
   /** Event type identifier. */
@@ -613,6 +616,28 @@ export interface StampingJob {
   errorMessage?: string;
   /** Optional free-text notes for admin/internal use. */
   notes?: string;
+  /**
+   * Internal operator lifecycle state for nominal-duty registry jobs
+   * (Employment Contract, Statutory Declaration, future admissions).
+   *
+   * Parallel to, and does not replace, `status`. Absent on tenancy
+   * jobs and on legacy jobs. Set exclusively by the
+   * `/api/intake/[id]/nominal-duty-state` operator route. Does NOT
+   * feed `derivePublicStatus` — public receipt remains driven by
+   * `status` and `fulfilmentState`.
+   */
+  nominalDutyState?: import("./nominal-duty-lifecycle").NominalDutyState;
+  /**
+   * ISO 8601 timestamp of the most recent `nominalDutyState` write.
+   * Absent until the first operator transition.
+   */
+  nominalDutyStateUpdatedAt?: string;
+  /**
+   * Most recent operator note supplied alongside a nominal-duty state
+   * transition. Holds only the latest note; the full log lives in the
+   * `events[]` array as `nominal_duty_state_changed` entries.
+   */
+  nominalDutyStateNote?: string;
   /** Submission payload draft — populated for ready_for_submission tenancy jobs. */
   submissionPayload?: SubmissionPayloadDraft;
   /** Execution attempt placeholder — populated after payload draft exists. */
