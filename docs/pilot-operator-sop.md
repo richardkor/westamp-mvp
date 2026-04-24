@@ -80,7 +80,7 @@ Category is set by the uploader on `/upload`:
 | Category shown | Handling |
 |---|---|
 | Tenancy Agreement | Proceed with the sewa_pajakan operator flow (§4). |
-| Nominal-duty registry category (currently: Employment Contract) | Proceed with the nominal fixed-duty assisted operator flow (§4A). Handled manually in e-Duti Setem — not through the sewa_pajakan advisory stack. |
+| Nominal-duty registry category (currently: Employment Contract, Statutory Declaration) | Proceed with the nominal fixed-duty assisted operator flow (§4A). Handled manually in e-Duti Setem — not through the sewa_pajakan advisory stack. |
 | Other / Not Sure | Read the file. If it is clearly a residential tenancy agreement, re-handle as Tenancy. If it is clearly a category in the nominal-duty registry (see §4A), re-handle under that category. Otherwise, contact the user and ask what they need. |
 
 The authoritative list of categories that qualify as "nominal-duty
@@ -248,11 +248,16 @@ non-tenancy assisted lane. It is **not** an automated lane and does
 
 ### 4A.2 What's in the registry right now
 
-As of this commit, the registry contains exactly one entry:
+As of this commit, the registry contains exactly two entries:
 
 - **Employment Contract** — `employment_contract`. Standard signed
   employment contract between an employer and an employee. Likely
   nominal/fixed-duty instrument; confirmed by the operator.
+- **Statutory Declaration** — `statutory_declaration`. Standard
+  Statutory Declaration / Surat Akuan Berkanun with a Commissioner
+  for Oaths attestation block, signed by both the declarant and the
+  Commissioner, and dated. Likely nominal/fixed-duty instrument;
+  confirmed by the operator.
 
 Additional categories may be added to the registry later. When that
 happens, this section (and the checklist) must be updated alongside
@@ -271,12 +276,21 @@ document and propose it through a separate approved milestone.
 Confirm each of the following against the uploaded PDF:
 
 - The category selected by the user matches the registry entry's
-  definition (for example, Employment Contract really is an
-  employment relationship between an employer and an employee —
-  not a service agreement, secondment letter, internship letter, or
-  consultancy agreement).
+  definition.
+  - **Employment Contract** — really an employer–employee employment
+    contract, not a service agreement, secondment letter, internship
+    letter, or consultancy agreement.
+  - **Statutory Declaration** — titled and structured as a Statutory
+    Declaration / Surat Akuan Berkanun with the standard Commissioner
+    for Oaths attestation block. Not an affidavit, a witness
+    statement, a letter, or a different instrument (for example, a
+    contract or deed dressed up with a declaration block) misfiled
+    under this category.
 - The PDF is signed and complete: signatures, dates, and party
-  details are present on the relevant pages.
+  details are present on the relevant pages. For Statutory
+  Declaration specifically, this means both the declarant's
+  signature and date and the Commissioner for Oaths' signature on
+  the attestation block.
 - The document appears legible, not redacted, not upside-down, and
   not a partially-scanned fragment.
 - Nothing about the instrument suggests it should be reclassified
@@ -460,3 +474,12 @@ as done in any external communication.
   `docs/nominal-duty-admission-rules.md` from §3.2 and §4A.2. No
   operator flow or registry contents changed; this is a
   gate-discipline cross-reference only.
+- 2026-04-23 — Admitted **Statutory Declaration**
+  (`statutory_declaration`) as the second registered nominal-duty
+  category, per `docs/nominal-duty-admission-rules.md` §2 and §7.1.
+  Updated §3.2 classifier row, §4A.2 registry contents, and §4A.3
+  category-specific confirm guidance to name the Commissioner for
+  Oaths attestation block. No change to the underlying assisted
+  handling model — Statutory Declarations are taken through e-Duti
+  Setem manually by the operator; no automation, no sewa_pajakan
+  advisory reuse, no duty promise.

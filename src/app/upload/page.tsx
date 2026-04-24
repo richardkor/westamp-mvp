@@ -16,11 +16,16 @@
 
 import React, { useState, useRef } from "react";
 
-type DocumentCategory = "tenancy_agreement" | "employment_contract" | "other";
+type DocumentCategory =
+  | "tenancy_agreement"
+  | "employment_contract"
+  | "statutory_declaration"
+  | "other";
 
 const CATEGORY_LABELS: Record<DocumentCategory, string> = {
   tenancy_agreement: "Tenancy Agreement",
   employment_contract: "Employment Contract",
+  statutory_declaration: "Statutory Declaration",
   other: "Other / Not Sure",
 };
 

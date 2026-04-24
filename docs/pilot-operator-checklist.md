@@ -25,7 +25,8 @@ before continuing.
 ### Nominal-duty category (registry-driven, if applicable)
 Applies to any category present in
 `src/lib/nominal-duty-registry.ts`. Current registry: Employment
-Contract. These jobs do not use the sewa_pajakan advisory stack.
+Contract, Statutory Declaration. These jobs do not use the
+sewa_pajakan advisory stack.
 
 - [ ] "Nominal Duty Handling" panel is visible on `/upload/[id]`
       with the category shown in the heading. (If missing for a
@@ -36,10 +37,21 @@ Contract. These jobs do not use the sewa_pajakan advisory stack.
       of new categories is gated by
       `docs/nominal-duty-admission-rules.md`, not by in-flight
       operator decisions.)
-- [ ] PDF really is the registered category (for Employment
-      Contract: an employer–employee employment contract, not a
-      service, secondment, internship, or consultancy agreement).
-- [ ] PDF is signed and complete (signatures, dates, parties).
+- [ ] PDF really is the registered category:
+      - **Employment Contract** — an employer–employee employment
+        contract, not a service, secondment, internship, or
+        consultancy agreement.
+      - **Statutory Declaration** — titled as a Statutory
+        Declaration / Surat Akuan Berkanun, with the standard
+        Commissioner for Oaths attestation block; not an affidavit,
+        a witness statement, a letter, or a different instrument
+        (for example, a contract or deed) dressed up with a
+        declaration block.
+- [ ] PDF is signed and complete (signatures, dates, parties). For
+      Statutory Declaration specifically: both the declarant's
+      signature/date and the Commissioner for Oaths' signature on
+      the attestation block are present, and the document is not a
+      draft or partially-completed template.
 - [ ] Nothing about the document suggests it should be
       reclassified (for example, it is actually a tenancy).
 - [ ] Duty profile reads "Likely nominal/fixed-duty document
@@ -129,6 +141,6 @@ escalate internally. Do not guess.
 - "Guaranteed in N hours" — no guaranteed turnaround.
 - Any description of internal advisory panels as already-done actions.
 - For nominal-duty registry categories (including Employment
-  Contract): "Duty of RMX confirmed" or "Calculated by WeStamp"
-  unless the operator has personally confirmed the duty against
-  the live portal and the document.
+  Contract and Statutory Declaration): "Duty of RMX confirmed" or
+  "Calculated by WeStamp" unless the operator has personally
+  confirmed the duty against the live portal and the document.

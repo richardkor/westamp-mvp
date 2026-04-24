@@ -13,11 +13,13 @@
 export type DocumentCategory =
   | "tenancy_agreement"
   | "employment_contract"
+  | "statutory_declaration"
   | "other";
 
 export const DOCUMENT_CATEGORY_LABELS: Record<DocumentCategory, string> = {
   tenancy_agreement: "Tenancy Agreement",
   employment_contract: "Employment Contract",
+  statutory_declaration: "Statutory Declaration",
   other: "Other / Not Sure",
 };
 
@@ -29,6 +31,10 @@ export const DOCUMENT_CATEGORY_LABELS: Record<DocumentCategory, string> = {
 export const SUPPORTED_FOR_AUTOMATION: Record<DocumentCategory, boolean> = {
   tenancy_agreement: true,
   employment_contract: false,
+  // Statutory declarations are handled via the nominal-duty assisted
+  // operator path. No automation — the duty/submission/payment/certificate
+  // flow does not run for this category.
+  statutory_declaration: false,
   other: false,
 };
 

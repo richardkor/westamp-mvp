@@ -89,12 +89,59 @@ const EMPLOYMENT_CONTRACT_ENTRY: NominalDutyRegistryEntry = {
   ],
 };
 
+// Statutory Declaration (Surat Akuan Berkanun).
+// Admitted 2026-04-23 under `docs/nominal-duty-admission-rules.md`:
+//   §2.1 identifiability — carries a standard "Statutory Declaration"
+//        / "Surat Akuan Berkanun" title block and a Commissioner for
+//        Oaths attestation block.
+//   §2.2 confirm/stop — title check + attestation-block check +
+//        execution check; stop triggers are directly PDF-checkable.
+//   §2.3 assisted-path fit — no calculator, no backend logic, manual
+//        handling in e-Duti Setem.
+//   §2.4 sewa_pajakan independence — no reuse of tenancy evidence.
+//   §2.5–§2.7 — duty class does not depend on value or consideration;
+//        standard "Likely nominal/fixed-duty" framing holds.
+// Duty is confirmed by the operator against the live portal and the
+// document itself. Nothing here is a duty promise.
+const STATUTORY_DECLARATION_ENTRY: NominalDutyRegistryEntry = {
+  categoryKey: "statutory_declaration",
+  internalLabel: "Statutory Declaration",
+  handlingModeLabel: "Assisted operator handling",
+  dutyFramingLabel: "Likely nominal/fixed-duty document (operator to confirm)",
+  operatorConfirmationBullets: [
+    "The uploaded PDF is titled as, and structured as, a Statutory " +
+      "Declaration (Surat Akuan Berkanun) — not an affidavit, a " +
+      "witness statement, a letter, or a different instrument " +
+      "misfiled under this category.",
+    "The standard Commissioner for Oaths attestation block is " +
+      "present, signed by the Commissioner, and dated.",
+    "The declaration is fully executed by the declarant (declarant " +
+      "signature and date present), not a draft or a partially " +
+      "completed template.",
+    "Nothing in the body of the declaration suggests it should be " +
+      "treated as a different kind of instrument (for example, a " +
+      "contract, deed, assignment, or transfer dressed up with a " +
+      "declaration block).",
+  ],
+  stopTriggers: [
+    "The document is not titled or structured as a Statutory " +
+      "Declaration / Surat Akuan Berkanun.",
+    "The Commissioner for Oaths attestation block is absent, " +
+      "incomplete, or unsigned.",
+    "The declarant has not signed, the declaration is undated, or " +
+      "the document is clearly a draft or template.",
+    "The operator cannot confidently confirm the instrument type " +
+      "from the face of the document.",
+  ],
+};
+
 /**
  * Ordered registry of nominal-duty categories. Only categories whose
  * handling has been deliberately approved should appear here.
  */
 const NOMINAL_DUTY_REGISTRY: readonly NominalDutyRegistryEntry[] = [
   EMPLOYMENT_CONTRACT_ENTRY,
+  STATUTORY_DECLARATION_ENTRY,
 ];
 
 // ── Public helpers ───────────────────────────────────────────────────

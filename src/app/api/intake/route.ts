@@ -28,6 +28,7 @@ import { checkRateLimit, getClientIp, RATE_LIMITS } from "../../../lib/rate-limi
 const ALLOWED_CATEGORIES = new Set<string>([
   "tenancy_agreement",
   "employment_contract",
+  "statutory_declaration",
   "other",
 ]);
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB

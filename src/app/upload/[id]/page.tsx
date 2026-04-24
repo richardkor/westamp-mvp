@@ -847,6 +847,7 @@ interface FieldProvenanceClient {
 const CATEGORY_LABELS: Record<string, string> = {
   tenancy_agreement: "Tenancy Agreement",
   employment_contract: "Employment Contract",
+  statutory_declaration: "Statutory Declaration",
   other: "Other / Not Sure",
 };
 
