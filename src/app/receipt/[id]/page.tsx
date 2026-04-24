@@ -18,6 +18,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { isNominalDutyCategory } from "../../../lib/nominal-duty-registry";
 
 interface PublicReceipt {
   id: string;
@@ -174,7 +175,20 @@ export default function ReceiptPage({
       {/* What happens next — calm, public-facing progress framing.
           Keeps backend mechanics out of sight; surfaces a soft
           turnaround guidance without promising instant stamping.
-          Suppressed once the job is delivered. */}
+          Suppressed once the job is delivered.
+
+          The turnaround bullet is lane-aware: tenancy submissions run
+          through the automated sewa_pajakan lane and typically update
+          within a couple of hours, so the "~2 hours" line is roughly
+          accurate for them. Nominal-duty categories (e.g. Employment
+          Contract, Statutory Declaration) are reviewed and carried
+          through e-Duti Setem manually by an operator, so the same
+          "~2 hours" line over-promises and quietly creates false
+          "something is broken" friction when legitimate manual review
+          takes longer. For those categories we show a calmer, more
+          honest line — without exposing internal lifecycle state
+          names, operator jargon, or anything that would imply live
+          portal submission / payment / stamping. */}
       {receipt.publicStatus !== "Completed" && (
         <div
           style={{
@@ -197,7 +211,14 @@ export default function ReceiptPage({
               WeStamp will process your submission and update this
               page as it progresses.
             </li>
-            <li>Most submissions are updated within around 2 hours.</li>
+            {isNominalDutyCategory(receipt.documentCategory) ? (
+              <li>
+                This document type is reviewed by our team, so updates
+                may take longer than for simpler submissions.
+              </li>
+            ) : (
+              <li>Most submissions are updated within around 2 hours.</li>
+            )}
             <li>
               We may contact you if any details need to be confirmed.
             </li>
