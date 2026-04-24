@@ -2579,14 +2579,404 @@ export default function IntakeDetailsPage({
         </div>
       </div>
 
+      {/* ── Nominal Duty Handling (internal, operator-only) ──────────
+          Repositioned to appear immediately after the record summary
+          so nominal-duty operators (Employment Contract, Statutory
+          Declaration, future admitted categories) reach their
+          meaningful handling controls without scrolling through
+          tenancy/advisory stacks that do not apply to them.
+
+          Registry-driven assisted handling panel. Rendered for any
+          document category in `nominal-duty-registry.ts`. Entries
+          share one handling model so new nominal/fixed-duty-style
+          categories can be added without duplicating UI.
+
+          Registry contents at time of writing: Employment Contract
+          and Statutory Declaration. The authoritative list lives in
+          `src/lib/nominal-duty-registry.ts` — this panel renders
+          whatever is in that registry, so no code change here is
+          needed when a new admitted category is added. All such
+          categories are taken through e-Duti Setem manually by the
+          operator — they are NOT part of the sewa_pajakan advisory
+          stack (Proven Hantar Gate Chain, lane readiness gates,
+          Bahagian C preflights). The "Likely nominal/fixed-duty"
+          framing is deliberately tentative: duty is confirmed by
+          the operator against the live portal and the document
+          itself, not assumed. */}
+      {nominalDutyEntry && !isManualReview && !isFailed && (
+        <div
+          className="intake-details-card"
+          style={{ marginTop: 16 }}
+          role="region"
+          aria-label={`${nominalDutyEntry.internalLabel} — nominal duty assisted handling, internal operator view`}
+        >
+          <h2 style={{ fontSize: 16, margin: "0 0 4px" }}>
+            Nominal Duty Handling &middot; {nominalDutyEntry.internalLabel}
+          </h2>
+          <p style={{ fontSize: 12, color: "#78716c", margin: "0 0 12px" }}>
+            Internal operator view. Nothing here has been submitted,
+            paid, or certified.
+          </p>
+
+          <div className="intake-details-row">
+            <span className="intake-details-label">Category</span>
+            <span className="intake-details-value">
+              {nominalDutyEntry.internalLabel}
+            </span>
+          </div>
+          <div className="intake-details-row">
+            <span className="intake-details-label">Handling mode</span>
+            <span className="intake-details-value">
+              {nominalDutyEntry.handlingModeLabel}
+            </span>
+          </div>
+          <div className="intake-details-row">
+            <span className="intake-details-label">Duty profile</span>
+            <span className="intake-details-value">
+              {nominalDutyEntry.dutyFramingLabel}
+            </span>
+          </div>
+          <div className="intake-details-row">
+            <span className="intake-details-label">Portal path</span>
+            <span className="intake-details-value">
+              Handled manually in e-Duti Setem (not via the
+              sewa_pajakan advisory stack)
+            </span>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <p
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                margin: "0 0 6px",
+                color: "#3f3f46",
+              }}
+            >
+              Operator must confirm before proceeding
+            </p>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 20,
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "#3f3f46",
+              }}
+            >
+              {nominalDutyEntry.operatorConfirmationBullets.map(
+                (bullet, i) => (
+                  <li key={i}>{bullet}</li>
+                )
+              )}
+            </ul>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <p
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                margin: "0 0 6px",
+                color: "#3f3f46",
+              }}
+            >
+              Stop and contact user if
+            </p>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 20,
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: "#3f3f46",
+              }}
+            >
+              {nominalDutyEntry.stopTriggers.map((trigger, i) => (
+                <li key={i}>{trigger}</li>
+              ))}
+            </ul>
+          </div>
+
+          {/* ── Internal handling state (operator-only lifecycle) ──────
+              Minimal, truthful internal lifecycle for nominal-duty
+              registry jobs. Phrased to avoid implying automation,
+              portal submission, payment, or certificate retrieval.
+              This is NOT surfaced on the public receipt — the public
+              status is still driven by `status` + `fulfilmentState`
+              via `derivePublicStatus`, not by this field. Operators
+              use it to reflect real progress (e.g. "under review",
+              "external portal in progress", "completed —
+              operator-attested") that would otherwise leave the job
+              stuck at "Uploaded" for its entire handling. */}
+          <div
+            style={{
+              marginTop: 16,
+              padding: 12,
+              background: "#fff",
+              border: "1px solid #e7e5e4",
+              borderRadius: 4,
+            }}
+          >
+            <h3
+              style={{
+                fontSize: 14,
+                margin: "0 0 4px",
+                color: "#292524",
+              }}
+            >
+              Internal handling state
+            </h3>
+            <p
+              style={{
+                fontSize: 12,
+                color: "#78716c",
+                margin: "0 0 12px",
+                lineHeight: 1.5,
+              }}
+            >
+              Reflects what the operator is actually doing with this
+              job. This is an internal lifecycle only — it is not
+              e-Duti Setem automation, not a public-completion signal,
+              and does not change the public receipt status. The
+              public receipt still reads &quot;Received&quot; until
+              the operator marks fulfilment delivered via the
+              existing fulfilment controls.
+            </p>
+
+            <div className="intake-details-row">
+              <span className="intake-details-label">Current state</span>
+              <span className="intake-details-value">
+                {
+                  NOMINAL_DUTY_STATE_LABELS[
+                    job.nominalDutyState ?? "received"
+                  ]
+                }
+              </span>
+            </div>
+            <p
+              style={{
+                fontSize: 12,
+                color: "#57534e",
+                margin: "4px 0 8px",
+                lineHeight: 1.5,
+              }}
+            >
+              {
+                NOMINAL_DUTY_STATE_DESCRIPTIONS[
+                  job.nominalDutyState ?? "received"
+                ]
+              }
+            </p>
+            {job.nominalDutyStateUpdatedAt && (
+              <div className="intake-details-row">
+                <span className="intake-details-label">Last updated</span>
+                <span className="intake-details-value">
+                  {new Date(job.nominalDutyStateUpdatedAt).toLocaleString()}
+                </span>
+              </div>
+            )}
+            {job.nominalDutyStateNote && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "8px 10px",
+                  background: "#fafaf9",
+                  border: "1px solid #e7e5e4",
+                  borderRadius: 4,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: "#3f3f46",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                <strong style={{ display: "block", marginBottom: 2 }}>
+                  Latest operator note
+                </strong>
+                {job.nominalDutyStateNote}
+              </div>
+            )}
+
+            <div style={{ marginTop: 12 }}>
+              <label
+                htmlFor="nominal-duty-state-select"
+                style={{
+                  display: "block",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#3f3f46",
+                  marginBottom: 4,
+                }}
+              >
+                Update internal state
+              </label>
+              <select
+                id="nominal-duty-state-select"
+                value={nominalDutySelectedState}
+                onChange={(e) =>
+                  setNominalDutySelectedState(
+                    e.target.value as NominalDutyState
+                  )
+                }
+                disabled={nominalDutySaving}
+                style={{
+                  width: "100%",
+                  padding: "6px 8px",
+                  fontSize: 13,
+                  border: "1px solid #d6d3d1",
+                  borderRadius: 4,
+                  background: "#fff",
+                }}
+              >
+                {NOMINAL_DUTY_STATE_ORDER.map((s) => (
+                  <option key={s} value={s}>
+                    {NOMINAL_DUTY_STATE_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+
+              <label
+                htmlFor="nominal-duty-state-note"
+                style={{
+                  display: "block",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#3f3f46",
+                  margin: "10px 0 4px",
+                }}
+              >
+                Operator note (optional,{" "}
+                {NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}-char limit)
+              </label>
+              <textarea
+                id="nominal-duty-state-note"
+                value={nominalDutyNoteInput}
+                onChange={(e) => setNominalDutyNoteInput(e.target.value)}
+                disabled={nominalDutySaving}
+                maxLength={NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}
+                rows={3}
+                placeholder="Short internal note for the audit log (e.g. what was checked, what you asked the user)."
+                style={{
+                  width: "100%",
+                  padding: "6px 8px",
+                  fontSize: 13,
+                  border: "1px solid #d6d3d1",
+                  borderRadius: 4,
+                  background: "#fff",
+                  fontFamily: "inherit",
+                  resize: "vertical",
+                }}
+              />
+              <p
+                style={{
+                  fontSize: 11,
+                  color: "#78716c",
+                  margin: "2px 0 0",
+                  textAlign: "right",
+                }}
+              >
+                {nominalDutyNoteInput.length}/
+                {NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}
+              </p>
+
+              <button
+                type="button"
+                onClick={handleSaveNominalDutyState}
+                disabled={nominalDutySaving}
+                style={{
+                  marginTop: 8,
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#fff",
+                  background: nominalDutySaving ? "#a8a29e" : "#44403c",
+                  border: "none",
+                  borderRadius: 4,
+                  cursor: nominalDutySaving ? "default" : "pointer",
+                }}
+              >
+                {nominalDutySaving
+                  ? "Saving…"
+                  : "Update internal state"}
+              </button>
+
+              {nominalDutyError && (
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: "#b91c1c",
+                    margin: "8px 0 0",
+                  }}
+                  role="alert"
+                >
+                  {nominalDutyError}
+                </p>
+              )}
+            </div>
+
+            <p
+              style={{
+                fontSize: 11,
+                color: "#78716c",
+                margin: "12px 0 0",
+                fontStyle: "italic",
+                lineHeight: 1.5,
+              }}
+            >
+              Each update is appended to the job&apos;s event log as a
+              timestamped <code>nominal_duty_state_changed</code>{" "}
+              entry. Selecting &quot;Completed&quot; is an operator
+              attestation that external e-Duti Setem stamping was
+              done — WeStamp does not detect this automatically.
+            </p>
+          </div>
+
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 12px",
+              background: "#fafaf9",
+              border: "1px solid #e7e5e4",
+              borderRadius: 4,
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "#57534e",
+            }}
+          >
+            <strong style={{ display: "block", marginBottom: 2 }}>
+              Sewa/Pajakan portal evidence does not apply here.
+            </strong>
+            {NOMINAL_DUTY_SEWA_PAJAKAN_SEPARATION_NOTE} Follow the
+            Nominal Fixed-Duty section of{" "}
+            <code>docs/pilot-operator-sop.md</code> and{" "}
+            <code>docs/pilot-operator-checklist.md</code>.
+          </div>
+
+          <p
+            style={{
+              fontSize: 12,
+              color: "#78716c",
+              margin: "12px 0 0",
+              fontStyle: "italic",
+            }}
+          >
+            If any confirmation above fails, stop and contact the user
+            per the SOP before touching the portal. Do not represent
+            this job as submitted, paid, or certified until those
+            steps are actually performed.
+          </p>
+        </div>
+      )}
+
       {/* ── STSDS Portal Routing ──────────────────────────────────── */}
       {/* Hidden for nominal-duty registry categories (e.g. Employment
           Contract, Statutory Declaration). Those are handled manually
           by the operator in e-Duti Setem per SOP §4A; they do not go
           through the sewa_pajakan advisory stack, and the catalogue
           search / Build Portal Draft flow below does not apply to
-          them. The dedicated "Nominal Duty Handling" panel further
-          down is the correct anchor for those jobs. */}
+          them. The dedicated "Nominal Duty Handling" panel above
+          (immediately after the record summary) is the correct
+          anchor for those jobs. */}
       {!isNominalDuty && !isManualReview && !isFailed && (
         <div className="routing-section">
           <h2 className="routing-heading">Portal Routing</h2>
@@ -3041,8 +3431,12 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── Portal Preparation Inputs ──────────────────────────── */}
-      {!isManualReview && !isFailed && (
+      {/* ── Portal Preparation Inputs ────────────────────────────
+          Hidden for nominal-duty registry jobs: they are handled
+          manually in e-Duti Setem and never accumulate portal-facing
+          preparation data, so this panel would render empty for
+          them and only add scroll noise. */}
+      {!isNominalDuty && !isManualReview && !isFailed && (
         <div className="preparation-inputs-section">
           <h2 className="preparation-inputs-heading">
             Portal Preparation Inputs
@@ -3195,8 +3589,11 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── Portal Submission Readiness ─────────────────────────── */}
-      {!isManualReview && !isFailed && (
+      {/* ── Portal Submission Readiness ───────────────────────────
+          Hidden for nominal-duty registry jobs: submission readiness
+          is a sewa_pajakan / penyeteman_am advisory concept that
+          does not apply to manually-handled nominal-duty instruments. */}
+      {!isNominalDuty && !isManualReview && !isFailed && (
         <div className="submission-readiness-section">
           <h2 className="submission-readiness-heading">
             Portal Submission Readiness
@@ -3458,8 +3855,11 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── Portal Execution Preview ──────────────────────────────── */}
-      {!isManualReview && !isFailed && (
+      {/* ── Portal Execution Preview ────────────────────────────────
+          Hidden for nominal-duty registry jobs: portal execution
+          preview reflects sewa_pajakan/penyeteman_am advisory values
+          that are never computed for nominal-duty jobs. */}
+      {!isNominalDuty && !isManualReview && !isFailed && (
         <div className="execution-preview-section">
           <h2>Portal Execution Preview</h2>
           <p style={{ fontSize: 13, color: "#78716c", marginBottom: 4 }}>
@@ -3591,8 +3991,12 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── STSDS Automation Plan ────────────────────────────────── */}
-      {!isManualReview && !isFailed && (
+      {/* ── STSDS Automation Plan ──────────────────────────────────
+          Hidden for nominal-duty registry jobs: the automation plan
+          is a sewa_pajakan/penyeteman_am advisory artefact. Nominal-
+          duty jobs are handled manually in e-Duti Setem and have no
+          such plan. */}
+      {!isNominalDuty && !isManualReview && !isFailed && (
         <div className="automation-plan-section">
           <h2 className="automation-plan-heading">Portal Automation Plan</h2>
           <p className="automation-plan-intro" style={{ marginBottom: 4 }}>
@@ -3857,8 +4261,11 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── STSDS Browser Instructions ───────────────────────────── */}
-      {!isManualReview && !isFailed && (
+      {/* ── STSDS Browser Instructions ─────────────────────────────
+          Hidden for nominal-duty registry jobs: browser instruction
+          sets are only produced for sewa_pajakan/penyeteman_am lanes.
+          Nominal-duty jobs are never driven by this instruction set. */}
+      {!isNominalDuty && !isManualReview && !isFailed && (
         <div className="browser-instr-section">
           <h2 className="browser-instr-heading">Browser Instruction Set</h2>
           <p className="browser-instr-intro" style={{ marginBottom: 4 }}>
@@ -4051,8 +4458,11 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── STSDS Mock Execution ──────────────────────────────────── */}
-      {!isManualReview && !isFailed && (
+      {/* ── STSDS Mock Execution ────────────────────────────────────
+          Hidden for nominal-duty registry jobs: mock execution runs
+          the browser-instruction set (also hidden above). Nominal-
+          duty jobs have no such workflow. */}
+      {!isNominalDuty && !isManualReview && !isFailed && (
         <div className="mock-exec-section">
           <h2 className="mock-exec-heading">Mock Execution</h2>
           <p className="mock-exec-intro" style={{ marginBottom: 4 }}>
@@ -4240,8 +4650,11 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
-      {/* ── Portal Lane Knowledge Profile ──────────────────────────── */}
-      {!isManualReview && !isFailed && (
+      {/* ── Portal Lane Knowledge Profile ────────────────────────────
+          Hidden for nominal-duty registry jobs: the lane knowledge
+          profile is a sewa_pajakan/penyeteman_am advisory surface.
+          Nominal-duty jobs do not use portal lanes. */}
+      {!isNominalDuty && !isManualReview && !isFailed && (
         <div style={{ marginTop: 28 }}>
           <h2>Portal Lane Knowledge Profile</h2>
           <p style={{ fontSize: 13, color: "#78716c", marginBottom: 4 }}>
@@ -8541,389 +8954,6 @@ export default function IntakeDetailsPage({
           <p className="failed-secondary">
             Please review the job information or upload a new document to try
             again.
-          </p>
-        </div>
-      )}
-
-      {/* ── Nominal Duty Handling (internal, operator-only) ──────────
-          Registry-driven assisted handling panel. Rendered for any
-          document category in `nominal-duty-registry.ts`. Entries
-          share one handling model so new nominal/fixed-duty-style
-          categories can be added without duplicating UI.
-
-          Registry contents at time of writing: Employment Contract
-          and Statutory Declaration. The authoritative list lives in
-          `src/lib/nominal-duty-registry.ts` — this panel renders
-          whatever is in that registry, so no code change here is
-          needed when a new admitted category is added. All such
-          categories are taken through e-Duti Setem manually by the
-          operator — they are NOT part of the sewa_pajakan advisory
-          stack (Proven Hantar Gate Chain, lane readiness gates,
-          Bahagian C preflights). The "Likely nominal/fixed-duty"
-          framing is deliberately tentative: duty is confirmed by
-          the operator against the live portal and the document
-          itself, not assumed. */}
-      {nominalDutyEntry && !isManualReview && !isFailed && (
-        <div
-          className="intake-details-card"
-          style={{ marginTop: 16 }}
-          role="region"
-          aria-label={`${nominalDutyEntry.internalLabel} — nominal duty assisted handling, internal operator view`}
-        >
-          <h2 style={{ fontSize: 16, margin: "0 0 4px" }}>
-            Nominal Duty Handling &middot; {nominalDutyEntry.internalLabel}
-          </h2>
-          <p style={{ fontSize: 12, color: "#78716c", margin: "0 0 12px" }}>
-            Internal operator view. Nothing here has been submitted,
-            paid, or certified.
-          </p>
-
-          <div className="intake-details-row">
-            <span className="intake-details-label">Category</span>
-            <span className="intake-details-value">
-              {nominalDutyEntry.internalLabel}
-            </span>
-          </div>
-          <div className="intake-details-row">
-            <span className="intake-details-label">Handling mode</span>
-            <span className="intake-details-value">
-              {nominalDutyEntry.handlingModeLabel}
-            </span>
-          </div>
-          <div className="intake-details-row">
-            <span className="intake-details-label">Duty profile</span>
-            <span className="intake-details-value">
-              {nominalDutyEntry.dutyFramingLabel}
-            </span>
-          </div>
-          <div className="intake-details-row">
-            <span className="intake-details-label">Portal path</span>
-            <span className="intake-details-value">
-              Handled manually in e-Duti Setem (not via the
-              sewa_pajakan advisory stack)
-            </span>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <p
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                margin: "0 0 6px",
-                color: "#3f3f46",
-              }}
-            >
-              Operator must confirm before proceeding
-            </p>
-            <ul
-              style={{
-                margin: 0,
-                paddingLeft: 20,
-                fontSize: 13,
-                lineHeight: 1.6,
-                color: "#3f3f46",
-              }}
-            >
-              {nominalDutyEntry.operatorConfirmationBullets.map(
-                (bullet, i) => (
-                  <li key={i}>{bullet}</li>
-                )
-              )}
-            </ul>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <p
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                margin: "0 0 6px",
-                color: "#3f3f46",
-              }}
-            >
-              Stop and contact user if
-            </p>
-            <ul
-              style={{
-                margin: 0,
-                paddingLeft: 20,
-                fontSize: 13,
-                lineHeight: 1.6,
-                color: "#3f3f46",
-              }}
-            >
-              {nominalDutyEntry.stopTriggers.map((trigger, i) => (
-                <li key={i}>{trigger}</li>
-              ))}
-            </ul>
-          </div>
-
-          {/* ── Internal handling state (operator-only lifecycle) ──────
-              Minimal, truthful internal lifecycle for nominal-duty
-              registry jobs. Phrased to avoid implying automation,
-              portal submission, payment, or certificate retrieval.
-              This is NOT surfaced on the public receipt — the public
-              status is still driven by `status` + `fulfilmentState`
-              via `derivePublicStatus`, not by this field. Operators
-              use it to reflect real progress (e.g. "under review",
-              "external portal in progress", "completed —
-              operator-attested") that would otherwise leave the job
-              stuck at "Uploaded" for its entire handling. */}
-          <div
-            style={{
-              marginTop: 16,
-              padding: 12,
-              background: "#fff",
-              border: "1px solid #e7e5e4",
-              borderRadius: 4,
-            }}
-          >
-            <h3
-              style={{
-                fontSize: 14,
-                margin: "0 0 4px",
-                color: "#292524",
-              }}
-            >
-              Internal handling state
-            </h3>
-            <p
-              style={{
-                fontSize: 12,
-                color: "#78716c",
-                margin: "0 0 12px",
-                lineHeight: 1.5,
-              }}
-            >
-              Reflects what the operator is actually doing with this
-              job. This is an internal lifecycle only — it is not
-              e-Duti Setem automation, not a public-completion signal,
-              and does not change the public receipt status. The
-              public receipt still reads &quot;Received&quot; until
-              the operator marks fulfilment delivered via the
-              existing fulfilment controls.
-            </p>
-
-            <div className="intake-details-row">
-              <span className="intake-details-label">Current state</span>
-              <span className="intake-details-value">
-                {
-                  NOMINAL_DUTY_STATE_LABELS[
-                    job.nominalDutyState ?? "received"
-                  ]
-                }
-              </span>
-            </div>
-            <p
-              style={{
-                fontSize: 12,
-                color: "#57534e",
-                margin: "4px 0 8px",
-                lineHeight: 1.5,
-              }}
-            >
-              {
-                NOMINAL_DUTY_STATE_DESCRIPTIONS[
-                  job.nominalDutyState ?? "received"
-                ]
-              }
-            </p>
-            {job.nominalDutyStateUpdatedAt && (
-              <div className="intake-details-row">
-                <span className="intake-details-label">Last updated</span>
-                <span className="intake-details-value">
-                  {new Date(job.nominalDutyStateUpdatedAt).toLocaleString()}
-                </span>
-              </div>
-            )}
-            {job.nominalDutyStateNote && (
-              <div
-                style={{
-                  marginTop: 8,
-                  padding: "8px 10px",
-                  background: "#fafaf9",
-                  border: "1px solid #e7e5e4",
-                  borderRadius: 4,
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  color: "#3f3f46",
-                  whiteSpace: "pre-wrap",
-                }}
-              >
-                <strong style={{ display: "block", marginBottom: 2 }}>
-                  Latest operator note
-                </strong>
-                {job.nominalDutyStateNote}
-              </div>
-            )}
-
-            <div style={{ marginTop: 12 }}>
-              <label
-                htmlFor="nominal-duty-state-select"
-                style={{
-                  display: "block",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "#3f3f46",
-                  marginBottom: 4,
-                }}
-              >
-                Update internal state
-              </label>
-              <select
-                id="nominal-duty-state-select"
-                value={nominalDutySelectedState}
-                onChange={(e) =>
-                  setNominalDutySelectedState(
-                    e.target.value as NominalDutyState
-                  )
-                }
-                disabled={nominalDutySaving}
-                style={{
-                  width: "100%",
-                  padding: "6px 8px",
-                  fontSize: 13,
-                  border: "1px solid #d6d3d1",
-                  borderRadius: 4,
-                  background: "#fff",
-                }}
-              >
-                {NOMINAL_DUTY_STATE_ORDER.map((s) => (
-                  <option key={s} value={s}>
-                    {NOMINAL_DUTY_STATE_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-
-              <label
-                htmlFor="nominal-duty-state-note"
-                style={{
-                  display: "block",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "#3f3f46",
-                  margin: "10px 0 4px",
-                }}
-              >
-                Operator note (optional,{" "}
-                {NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}-char limit)
-              </label>
-              <textarea
-                id="nominal-duty-state-note"
-                value={nominalDutyNoteInput}
-                onChange={(e) => setNominalDutyNoteInput(e.target.value)}
-                disabled={nominalDutySaving}
-                maxLength={NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}
-                rows={3}
-                placeholder="Short internal note for the audit log (e.g. what was checked, what you asked the user)."
-                style={{
-                  width: "100%",
-                  padding: "6px 8px",
-                  fontSize: 13,
-                  border: "1px solid #d6d3d1",
-                  borderRadius: 4,
-                  background: "#fff",
-                  fontFamily: "inherit",
-                  resize: "vertical",
-                }}
-              />
-              <p
-                style={{
-                  fontSize: 11,
-                  color: "#78716c",
-                  margin: "2px 0 0",
-                  textAlign: "right",
-                }}
-              >
-                {nominalDutyNoteInput.length}/
-                {NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH}
-              </p>
-
-              <button
-                type="button"
-                onClick={handleSaveNominalDutyState}
-                disabled={nominalDutySaving}
-                style={{
-                  marginTop: 8,
-                  padding: "8px 14px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "#fff",
-                  background: nominalDutySaving ? "#a8a29e" : "#44403c",
-                  border: "none",
-                  borderRadius: 4,
-                  cursor: nominalDutySaving ? "default" : "pointer",
-                }}
-              >
-                {nominalDutySaving
-                  ? "Saving…"
-                  : "Update internal state"}
-              </button>
-
-              {nominalDutyError && (
-                <p
-                  style={{
-                    fontSize: 12,
-                    color: "#b91c1c",
-                    margin: "8px 0 0",
-                  }}
-                  role="alert"
-                >
-                  {nominalDutyError}
-                </p>
-              )}
-            </div>
-
-            <p
-              style={{
-                fontSize: 11,
-                color: "#78716c",
-                margin: "12px 0 0",
-                fontStyle: "italic",
-                lineHeight: 1.5,
-              }}
-            >
-              Each update is appended to the job&apos;s event log as a
-              timestamped <code>nominal_duty_state_changed</code>{" "}
-              entry. Selecting &quot;Completed&quot; is an operator
-              attestation that external e-Duti Setem stamping was
-              done — WeStamp does not detect this automatically.
-            </p>
-          </div>
-
-          <div
-            style={{
-              marginTop: 12,
-              padding: "10px 12px",
-              background: "#fafaf9",
-              border: "1px solid #e7e5e4",
-              borderRadius: 4,
-              fontSize: 12,
-              lineHeight: 1.5,
-              color: "#57534e",
-            }}
-          >
-            <strong style={{ display: "block", marginBottom: 2 }}>
-              Sewa/Pajakan portal evidence does not apply here.
-            </strong>
-            {NOMINAL_DUTY_SEWA_PAJAKAN_SEPARATION_NOTE} Follow the
-            Nominal Fixed-Duty section of{" "}
-            <code>docs/pilot-operator-sop.md</code> and{" "}
-            <code>docs/pilot-operator-checklist.md</code>.
-          </div>
-
-          <p
-            style={{
-              fontSize: 12,
-              color: "#78716c",
-              margin: "12px 0 0",
-              fontStyle: "italic",
-            }}
-          >
-            If any confirmation above fails, stop and contact the user
-            per the SOP before touching the portal. Do not represent
-            this job as submitted, paid, or certified until those
-            steps are actually performed.
           </p>
         </div>
       )}
