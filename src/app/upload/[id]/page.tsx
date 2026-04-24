@@ -2435,6 +2435,27 @@ export default function IntakeDetailsPage({
           <span className="intake-details-label">File</span>
           <span className="intake-details-value">
             {job.originalFileName}
+            {/* Operator-only link to the uploaded source PDF. Served
+                by GET /api/intake/[id]/source-download, which is
+                gated by the operator-session middleware. Works across
+                all lanes (tenancy / nominal-duty / other). */}
+            {job.storagePath && (
+              <>
+                {" "}
+                <a
+                  href={`/api/intake/${job.id}/source-download`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: 12,
+                    color: "#0066cc",
+                    marginLeft: 6,
+                  }}
+                >
+                  View Uploaded PDF
+                </a>
+              </>
+            )}
           </span>
         </div>
         <div className="intake-details-row">
