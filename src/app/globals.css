@@ -6924,6 +6924,234 @@ section[data-section] {
   line-height: 1.35;
 }
 
+/* ── Active / Archived view toggle ─────────────────────────────────── */
+
+.jobs-view-toggle {
+  display: inline-flex;
+  margin-bottom: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f9fafb;
+}
+
+.jobs-view-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #555;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.jobs-view-tab + .jobs-view-tab {
+  border-left: 1px solid #d1d5db;
+}
+
+.jobs-view-tab:hover {
+  background: #eef2f7;
+  color: #333;
+}
+
+.jobs-view-tab-active,
+.jobs-view-tab-active:hover {
+  background: #0066cc;
+  color: #fff;
+}
+
+/* ── Operator inbox cards ──────────────────────────────────────────── */
+
+/* Cards replace the previous cramped table. One card per row.
+   Filename wraps freely; details sit in a responsive grid that
+   collapses to a single column on narrow widths so nothing forces
+   horizontal scrolling. */
+
+.jobs-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.jobs-card {
+  border: 1px solid #e2e6ec;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px 16px 12px;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.03);
+}
+
+.jobs-card-archived {
+  background: #fafaf9;
+  border-color: #e7e5e4;
+  opacity: 0.92;
+}
+
+.jobs-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.jobs-card-header-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.jobs-card-header-right {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.jobs-card-id {
+  font-family: monospace;
+  color: #4b5563;
+}
+
+.jobs-card-date {
+  white-space: nowrap;
+}
+
+.jobs-card-filename {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #111827;
+  /* Wrap aggressively so even single very long tokens (e.g. a slug
+     filename without spaces) cannot blow out card width. */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.jobs-card-filename .jobs-file-link {
+  color: #1a56db;
+  font-weight: 600;
+}
+
+.jobs-card-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px 18px;
+  margin: 0 0 10px;
+}
+
+.jobs-card-detail {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.jobs-card-detail dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.jobs-card-detail dd {
+  margin: 0;
+  font-size: 13px;
+  color: #1f2937;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.jobs-card-integrity {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.4;
+}
+
+.jobs-card-archived-reason {
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  background: #f5f5f4;
+  border: 1px solid #e7e5e4;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #57534e;
+  line-height: 1.4;
+}
+
+.jobs-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px dashed #eef0f3;
+  padding-top: 10px;
+}
+
+/* "Archived" pill shown in the card header */
+
+.jobs-archived-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f5f5f4;
+  color: #57534e;
+  border: 1px solid #e7e5e4;
+}
+
+/* Archive / Restore action button */
+
+.jobs-archive-btn {
+  appearance: none;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.jobs-archive-btn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  color: #111827;
+}
+
+.jobs-archive-btn:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.jobs-archive-btn-restore {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.jobs-archive-btn-restore:hover {
+  background: #eff6ff;
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+
 /* ─── Public Receipt Page ────────────────────────────────────────────── */
 
 .receipt-intro {

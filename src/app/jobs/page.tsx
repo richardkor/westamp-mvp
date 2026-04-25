@@ -78,6 +78,19 @@ export interface JobListItem {
   integrityAnomalyCount: number;
   /** Anomaly messages derived from fulfilment integrity evaluation. */
   integrityAnomalies: string[];
+  /**
+   * Soft-archive marker. ISO timestamp when the job was archived, or
+   * null for active jobs. Presence of this value is the sole source
+   * of truth for "archived" — the underlying record and uploaded
+   * source PDF are preserved unchanged.
+   */
+  archivedAt: string | null;
+  /**
+   * Optional short operator note recorded at archive time. Null on
+   * active jobs and on archived jobs that were archived without a
+   * reason.
+   */
+  archivedReason: string | null;
 }
 
 function toListItem(job: StampingJob): JobListItem {
@@ -116,6 +129,8 @@ function toListItem(job: StampingJob): JobListItem {
     nominalDutyStateUpdatedAt: job.nominalDutyStateUpdatedAt ?? null,
     integrityAnomalyCount: integrity.anomalies.length,
     integrityAnomalies: integrity.anomalies,
+    archivedAt: job.archivedAt ?? null,
+    archivedReason: job.archivedReason ?? null,
   };
 }
 

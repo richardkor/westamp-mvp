@@ -3,27 +3,31 @@
 /**
  * JobsQueueClient — Client Component for the stamping jobs queue.
  *
- * Operator inbox UI. Renders the jobs table with three orthogonal
- * controls:
- *   1. Pipeline chips — what needs doing next (new / needs user /
+ * Operator inbox UI. Each job is rendered as a stacked card so the
+ * filename and key details remain readable on any operator screen
+ * without horizontal scrolling. Cards expose:
+ *   - filename (full, wraps), job id (short), created date
+ *   - category, status badge, nominal-duty handling label
+ *   - pipeline state badge, waiting age, adjudication number
+ *   - integrity warning text when fulfilment anomalies exist
+ *   - open / next-action link, certificate link if available
+ *   - operator-only Archive / Restore button (soft archive — never
+ *     deletes records or uploaded PDFs)
+ *
+ * Three orthogonal controls sit above the card list:
+ *   1. View toggle: Active (default) vs Archived.
+ *   2. Pipeline chips — what needs doing next (new / needs user /
  *      awaiting payment / waiting for certificate / ready to deliver /
  *      completed / integrity issues).
- *   2. Lane chips — which document category (tenancy / employment
- *      contract / statutory declaration / other).
- *   3. Text search — matches filename or job id (case-insensitive).
- *
- * The "pipeline state" is derived at render time from each job's
- * `fulfilmentState` and `nominalDutyState`. Nothing is persisted
- * separately; this is purely a presentation-layer bucketisation for
- * the operator.
+ *   3. Lane chips — which document category.
+ * Plus a text search that matches filename or job id.
  *
  * Sort order: newest-first by `createdAt`, tiebreak on id for
- * stability. The primary sort is deliberately time-based because the
- * top operator question is "what's new?" — the pipeline chip is how
- * the operator narrows to "what needs action?".
+ * stability.
  *
- * URL sync: `?queue=<pipeline>`, `?lane=<category>`, `?q=<search>`.
- * Invalid values are ignored and fall back to defaults.
+ * URL sync: `?queue=<pipeline>`, `?lane=<category>`, `?q=<search>`,
+ * `?view=archived`. Invalid values are ignored and fall back to
+ * defaults.
  */
 
 import { useState, useEffect } from "react";
@@ -33,11 +37,6 @@ import { DOCUMENT_CATEGORY_LABELS } from "../../lib/stamping-types";
 
 // ─── Pipeline state derivation ──────────────────────────────────────
 
-/**
- * Coarse operator-facing pipeline bucket for a job. Derived, not
- * stored. Priority is important: `needs_user` and `ready_to_deliver`
- * outrank mid-flow states because the operator needs to see them.
- */
 type PipelineState =
   | "new"
   | "needs_user"
@@ -61,23 +60,10 @@ function derivePipelineState(item: JobListItem): PipelineState {
   const fs = item.fulfilmentState;
   const nd = item.nominalDutyState;
 
-  // Delivered — fully done from the operator's inbox POV.
   if (fs?.delivered) return "completed";
-
-  // Nominal-duty job that the operator has attested is externally
-  // stamped. Leaves the inbox as completed even if no fulfilmentState
-  // exists (not every nominal-duty job will have one recorded).
   if (nd === "completed") return "completed";
+  if (nd === "awaiting_user" || nd === "cannot_proceed") return "needs_user";
 
-  // Needs-user bucket: the operator has reached out (or marked the
-  // job as stuck) and needs a reply from the user before anything
-  // else can happen. This outranks any fulfilment progress because
-  // nothing else will move until the user is back.
-  if (nd === "awaiting_user" || nd === "cannot_proceed") {
-    return "needs_user";
-  }
-
-  // Fulfilment-lifecycle buckets.
   if (fs) {
     if (fs.certificateStatus === "certificate_retrieved") {
       return "ready_to_deliver";
@@ -93,14 +79,7 @@ function derivePipelineState(item: JobListItem): PipelineState {
     }
   }
 
-  // Truly untouched: no fulfilment recorded and the operator has not
-  // written any nominal-duty state yet. This is the "new upload"
-  // bucket that operators most want to find fast.
   if (!fs && nd === null) return "new";
-
-  // Operator has started something (nominal-duty under_review or
-  // external_portal_in_progress, or partial fulfilment state) but the
-  // job is not in one of the named actionable buckets above.
   return "idle";
 }
 
@@ -137,6 +116,12 @@ const LANE_FILTER_OPTIONS: { key: LaneFilterKey; label: string }[] = [
 
 const VALID_LANE_KEYS = new Set<string>(LANE_FILTER_OPTIONS.map((o) => o.key));
 
+// ─── View toggle ────────────────────────────────────────────────────
+
+type ViewKey = "active" | "archived";
+
+const VALID_VIEW_KEYS = new Set<string>(["active", "archived"]);
+
 // ─── Sort: newest first ─────────────────────────────────────────────
 
 function sortJobs(items: JobListItem[]): JobListItem[] {
@@ -144,25 +129,16 @@ function sortJobs(items: JobListItem[]): JobListItem[] {
     const diff =
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     if (diff !== 0) return diff;
-    // Stable tiebreak on id so the order doesn't shuffle between
-    // renders when two jobs share a timestamp.
     return a.id.localeCompare(b.id);
   });
 }
 
 // ─── Next action derivation ─────────────────────────────────────────
 
-/**
- * Short action phrase for the "Next Action" cell. Pairs with a link
- * fragment (see `deriveNextActionFragment`) so the operator lands at
- * the relevant panel on the detail page.
- */
 function deriveNextAction(item: JobListItem, state: PipelineState): string {
   if (state === "new") return "Open";
   if (state === "needs_user") return "Follow up";
   if (state === "awaiting_payment") {
-    // Adjudication isn't recorded yet — that's the precondition for
-    // "Mark payment done", so surface the real first step.
     if (!item.fulfilmentState?.adjudicationNumber) return "Record adjudication";
     return "Mark payment done";
   }
@@ -172,11 +148,6 @@ function deriveNextAction(item: JobListItem, state: PipelineState): string {
   return "Open";
 }
 
-/**
- * Hash fragment to append to the detail-page link. Fulfilment-lifecycle
- * states deep-link to that panel; other states (new, needs_user, idle)
- * open the page top so the operator sees the whole job.
- */
 function deriveNextActionFragment(state: PipelineState): string {
   switch (state) {
     case "awaiting_payment":
@@ -191,10 +162,6 @@ function deriveNextActionFragment(state: PipelineState): string {
 
 // ─── Ageing derivation ──────────────────────────────────────────────
 
-/**
- * Returns the ISO timestamp from which to measure waiting age, or
- * null if no age should be shown for this state.
- */
 function deriveWaitingSince(
   item: JobListItem,
   state: PipelineState
@@ -211,10 +178,8 @@ function deriveWaitingSince(
     case "ready_to_deliver":
       return item.fulfilmentState?.certificateRetrievedAt ?? null;
     case "needs_user":
-      // Age since the operator marked the job as needing user input.
       return item.nominalDutyStateUpdatedAt;
     case "new":
-      // Age since upload, so an "aged new" job stands out.
       return item.createdAt;
     default:
       return null;
@@ -252,18 +217,6 @@ function formatDate(iso: string): string {
   }
 }
 
-// ─── Truncate filename ──────────────────────────────────────────────
-
-function truncateFileName(name: string, maxLen: number = 32): string {
-  if (name.length <= maxLen) return name;
-  const ext = name.lastIndexOf(".");
-  if (ext > 0 && name.length - ext <= 5) {
-    const extStr = name.slice(ext);
-    return name.slice(0, maxLen - extStr.length - 1) + "…" + extStr;
-  }
-  return name.slice(0, maxLen - 1) + "…";
-}
-
 // ─── Search matching ────────────────────────────────────────────────
 
 function matchesSearch(item: JobListItem, query: string): boolean {
@@ -275,10 +228,24 @@ function matchesSearch(item: JobListItem, query: string): boolean {
   );
 }
 
+// ─── Short id ──────────────────────────────────────────────────────
+
+function shortId(id: string): string {
+  // First 8 chars of UUID — enough to disambiguate visually while
+  // keeping the card header tidy. Full id is in the link target.
+  return id.length > 8 ? id.slice(0, 8) : id;
+}
+
 // ─── Component ──────────────────────────────────────────────────────
 
 export function JobsQueueClient({ items }: { items: JobListItem[] }) {
-  // Initialise pipeline filter from URL query param ?queue=...
+  // Initialise view from URL query param ?view=...
+  const [view, setView] = useState<ViewKey>(() => {
+    if (typeof window === "undefined") return "active";
+    const param = new URLSearchParams(window.location.search).get("view");
+    return param && VALID_VIEW_KEYS.has(param) ? (param as ViewKey) : "active";
+  });
+
   const [pipelineFilter, setPipelineFilter] = useState<PipelineFilterKey>(() => {
     if (typeof window === "undefined") return "all";
     const param = new URLSearchParams(window.location.search).get("queue");
@@ -287,24 +254,29 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
       : "all";
   });
 
-  // Initialise lane filter from URL query param ?lane=...
   const [laneFilter, setLaneFilter] = useState<LaneFilterKey>(() => {
     if (typeof window === "undefined") return "all";
     const param = new URLSearchParams(window.location.search).get("lane");
     return param && VALID_LANE_KEYS.has(param) ? (param as LaneFilterKey) : "all";
   });
 
-  // Initialise search query from URL query param ?q=...
   const [searchQuery, setSearchQuery] = useState<string>(() => {
     if (typeof window === "undefined") return "";
     return new URLSearchParams(window.location.search).get("q") ?? "";
   });
 
-  // Sync all three filter controls back to the URL without full
-  // navigation. Keeps links in the address bar meaningful and makes
-  // browser back/forward reflect filter state.
+  // Local "in-flight" markers so the operator gets immediate feedback
+  // while an archive/restore POST is round-tripping. Keyed by job id.
+  const [pendingArchiveIds, setPendingArchiveIds] = useState<Set<string>>(
+    () => new Set()
+  );
+
+  // Sync filter controls back to the URL. `view=active` is omitted
+  // because it's the default; archived is explicit.
   useEffect(() => {
     const url = new URL(window.location.href);
+    if (view === "active") url.searchParams.delete("view");
+    else url.searchParams.set("view", view);
     if (pipelineFilter === "all") url.searchParams.delete("queue");
     else url.searchParams.set("queue", pipelineFilter);
     if (laneFilter === "all") url.searchParams.delete("lane");
@@ -312,17 +284,21 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
     if (searchQuery.trim() === "") url.searchParams.delete("q");
     else url.searchParams.set("q", searchQuery.trim());
     window.history.replaceState({}, "", url.toString());
-  }, [pipelineFilter, laneFilter, searchQuery]);
+  }, [view, pipelineFilter, laneFilter, searchQuery]);
 
-  // Apply lane filter first so pipeline counts reflect the selected
-  // lane. The operator's mental model is typically "I'm in the
-  // tenancy lane — what's new / needs user / etc. in that lane?".
+  // Split active vs archived BEFORE any other filter so the view
+  // toggle is the strongest filter. View counts use this split.
+  const activeItems = items.filter((item) => item.archivedAt === null);
+  const archivedItems = items.filter((item) => item.archivedAt !== null);
+  const viewItems = view === "archived" ? archivedItems : activeItems;
+
+  // Apply lane filter next so pipeline counts reflect both view+lane.
   const laneFiltered =
     laneFilter === "all"
-      ? items
-      : items.filter((item) => item.documentCategory === laneFilter);
+      ? viewItems
+      : viewItems.filter((item) => item.documentCategory === laneFilter);
 
-  // Compute pipeline counts over the lane-filtered subset.
+  // Pipeline counts over the lane-filtered view subset.
   const pipelineCounts: Record<PipelineState, number> = {
     new: 0,
     needs_user: 0,
@@ -338,11 +314,11 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
     if (item.integrityAnomalyCount > 0) integrityIssueCount++;
   }
 
-  // Compute lane counts over the full item list (before any filter)
-  // so the lane chip counts always show the true totals regardless of
-  // which pipeline chip is active.
+  // Lane counts over the current view (active or archived) so the
+  // chip totals follow the view toggle without being skewed by other
+  // filters.
   const laneCounts: Record<string, number> = {};
-  for (const item of items) {
+  for (const item of viewItems) {
     laneCounts[item.documentCategory] =
       (laneCounts[item.documentCategory] ?? 0) + 1;
   }
@@ -359,10 +335,9 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
 
   const sorted = sortJobs(filtered);
 
-  // Build the return URL for queue context on detail-page links.
-  // Preserves pipeline + lane + search so "back to queue" feels right.
   const returnUrl = (() => {
     const url = new URL("/jobs", "http://placeholder");
+    if (view !== "active") url.searchParams.set("view", view);
     if (pipelineFilter !== "all") url.searchParams.set("queue", pipelineFilter);
     if (laneFilter !== "all") url.searchParams.set("lane", laneFilter);
     if (searchQuery.trim() !== "") url.searchParams.set("q", searchQuery.trim());
@@ -372,9 +347,124 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
   const anyFilterActive =
     pipelineFilter !== "all" || laneFilter !== "all" || searchQuery.trim() !== "";
 
+  // ── Archive / Restore actions ────────────────────────────────────
+  // These call the operator-gated POST /api/intake/[id]/archive
+  // route. The `archive` request omits the body for "archive without
+  // reason"; the route also accepts an optional `{ reason }`. The
+  // simple flow here always uses confirm() with no reason input —
+  // the operator can refine by hitting the API directly if a reason
+  // matters for audit. After a successful response, the page is
+  // refreshed (location.reload) so the server component re-renders
+  // with the live archived state. This is intentionally simple and
+  // robust over a more elaborate optimistic-update path.
+  async function archiveJob(item: JobListItem) {
+    const ok = window.confirm(
+      `Hide "${item.originalFileName}" from the active queue?\n\n` +
+        "The job record, uploaded source PDF, fulfilment state, and " +
+        "event history are preserved. You can restore it later from " +
+        "the Archived view. This is not a deletion."
+    );
+    if (!ok) return;
+
+    setPendingArchiveIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.id);
+      return next;
+    });
+
+    try {
+      const res = await fetch(`/api/intake/${item.id}/archive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        window.alert(`Could not archive job. ${text || `HTTP ${res.status}`}`);
+        setPendingArchiveIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+        return;
+      }
+      window.location.reload();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      window.alert(`Could not archive job. ${message}`);
+      setPendingArchiveIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
+  async function restoreJob(item: JobListItem) {
+    const ok = window.confirm(
+      `Restore "${item.originalFileName}" to the active queue?`
+    );
+    if (!ok) return;
+
+    setPendingArchiveIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.id);
+      return next;
+    });
+
+    try {
+      const res = await fetch(`/api/intake/${item.id}/archive`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restore: true }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        window.alert(`Could not restore job. ${text || `HTTP ${res.status}`}`);
+        setPendingArchiveIds((prev) => {
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+        return;
+      }
+      window.location.reload();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      window.alert(`Could not restore job. ${message}`);
+      setPendingArchiveIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
   return (
     <>
-      {/* Pipeline chips — what needs doing next */}
+      {/* View toggle: Active vs Archived */}
+      <div className="jobs-view-toggle" role="tablist" aria-label="Job view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "active"}
+          className={`jobs-view-tab${view === "active" ? " jobs-view-tab-active" : ""}`}
+          onClick={() => setView("active")}
+        >
+          Active ({activeItems.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "archived"}
+          className={`jobs-view-tab${view === "archived" ? " jobs-view-tab-active" : ""}`}
+          onClick={() => setView("archived")}
+        >
+          Archived ({archivedItems.length})
+        </button>
+      </div>
+
+      {/* Pipeline chips */}
       <div className="filter-chips">
         {PIPELINE_FILTER_OPTIONS.map((opt) => {
           const count =
@@ -396,11 +486,13 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
         })}
       </div>
 
-      {/* Lane chips — which document category */}
+      {/* Lane chips */}
       <div className="filter-chips">
         {LANE_FILTER_OPTIONS.map((opt) => {
           const count =
-            opt.key === "all" ? items.length : (laneCounts[opt.key] ?? 0);
+            opt.key === "all"
+              ? viewItems.length
+              : (laneCounts[opt.key] ?? 0);
           return (
             <button
               key={opt.key}
@@ -426,115 +518,127 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
         />
       </div>
 
-      {/* Jobs table */}
+      {/* Card list */}
       {sorted.length === 0 ? (
         <p className="jobs-empty">
-          {items.length === 0
-            ? "No jobs yet. Uploads will appear here as they arrive."
-            : anyFilterActive
-              ? "No jobs match the current filters."
-              : "No jobs to show."}
+          {view === "archived" && archivedItems.length === 0
+            ? "No archived jobs."
+            : items.length === 0
+              ? "No jobs yet. Uploads will appear here as they arrive."
+              : anyFilterActive
+                ? "No jobs match the current filters."
+                : view === "archived"
+                  ? "No archived jobs match the current filters."
+                  : "No jobs to show."}
         </p>
       ) : (
-        <div className="jobs-table-wrap">
-          <table className="jobs-table">
-            <thead>
-              <tr>
-                <th>File</th>
-                <th>Category</th>
-                <th>Status</th>
-                <th>Handling</th>
-                <th>Pipeline</th>
-                <th>Waiting</th>
-                <th>Adj. No.</th>
-                <th>Next Action</th>
-                <th>Certificate</th>
-                <th>Integrity</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((item) => {
-                const state = derivePipelineState(item);
-                const fragment = deriveNextActionFragment(state);
-                const detailHref = `/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}${fragment}`;
-                const integrityHref = `/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}#fulfilment-integrity`;
-                return (
-                  <tr key={item.id}>
-                    <td>
-                      <a
-                        href={`/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}`}
-                        className="jobs-file-link"
+        <div className="jobs-card-list">
+          {sorted.map((item) => {
+            const state = derivePipelineState(item);
+            const fragment = deriveNextActionFragment(state);
+            const detailHref = `/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}${fragment}`;
+            const integrityHref = `/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}#fulfilment-integrity`;
+            const since = deriveWaitingSince(item, state);
+            const ageText = since
+              ? formatAge(since)
+              : state === "completed" &&
+                  item.fulfilmentState?.certificateRetrievedAt
+                ? formatDate(item.fulfilmentState.certificateRetrievedAt)
+                : "—";
+            const isPending = pendingArchiveIds.has(item.id);
+            const isArchived = item.archivedAt !== null;
+
+            return (
+              <article
+                key={item.id}
+                className={`jobs-card${isArchived ? " jobs-card-archived" : ""}`}
+              >
+                {/* Header row: pipeline badge + id + created date */}
+                <header className="jobs-card-header">
+                  <div className="jobs-card-header-left">
+                    <span
+                      className={`fulfilment-badge fulfilment-badge-${state}`}
+                    >
+                      {PIPELINE_LABELS[state]}
+                    </span>
+                    {item.integrityAnomalyCount > 0 && (
+                      <span
+                        className="jobs-integrity-warn"
+                        title={item.integrityAnomalies.join(" • ")}
                       >
-                        {truncateFileName(item.originalFileName)}
-                      </a>
-                    </td>
-                    <td>{item.categoryLabel}</td>
-                    <td>
+                        {" "}
+                        ⚠
+                      </span>
+                    )}
+                    {isArchived && (
+                      <span className="jobs-archived-badge" title={
+                        item.archivedReason
+                          ? `Archived: ${item.archivedReason}`
+                          : "Archived"
+                      }>
+                        Archived
+                      </span>
+                    )}
+                  </div>
+                  <div className="jobs-card-header-right">
+                    <span className="jobs-card-id" title={item.id}>
+                      #{shortId(item.id)}
+                    </span>
+                    <span className="jobs-card-date">
+                      {formatDate(item.createdAt)}
+                    </span>
+                  </div>
+                </header>
+
+                {/* Filename — full, wraps cleanly */}
+                <h2 className="jobs-card-filename">
+                  <a
+                    href={`/upload/${item.id}?fromQueue=${encodeURIComponent(returnUrl)}`}
+                    className="jobs-file-link"
+                  >
+                    {item.originalFileName}
+                  </a>
+                </h2>
+
+                {/* Detail grid: label/value pairs in two readable rows */}
+                <dl className="jobs-card-details">
+                  <div className="jobs-card-detail">
+                    <dt>Category</dt>
+                    <dd>{item.categoryLabel}</dd>
+                  </div>
+                  <div className="jobs-card-detail">
+                    <dt>Status</dt>
+                    <dd>
                       <span
                         className={`intake-status-badge intake-status-${item.status}`}
                       >
                         {item.statusLabel}
                       </span>
-                    </td>
-                    <td className="jobs-handling-cell">
+                    </dd>
+                  </div>
+                  <div className="jobs-card-detail">
+                    <dt>Handling</dt>
+                    <dd>
                       {item.nominalDutyState ? (
-                        <span className="jobs-handling-text">
-                          {NOMINAL_DUTY_STATE_LABELS[item.nominalDutyState]}
-                        </span>
+                        NOMINAL_DUTY_STATE_LABELS[item.nominalDutyState]
                       ) : (
                         <span className="jobs-no-fulfilment">—</span>
                       )}
-                    </td>
-                    <td>
-                      <span
-                        className={`fulfilment-badge fulfilment-badge-${state}`}
-                      >
-                        {PIPELINE_LABELS[state]}
-                      </span>
-                      {item.integrityAnomalyCount > 0 && (
-                        <span
-                          className="jobs-integrity-warn"
-                          title={item.integrityAnomalies.join(" • ")}
-                        >
-                          {" "}
-                          ⚠
-                        </span>
-                      )}
-                    </td>
-                    <td className="jobs-waiting-age">
-                      {(() => {
-                        const since = deriveWaitingSince(item, state);
-                        if (since) return formatAge(since);
-                        if (
-                          state === "completed" &&
-                          item.fulfilmentState?.certificateRetrievedAt
-                        ) {
-                          return formatDate(
-                            item.fulfilmentState.certificateRetrievedAt
-                          );
-                        }
-                        return "—";
-                      })()}
-                    </td>
-                    <td className="jobs-adj-no">
+                    </dd>
+                  </div>
+                  <div className="jobs-card-detail">
+                    <dt>Adj. No.</dt>
+                    <dd className="jobs-adj-no">
                       {item.fulfilmentState?.adjudicationNumber ?? "—"}
-                    </td>
-                    <td>
-                      {item.integrityAnomalyCount > 0 ? (
-                        <a
-                          href={integrityHref}
-                          className="jobs-next-action jobs-next-action-integrity"
-                        >
-                          Review issue →
-                        </a>
-                      ) : (
-                        <a href={detailHref} className="jobs-next-action">
-                          {deriveNextAction(item, state)} →
-                        </a>
-                      )}
-                    </td>
-                    <td>
+                    </dd>
+                  </div>
+                  <div className="jobs-card-detail">
+                    <dt>Waiting</dt>
+                    <dd className="jobs-waiting-age">{ageText}</dd>
+                  </div>
+                  <div className="jobs-card-detail">
+                    <dt>Certificate</dt>
+                    <dd>
                       {item.fulfilmentState?.certificateStoragePath ? (
                         <a
                           href={`/api/intake/${item.id}/certificate-download`}
@@ -547,30 +651,72 @@ export function JobsQueueClient({ items }: { items: JobListItem[] }) {
                       ) : (
                         <span className="jobs-no-fulfilment">—</span>
                       )}
-                    </td>
-                    <td className="jobs-integrity-summary">
-                      {item.integrityAnomalyCount > 0 ? (
-                        <>
-                          <span className="jobs-integrity-text">
-                            {item.integrityAnomalies[0]}
-                          </span>
-                          {item.integrityAnomalyCount > 1 && (
-                            <span className="jobs-integrity-more">
-                              {" "}
-                              +{item.integrityAnomalyCount - 1} more
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="jobs-no-fulfilment">—</span>
-                      )}
-                    </td>
-                    <td className="jobs-date">{formatDate(item.createdAt)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                    </dd>
+                  </div>
+                </dl>
+
+                {/* Integrity anomaly text — only shown when present */}
+                {item.integrityAnomalyCount > 0 && (
+                  <p className="jobs-card-integrity">
+                    <strong>Integrity:</strong>{" "}
+                    <span className="jobs-integrity-text">
+                      {item.integrityAnomalies[0]}
+                    </span>
+                    {item.integrityAnomalyCount > 1 && (
+                      <span className="jobs-integrity-more">
+                        {" "}
+                        +{item.integrityAnomalyCount - 1} more
+                      </span>
+                    )}
+                  </p>
+                )}
+
+                {/* Archived reason — only shown for archived cards */}
+                {isArchived && item.archivedReason && (
+                  <p className="jobs-card-archived-reason">
+                    <strong>Archive note:</strong> {item.archivedReason}
+                  </p>
+                )}
+
+                {/* Action row */}
+                <footer className="jobs-card-actions">
+                  {item.integrityAnomalyCount > 0 ? (
+                    <a
+                      href={integrityHref}
+                      className="jobs-next-action jobs-next-action-integrity"
+                    >
+                      Review issue →
+                    </a>
+                  ) : (
+                    <a href={detailHref} className="jobs-next-action">
+                      {deriveNextAction(item, state)} →
+                    </a>
+                  )}
+                  {isArchived ? (
+                    <button
+                      type="button"
+                      className="jobs-archive-btn jobs-archive-btn-restore"
+                      onClick={() => restoreJob(item)}
+                      disabled={isPending}
+                      title="Restore this job to the active queue."
+                    >
+                      {isPending ? "Restoring…" : "Restore"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="jobs-archive-btn"
+                      onClick={() => archiveJob(item)}
+                      disabled={isPending}
+                      title="Hide this job from the active queue. Records and uploaded PDFs are preserved."
+                    >
+                      {isPending ? "Archiving…" : "Archive"}
+                    </button>
+                  )}
+                </footer>
+              </article>
+            );
+          })}
         </div>
       )}
     </>

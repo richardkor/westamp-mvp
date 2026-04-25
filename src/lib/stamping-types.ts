@@ -138,7 +138,13 @@ export type JobEventType =
   | "delivered"
   // Nominal-duty internal lifecycle transitions (operator-driven,
   // category-scoped; see `src/lib/nominal-duty-lifecycle.ts`).
-  | "nominal_duty_state_changed";
+  | "nominal_duty_state_changed"
+  // Soft-archive lifecycle. Both transitions are operator-driven and
+  // do NOT delete records or files. Presence of `archivedAt` on the
+  // job record is the source of truth for "archived"; these events
+  // record the audit trail of when archive/restore happened and why.
+  | "job_archived"
+  | "job_restored";
 
 export interface JobEvent {
   /** Event type identifier. */
@@ -835,4 +841,22 @@ export interface StampingJob {
    * payment and certificate collection. NOT automated.
    */
   fulfilmentState?: StampingFulfilmentState;
+  /**
+   * Soft-archive marker. Presence of `archivedAt` indicates the job
+   * has been hidden from the operator's active queue. The job record,
+   * uploaded source PDF, fulfilment state, and event history are all
+   * preserved — archive is a UI filter only, NOT a deletion.
+   *
+   * Absent on active jobs and on legacy jobs. Set by the operator
+   * route at `/api/intake/[id]/archive`. Cleared by the same route
+   * when the job is restored.
+   */
+  archivedAt?: string;
+  /**
+   * Optional short operator note recorded at archive time (e.g.
+   * "test upload", "duplicate of #abc-1234", "user withdrew"). Free
+   * text. The full audit trail of archive/restore actions lives in
+   * the `events[]` array as `job_archived` / `job_restored` entries.
+   */
+  archivedReason?: string;
 }
