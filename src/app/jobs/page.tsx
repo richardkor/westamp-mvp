@@ -24,6 +24,24 @@ import { JobsQueueClient } from "./jobs-queue-client";
 import type { NominalDutyState } from "../../lib/nominal-duty-lifecycle";
 
 /**
+ * Force dynamic rendering on every request.
+ *
+ * Without this, Next.js 15 statically prerenders this Server Component
+ * at build time because `listJobs()` is a plain async call (not a
+ * `fetch`), and the framework cannot infer that the underlying data
+ * changes per-request. The build-time call captures an empty (or
+ * stale) job list into the static HTML, and that snapshot is then
+ * served on every subsequent request — so newly uploaded jobs never
+ * appear in the hosted operator inbox.
+ *
+ * `force-dynamic` opts the page out of the static cache so each
+ * request re-executes the component and re-queries the live job
+ * store. Cookie-based operator gating runs in middleware, which is
+ * orthogonal to this directive.
+ */
+export const dynamic = "force-dynamic";
+
+/**
  * Lightweight shape passed to the client — avoids serialising the full
  * StampingJob across the server/client boundary. Only fields the
  * queue UI needs are included.
