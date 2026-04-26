@@ -139,14 +139,19 @@ export default async function JobsPage() {
   const items: JobListItem[] = jobs.map(toListItem);
 
   return (
-    <main>
+    <main className="page-wide">
       <a href="/" className="back-link">
         &larr; Home
       </a>
-      <h1>Stamping Jobs</h1>
+      <div className="jobs-page-header">
+        <div>
+          <span className="jobs-page-eyebrow">Operator dashboard</span>
+          <h1 className="jobs-page-title">Stamping Jobs</h1>
+        </div>
+      </div>
       <p className="jobs-intro">
-        Operator inbox. Find new uploads, open jobs that need action,
-        and track fulfilment across the pilot lanes. Internal view only.
+        Find new uploads, open jobs that need action, and track
+        fulfilment across the pilot lanes. Internal view only.
       </p>
       <JobsQueueClient items={items} />
     </main>

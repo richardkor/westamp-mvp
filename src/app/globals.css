@@ -1,4 +1,50 @@
-/* WeStamp — Minimal global styles. No framework, no branding. */
+/* WeStamp — Global styles.
+   Lightweight design tokens are declared in :root below. They are NOT
+   wired through the rest of this stylesheet — pre-existing rules
+   continue to use their literal colours so this milestone introduces
+   no risk to legacy layouts. New components (homepage, upload polish,
+   receipt polish, jobs dashboard, operator command centre) consume
+   the tokens. */
+
+:root {
+  /* Brand */
+  --brand-orange: #ea580c;
+  --brand-orange-strong: #c2410c;
+  --brand-orange-soft: #fff7ed;
+  --brand-orange-line: #fed7aa;
+
+  /* Text */
+  --text-strong: #0f172a;
+  --text-default: #1f2937;
+  --text-soft: #475569;
+  --text-muted: #64748b;
+  --text-subtle: #94a3b8;
+  --text-on-brand: #ffffff;
+
+  /* Surfaces */
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --surface-tint: #f1f5f9;
+  --surface-bg: #fafafa;
+
+  /* Borders */
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 2px 8px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.10);
+
+  /* Typography rhythm */
+  --section-gap: 48px;
+}
 
 * {
   box-sizing: border-box;
@@ -14,8 +60,24 @@ body {
   color: #1a1a1a;
   background: #fafafa;
   padding: 24px;
+  /* Body's outer container is now wider so dashboard / homepage layouts
+     can breathe. Per-page narrow-content layout is preserved by the
+     `main { max-width: 600px }` default below — every existing page
+     uses a <main> wrapper, so legacy layouts continue to render at
+     600px without any per-page change. Pages that opt in to a wider
+     canvas (homepage, /jobs operator dashboard) add `.page-wide` to
+     their <main> element. */
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+main {
   max-width: 600px;
   margin: 0 auto;
+}
+
+main.page-wide {
+  max-width: 1100px;
 }
 
 h1 {
@@ -7512,4 +7574,660 @@ section[data-section] {
 
 .operator-login-input {
   width: 280px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   PRODUCT UI FOUNDATION (milestone)
+   New components consume the :root tokens declared at the top of this
+   file. Pre-existing rules above this line are intentionally untouched
+   so legacy layouts stay byte-identical.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Button system ──────────────────────────────────────────────────
+   The base `button` element selector at the top of this file remains
+   in place for backwards compatibility. The `.btn` system is opt-in
+   for new CTAs (homepage hero, upload page primary, etc.). */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s,
+    transform 0.05s;
+  /* Override the legacy `button` margin-top so .btn buttons sit
+     wherever they are placed in flow. */
+  margin-top: 0;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-lg {
+  padding: 12px 22px;
+  font-size: 15px;
+}
+
+.btn-primary {
+  background: var(--brand-orange);
+  color: var(--text-on-brand);
+  border-color: var(--brand-orange);
+}
+
+.btn-primary:hover {
+  background: var(--brand-orange-strong);
+  border-color: var(--brand-orange-strong);
+}
+
+.btn-outline {
+  background: var(--surface);
+  color: var(--text-default);
+  border-color: var(--border-strong);
+}
+
+.btn-outline:hover {
+  background: var(--surface-soft);
+  border-color: var(--text-soft);
+  color: var(--text-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--brand-orange);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--brand-orange-soft);
+}
+
+/* ── Public homepage ────────────────────────────────────────────────
+   Persuasive but restrained. Hero on top, How-it-works, Supported
+   documents grid, Trust strip, then the existing tools (calculator,
+   speak-to-lawyer card) preserved further down. */
+
+.home-page {
+  /* Override default <main> max-width via .page-wide; this class adds
+     a touch of vertical breathing room around the hero. */
+  padding-bottom: 24px;
+}
+
+.home-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand-orange);
+  background: var(--brand-orange-soft);
+  border: 1px solid var(--brand-orange-line);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.home-hero {
+  margin: 8px 0 36px;
+  padding: 28px 0 12px;
+}
+
+.home-hero h1 {
+  margin: 14px 0 10px;
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.01em;
+}
+
+.home-hero .home-subhead {
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text-soft);
+  max-width: 680px;
+  margin-bottom: 20px;
+}
+
+.home-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.home-track {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.home-track a {
+  color: var(--brand-orange);
+  text-decoration: none;
+}
+
+.home-track a:hover {
+  text-decoration: underline;
+}
+
+.home-section {
+  margin-top: var(--section-gap);
+}
+
+.home-section h2 {
+  margin: 0 0 14px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-strong);
+  letter-spacing: -0.005em;
+}
+
+.home-section-lead {
+  font-size: 15px;
+  color: var(--text-soft);
+  max-width: 720px;
+  margin-bottom: 20px;
+}
+
+/* How-it-works steps */
+.home-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.home-step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 16px 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.home-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--brand-orange-soft);
+  color: var(--brand-orange-strong);
+  border: 1px solid var(--brand-orange-line);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.home-step-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0 0 4px;
+}
+
+.home-step-body {
+  font-size: 14px;
+  color: var(--text-soft);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Supported documents grid */
+.home-categories {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.home-category {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 16px 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.home-category-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0 0 4px;
+}
+
+.home-category-body {
+  font-size: 13px;
+  color: var(--text-soft);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.home-category-tag {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--surface-tint);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+/* Trust strip */
+.home-trust-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.home-trust-item {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--text-default);
+  line-height: 1.5;
+}
+
+.home-trust-item strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+/* Calculator section heading wrapper */
+.home-tool-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.home-tool-heading h2 {
+  margin: 0;
+}
+
+.home-tool-heading-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* ── Upload page polish ─────────────────────────────────────────────
+   Replaces the inline-styled "Before you upload" blob and the
+   bare upload zone with a clear product-step layout. The actual
+   upload logic in upload/page.tsx is unchanged. */
+
+.upload-page-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand-orange);
+  margin-bottom: 6px;
+}
+
+.upload-page-heading {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.upload-page-subhead {
+  font-size: 15px;
+  color: var(--text-soft);
+  margin: 0 0 18px;
+  line-height: 1.5;
+}
+
+.upload-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 18px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.upload-progress-step {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.upload-progress-step-active {
+  background: var(--brand-orange-soft);
+  color: var(--brand-orange-strong);
+  border-color: var(--brand-orange-line);
+  font-weight: 600;
+}
+
+.upload-progress-sep {
+  color: var(--text-subtle);
+}
+
+.upload-info-card {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand-orange);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--text-default);
+  line-height: 1.5;
+}
+
+.upload-info-card-title {
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0 0 6px;
+}
+
+.upload-info-card p {
+  margin: 0 0 4px;
+}
+
+.upload-info-card p:last-child {
+  margin-bottom: 0;
+  color: var(--text-soft);
+}
+
+.upload-next-steps {
+  margin-top: 24px;
+  padding: 14px 16px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.upload-next-steps-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+
+.upload-next-steps ol {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.6;
+}
+
+/* Polished category radio cards */
+.upload-category-cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: 6px 0 18px;
+}
+
+.upload-category-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.upload-category-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.upload-category-card-active {
+  border-color: var(--brand-orange);
+  background: var(--brand-orange-soft);
+}
+
+.upload-category-card input[type="radio"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.upload-category-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.upload-category-card-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.upload-category-card-hint {
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.4;
+}
+
+/* ── Receipt page polish ───────────────────────────────────────────
+   Replaces inline style={{...}} blobs in the receipt page with
+   class-driven blocks. Behaviour (data fetch, copy-link button,
+   certificate download) is unchanged. */
+
+.receipt-page-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand-orange);
+  margin-bottom: 6px;
+}
+
+.receipt-page-heading {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.receipt-next-card {
+  margin-top: 20px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--brand-orange);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--text-default);
+  line-height: 1.6;
+}
+
+.receipt-next-card-title {
+  font-weight: 600;
+  color: var(--text-strong);
+  margin: 0 0 8px;
+}
+
+.receipt-next-card ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.receipt-save-card {
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.receipt-save-card-title {
+  font-size: 13px;
+  color: var(--text-soft);
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.receipt-copy-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--brand-orange);
+  color: var(--text-on-brand);
+  border: 1px solid var(--brand-orange);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.receipt-copy-btn:hover {
+  background: var(--brand-orange-strong);
+}
+
+.receipt-copy-btn-copied {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+.receipt-copy-btn-copied:hover {
+  background: #15803d;
+}
+
+.receipt-copy-fallback-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-default);
+  background: var(--surface);
+  box-sizing: border-box;
+}
+
+.receipt-cert-card {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.receipt-cert-card-title {
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--text-strong);
+}
+
+.receipt-cert-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  background: #16a34a;
+  color: #fff;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.receipt-cert-download-btn:hover {
+  background: #15803d;
+}
+
+.receipt-cert-pending {
+  margin-top: 24px;
+  padding: 12px 16px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ── /jobs operator dashboard polish ──────────────────────────────── */
+
+.jobs-page-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.jobs-page-eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--brand-orange);
+  margin-bottom: 4px;
+}
+
+.jobs-page-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+/* ── Operator command centre polish (re-skin only) ─────────────────
+   Pre-existing op-cc-* rules continue to apply; these additions just
+   raise visual prominence so the section feels like the primary
+   summary. */
+
+.operator-command-centre {
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--brand-orange);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.operator-command-centre .op-cc-header h2 {
+  font-size: 17px;
+  letter-spacing: -0.005em;
+}
+
+.operator-command-centre .op-cc-next-action {
+  border-color: var(--brand-orange-line);
+  background: var(--brand-orange-soft);
+}
+
+.operator-command-centre .op-cc-next-action-label {
+  color: var(--brand-orange-strong);
 }

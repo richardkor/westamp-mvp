@@ -105,33 +105,35 @@ export default function UploadPage() {
         <a href="/" className="back-link">
           &larr; Back to Home
         </a>
-        <h1>Upload Signed Document for Stamping</h1>
+        <span className="upload-page-eyebrow">Step 1 of 2</span>
+        <h1 className="upload-page-heading">
+          Upload your document for stamping
+        </h1>
+        <p className="upload-page-subhead">
+          Send us the signed PDF you need stamped. After you confirm
+          the document type, we&apos;ll give you a tracking link.
+        </p>
+        <div className="upload-progress" aria-label="Upload progress">
+          <span className="upload-progress-step upload-progress-step-active">
+            1. Choose file
+          </span>
+          <span className="upload-progress-sep">→</span>
+          <span className="upload-progress-step">2. Review &amp; confirm</span>
+        </div>
+
         {/* Calm, public-facing framing — short, reassuring, and keeps
             backend mechanics out of sight. The soft turnaround line is
             a guidance, not a guarantee. */}
-        <div
-          style={{
-            marginTop: 4,
-            marginBottom: 20,
-            padding: "10px 12px",
-            background: "#f5f7fb",
-            border: "1px solid #d9e1ec",
-            borderRadius: 4,
-            fontSize: 14,
-            color: "#333",
-            lineHeight: 1.5,
-          }}
-        >
-          <p style={{ margin: "0 0 6px", fontWeight: 600 }}>
-            Before you upload
-          </p>
-          <p style={{ margin: "0 0 6px" }}>
+        <div className="upload-info-card">
+          <p className="upload-info-card-title">Before you upload</p>
+          <p>
             Please upload your signed document in PDF format. WeStamp
             will guide your submission and keep you updated along the
             way.
           </p>
-          <p style={{ margin: 0, color: "#555" }}>
-            Most submissions are updated within around 2 hours.
+          <p>
+            Most submissions are updated within around 2 hours. Some
+            document types are reviewed manually and may take longer.
           </p>
         </div>
 
@@ -171,6 +173,16 @@ export default function UploadPage() {
             Continue &rarr;
           </button>
         </div>
+
+        <div className="upload-next-steps">
+          <p className="upload-next-steps-title">What happens next</p>
+          <ol>
+            <li>You&apos;ll choose a document category on the next screen.</li>
+            <li>We&apos;ll generate a tracking link with your receipt.</li>
+            <li>Our team reviews and proceeds with stamping.</li>
+            <li>You can return to your tracking link anytime.</li>
+          </ol>
+        </div>
       </main>
     );
   }
@@ -182,7 +194,18 @@ export default function UploadPage() {
       <a href="/" className="back-link">
         &larr; Back to Home
       </a>
-      <h1>Review Your Upload</h1>
+      <span className="upload-page-eyebrow">Step 2 of 2</span>
+      <h1 className="upload-page-heading">Review your upload</h1>
+      <p className="upload-page-subhead">
+        Confirm the file and tell us what type of document this is.
+      </p>
+      <div className="upload-progress" aria-label="Upload progress">
+        <span className="upload-progress-step">1. Choose file</span>
+        <span className="upload-progress-sep">\u2192</span>
+        <span className="upload-progress-step upload-progress-step-active">
+          2. Review &amp; confirm
+        </span>
+      </div>
 
       <div className="upload-review-card">
         <div className="upload-review-row">
@@ -197,36 +220,34 @@ export default function UploadPage() {
 
       <div className="upload-category-section">
         <p className="upload-category-heading">Document category</p>
-        {(
-          Object.entries(CATEGORY_LABELS) as [DocumentCategory, string][]
-        ).map(([val, label]) => (
-          <label key={val} className="upload-category-option">
-            <input
-              type="radio"
-              name="category"
-              value={val}
-              checked={category === val}
-              onChange={() => setCategory(val)}
-              disabled={view === "submitting"}
-            />
-            {label}
-            {val !== "tenancy_agreement" && (
-              <span
-                style={{
-                  display: "block",
-                  marginLeft: 24,
-                  fontSize: 12,
-                  color: "#78716c",
-                  fontStyle: "italic",
-                  marginTop: 2,
-                }}
-              >
-                WeStamp will review your document type and guide the
-                next step if anything needs to be confirmed.
+        <div className="upload-category-cards">
+          {(
+            Object.entries(CATEGORY_LABELS) as [DocumentCategory, string][]
+          ).map(([val, label]) => (
+            <label
+              key={val}
+              className={`upload-category-card${category === val ? " upload-category-card-active" : ""}`}
+            >
+              <input
+                type="radio"
+                name="category"
+                value={val}
+                checked={category === val}
+                onChange={() => setCategory(val)}
+                disabled={view === "submitting"}
+              />
+              <span className="upload-category-card-body">
+                <span className="upload-category-card-label">{label}</span>
+                {val !== "tenancy_agreement" && (
+                  <span className="upload-category-card-hint">
+                    WeStamp will review your document type and guide
+                    the next step if anything needs to be confirmed.
+                  </span>
+                )}
               </span>
-            )}
-          </label>
-        ))}
+            </label>
+          ))}
+        </div>
       </div>
 
       {submitError && (

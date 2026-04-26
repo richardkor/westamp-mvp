@@ -145,13 +145,14 @@ export default function ReceiptPage({
       <a href="/" className="back-link">
         &larr; Back to Home
       </a>
-      <h1>Submission Received</h1>
+      <span className="receipt-page-eyebrow">WeStamp · Submission Receipt</span>
+      <h1 className="receipt-page-heading">Submission received</h1>
       <p className="receipt-intro">
         WeStamp has received your document for stamping.
       </p>
       <p className="receipt-secondary">
-        You can use this page to track the current high-level status of your
-        submission.
+        Use this page to track the current high-level status of your
+        submission. You can save the link and return at any time.
       </p>
 
       <div className="receipt-card">
@@ -263,22 +264,9 @@ export default function ReceiptPage({
           names, operator jargon, or anything that would imply live
           portal submission / payment / stamping. */}
       {receipt.publicStatus !== "Completed" && (
-        <div
-          style={{
-            marginTop: 20,
-            padding: "12px 14px",
-            background: "#f5f7fb",
-            border: "1px solid #d9e1ec",
-            borderRadius: 6,
-            fontSize: 14,
-            color: "#333",
-            lineHeight: 1.5,
-          }}
-        >
-          <p style={{ margin: "0 0 6px", fontWeight: 600 }}>
-            What happens next
-          </p>
-          <ul style={{ margin: 0, paddingLeft: 20 }}>
+        <div className="receipt-next-card">
+          <p className="receipt-next-card-title">What happens next</p>
+          <ul>
             <li>Your document has been received.</li>
             <li>
               WeStamp will process your submission and update this
@@ -304,10 +292,10 @@ export default function ReceiptPage({
       )}
 
       {/* Save receipt link */}
-      <div style={{ marginTop: "20px", fontSize: "14px", color: "#555" }}>
-        <p style={{ margin: "0 0 8px" }}>
-          Save this link to check your submission status or download your
-          certificate later.
+      <div className="receipt-save-card">
+        <p className="receipt-save-card-title">
+          Save this link to check your submission status or download
+          your certificate later.
         </p>
         {copyStatus === "fallback" ? (
           <input
@@ -315,30 +303,12 @@ export default function ReceiptPage({
             readOnly
             value={receiptUrl}
             onClick={(e) => (e.target as HTMLInputElement).select()}
-            style={{
-              width: "100%",
-              padding: "8px 10px",
-              fontSize: "13px",
-              border: "1px solid #d1d5db",
-              borderRadius: "4px",
-              color: "#333",
-              background: "#f9fafb",
-              boxSizing: "border-box",
-            }}
+            className="receipt-copy-fallback-input"
           />
         ) : (
           <button
             onClick={handleCopyLink}
-            style={{
-              padding: "6px 14px",
-              fontSize: "13px",
-              background: copyStatus === "copied" ? "#16a34a" : "#1a56db",
-              color: "#fff",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: 500,
-            }}
+            className={`receipt-copy-btn${copyStatus === "copied" ? " receipt-copy-btn-copied" : ""}`}
           >
             {copyStatus === "copied" ? "Link copied" : "Copy receipt link"}
           </button>
@@ -347,32 +317,21 @@ export default function ReceiptPage({
 
       {/* Certificate download — shown only when truly ready */}
       {receipt.certificateReady && token ? (
-        <div className="receipt-card" style={{ marginTop: "24px" }}>
-          <p style={{ margin: "0 0 12px", fontWeight: 500 }}>
+        <div className="receipt-cert-card">
+          <p className="receipt-cert-card-title">
             Your stamped certificate is ready.
           </p>
           <a
             href={`/api/receipt/${receipt.id}/certificate?token=${encodeURIComponent(token)}`}
             download
-            style={{
-              display: "inline-block",
-              padding: "10px 20px",
-              background: "#16a34a",
-              color: "#fff",
-              borderRadius: "6px",
-              textDecoration: "none",
-              fontWeight: 500,
-              fontSize: "14px",
-            }}
+            className="receipt-cert-download-btn"
           >
             Download Certificate
           </a>
         </div>
       ) : receipt.publicStatus === "Completed" ? (
-        <div className="receipt-card" style={{ marginTop: "24px" }}>
-          <p style={{ margin: 0, color: "#666", fontSize: "14px" }}>
-            Your certificate is not available for download yet.
-          </p>
+        <div className="receipt-cert-pending">
+          Your certificate is not available for download yet.
         </div>
       ) : null}
     </main>
