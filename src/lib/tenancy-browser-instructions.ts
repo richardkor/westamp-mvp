@@ -626,29 +626,34 @@ function buildBahagianBSteps(
   // scope, this step does NOT silently inject a default and does
   // NOT pretend it can be filled. It is an explicit blocker on the
   // Bahagian B section.
-  if (bahagianB.instrumentName.captured) {
+  if (
+    bahagianB.instrumentName.captured &&
+    bahagianB.instrumentName.code !== null
+  ) {
+    const namedLabel = bahagianB.instrumentName.label ?? "(label missing)";
     out.push({
       section: "bahagian_b",
       kind: "form_fill_only",
-      description: `Select Nama Surat Cara (pds_suratcara): ${
-        bahagianB.instrumentName.value ?? "(missing)"
-      }.`,
+      description: `Select Nama Surat Cara (pds_suratcara): ${bahagianB.instrumentName.code} · ${namedLabel}.`,
       portalLabel: "Nama Surat Cara",
       portalFieldKey: "pds_suratcara",
       selectorCertainty: "known",
-      value: bahagianB.instrumentName.value,
+      value: bahagianB.instrumentName.code,
+      notes: `Distinct field from pds_jenis below — both are required at Hantar gate 1. Documented accepted code: ${bahagianB.instrumentName.code} (${namedLabel}).`,
     });
   } else {
     out.push({
       section: "bahagian_b",
       kind: "non_mutating",
       description:
-        'Cannot fill Nama Surat Cara (pds_suratcara) — required Hantar gate 1 portal field. WeStamp does not capture an operator-confirmed value for it. Bahagian B is BLOCKED until the data model and operator capture path are extended.',
+        'Cannot fill Nama Surat Cara (pds_suratcara) — required Hantar gate 1 portal field. WeStamp has no operator-confirmed value for this job. Bahagian B is BLOCKED until the operator captures the field.',
       portalLabel: "Nama Surat Cara",
       portalFieldKey: "pds_suratcara",
       selectorCertainty: "known",
       value: null,
-      notes: bahagianB.instrumentName.missingReason,
+      notes:
+        bahagianB.instrumentName.missingReason ??
+        "Operator must select pds_suratcara from the documented option list (today: code 1101 / Perjanjian Sewa).",
     });
   }
 

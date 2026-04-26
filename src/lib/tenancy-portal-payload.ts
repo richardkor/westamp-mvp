@@ -170,6 +170,23 @@ export type TenancyPortalPayloadAutomationSupport = "supported" | "blocked";
  * compiler treats the value as missing — never silently injects a
  * default — and blocks Bahagian B automation support accordingly.
  */
+/**
+ * Bahagian B · `pds_suratcara` block in the compiled payload.
+ *
+ * Two states:
+ *   - captured = false  : operator has not selected a Nama Surat
+ *                         Cara value. `code` and `label` are null.
+ *                         `missingReason` carries the blocker text.
+ *   - captured = true   : operator has selected one of the known
+ *                         options (today: code "1101", label
+ *                         "Perjanjian Sewa"). `missingReason` is
+ *                         null. The instruction-draft compiler
+ *                         emits a `form_fill_only` step when this
+ *                         state is reached.
+ *
+ * The portal field key and Bahasa Malaysia label are constants —
+ * they describe the portal field, not any per-instance value.
+ */
 export interface TenancyPortalPayloadInstrumentName {
   /** Portal field key — stable observed evidence. */
   portalFieldKey: "pds_suratcara";
@@ -177,19 +194,19 @@ export interface TenancyPortalPayloadInstrumentName {
   portalLabel: "Nama Surat Cara";
   /**
    * Whether WeStamp has captured an operator-confirmed value for
-   * `pds_suratcara`. Always `false` today because the data model
-   * has no field for it. A future capture milestone will flip this
-   * to `true`.
+   * `pds_suratcara`.
    */
-  captured: false;
-  /** Operator-confirmed value, if captured. Always `null` today. */
-  value: null;
+  captured: boolean;
+  /** Operator-confirmed code (e.g. "1101"). Null when not captured. */
+  code: string | null;
+  /** Operator-facing label (e.g. "Perjanjian Sewa"). Null when not captured. */
+  label: string | null;
   /**
-   * Stable human-readable reason describing the gap. Surfaced in
-   * the payload preview and instruction draft preview so operators
-   * see the blocker without having to read the readiness evaluator.
+   * Stable human-readable reason describing the gap. Null when
+   * captured; non-null when not captured. Surfaced in the payload
+   * preview and instruction-draft preview.
    */
-  missingReason: string;
+  missingReason: string | null;
 }
 
 /** Bahagian B · summary block. */
@@ -518,14 +535,31 @@ function mapBahagianB(
     rentScheduleMode = "unsupported";
   }
 
-  // pds_suratcara is always uncaptured today — see TenancyPortalPayloadInstrumentName.
-  const instrumentName: TenancyPortalPayloadInstrumentName = {
-    portalFieldKey: "pds_suratcara",
-    portalLabel: "Nama Surat Cara",
-    captured: false,
-    value: null,
-    missingReason: PDS_SURATCARA_MISSING_REASON,
-  };
+  // pds_suratcara — populated from `instrument.portalInstrumentName`
+  // when the operator has captured a value. Today only one option
+  // is documented from repo evidence (1101 / "Perjanjian Sewa"); the
+  // shape supports adding more options without code change here.
+  // The `captured: false` branch uses the stable missing-reason text
+  // so the payload preview and instruction-draft preview show a
+  // consistent blocker explanation.
+  const capturedInstrumentName = instrument?.portalInstrumentName;
+  const instrumentName: TenancyPortalPayloadInstrumentName = capturedInstrumentName
+    ? {
+        portalFieldKey: "pds_suratcara",
+        portalLabel: "Nama Surat Cara",
+        captured: true,
+        code: capturedInstrumentName.code,
+        label: capturedInstrumentName.label,
+        missingReason: null,
+      }
+    : {
+        portalFieldKey: "pds_suratcara",
+        portalLabel: "Nama Surat Cara",
+        captured: false,
+        code: null,
+        label: null,
+        missingReason: PDS_SURATCARA_MISSING_REASON,
+      };
 
   // Combine pds_suratcara and pds_jenis reasons into a single
   // automation-support decision. The Bahagian B section is supported
@@ -541,7 +575,7 @@ function mapBahagianB(
   // "data missing" from "automation unsupported by design".
   const reasons: string[] = [];
   let descriptionTypeAutomationUnsupportedReason: string | null = null;
-  if (!instrumentName.captured) {
+  if (!instrumentName.captured && instrumentName.missingReason) {
     reasons.push(instrumentName.missingReason);
   }
   if (!descKnown) {

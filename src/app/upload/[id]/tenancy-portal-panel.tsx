@@ -24,6 +24,7 @@
 import { useMemo, useState } from "react";
 import {
   evaluateTenancyPortalReadiness,
+  INSTRUMENT_NAME_OPTIONS,
   type TenancyPortalReadinessReport,
   type TenancyPortalReadinessState,
   type TenancyPortalSection,
@@ -45,6 +46,7 @@ import type {
   TenancyPortalDetails,
   TenancyPortalFurnishedStatus,
   TenancyPortalIdentityType,
+  TenancyPortalInstrumentNameCode,
   TenancyPortalNationality,
   TenancyPortalParty,
   TenancyPortalPartyRole,
@@ -132,6 +134,12 @@ interface Draft {
   // Bahagian B
   instrumentDate: string;
   duplicateCopies: string;
+  /**
+   * Bahagian B · Section 1 — pds_suratcara / Nama Surat Cara.
+   * Empty string when not yet selected. Distinct from
+   * `portalDescriptionType` (pds_jenis) below.
+   */
+  portalInstrumentNameCode: TenancyPortalInstrumentNameCode | "";
   portalDescriptionType: TenancyPortalDescriptionType | "";
   rentSchedule: DraftRentPeriod[];
   // Bahagian C
@@ -198,6 +206,8 @@ function buildInitialDraft(existing?: TenancyPortalDetails): Draft {
       typeof existing?.instrument?.duplicateCopies === "number"
         ? String(existing.instrument.duplicateCopies)
         : "0",
+    portalInstrumentNameCode:
+      existing?.instrument?.portalInstrumentName?.code ?? "",
     portalDescriptionType:
       existing?.instrument?.portalDescriptionType ?? "",
     rentSchedule: sched,
@@ -273,12 +283,28 @@ function buildSavePayload(d: Draft): Record<string, unknown> {
         endDate: r.endDate.trim(),
         monthlyRent: Number(r.monthlyRent),
       }));
-    body.instrument = {
+    const instrumentBody: Record<string, unknown> = {
       instrumentDate: d.instrumentDate.trim(),
       duplicateCopies: Number(d.duplicateCopies || "0"),
       portalDescriptionType: d.portalDescriptionType,
       rentSchedule,
     };
+    if (d.portalInstrumentNameCode !== "") {
+      // Look up the canonical label for the selected code from the
+      // shared option table; the validator normalises labels too,
+      // but supplying the canonical label up-front keeps the
+      // round-trip stable.
+      const opt = INSTRUMENT_NAME_OPTIONS.find(
+        (o) => o.code === d.portalInstrumentNameCode
+      );
+      if (opt) {
+        instrumentBody.portalInstrumentName = {
+          code: opt.code,
+          label: opt.label,
+        };
+      }
+    }
+    body.instrument = instrumentBody;
   }
 
   // Property block — only if we have at least propertyType and address line 1.
@@ -876,6 +902,32 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
                   }
                 />
               </Field>
+              <Field label="Instrument name (Bahagian B · pds_suratcara)">
+                <select
+                  value={draft.portalInstrumentNameCode}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      portalInstrumentNameCode: e.target.value as
+                        | TenancyPortalInstrumentNameCode
+                        | "",
+                    }))
+                  }
+                >
+                  <option value="">— select —</option>
+                  {INSTRUMENT_NAME_OPTIONS.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.code} · {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="tpr-field-helper-note">
+                  Distinct from pds_jenis. Hantar gate 1 portal field.
+                  Today the documented option list contains a single
+                  entry — additional codes will be added as further
+                  live-walk evidence is captured.
+                </span>
+              </Field>
               <Field label="Instrument description (Bahagian B · pds_jenis)">
                 <select
                   value={draft.portalDescriptionType}
@@ -1351,7 +1403,18 @@ function PayloadPreview({ payload }: { payload: TenancyPortalPayload }) {
             <strong>{formatScalar(b.duplicateCopies)}</strong>
           </p>
           <p className="tpr-payload-line">
-            <strong>pds_jenis:</strong>{" "}
+            <strong>pds_suratcara (Nama Surat Cara):</strong>{" "}
+            {b.instrumentName.captured && b.instrumentName.code ? (
+              <>
+                {b.instrumentName.code} ·{" "}
+                {b.instrumentName.label ?? "(label missing)"}
+              </>
+            ) : (
+              <em>not captured</em>
+            )}
+          </p>
+          <p className="tpr-payload-line">
+            <strong>pds_jenis (Jenis Surat Cara):</strong>{" "}
             {b.portalDescriptionLabel ?? <em>not selected</em>}
           </p>
           <p className="tpr-payload-line">

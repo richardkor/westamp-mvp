@@ -41,9 +41,50 @@ import type {
   TenancyPortalDescriptionType,
   TenancyPortalDetails,
   TenancyPortalFurnishedStatus,
+  TenancyPortalInstrumentName,
+  TenancyPortalInstrumentNameCode,
   TenancyPortalParty,
   TenancyPortalPropertyType,
 } from "./stamping-types";
+
+/**
+ * Pds_suratcara option table — the authoritative list of accepted
+ * "Nama Surat Cara" code/label pairs. Sourced from repo evidence
+ * (`src/lib/stsds-lane-knowledge.ts` records `pds_suratcara=1101
+ * (Perjanjian Sewa) accepted` from the Apr 2026 live walk). New
+ * codes are added here only when supported by additional evidence.
+ *
+ * Exported so the operator panel renders the same option set the
+ * validator accepts.
+ */
+export const INSTRUMENT_NAME_OPTIONS: ReadonlyArray<{
+  code: TenancyPortalInstrumentNameCode;
+  label: string;
+}> = [
+  { code: "1101", label: "Perjanjian Sewa" },
+];
+
+const INSTRUMENT_NAME_CODE_SET: ReadonlySet<TenancyPortalInstrumentNameCode> =
+  new Set(INSTRUMENT_NAME_OPTIONS.map((o) => o.code));
+
+const INSTRUMENT_NAME_LABEL_BY_CODE: Record<
+  TenancyPortalInstrumentNameCode,
+  string
+> = INSTRUMENT_NAME_OPTIONS.reduce(
+  (acc, o) => ({ ...acc, [o.code]: o.label }),
+  {} as Record<TenancyPortalInstrumentNameCode, string>
+);
+
+/** Look up the canonical label for a given code. Returns null if unknown. */
+export function getInstrumentNameLabelForCode(
+  code: TenancyPortalInstrumentNameCode | string | null | undefined
+): string | null {
+  if (!code) return null;
+  return (
+    INSTRUMENT_NAME_LABEL_BY_CODE[code as TenancyPortalInstrumentNameCode] ??
+    null
+  );
+}
 
 /**
  * Description-type values for which the standard `rentSchedule` shape
@@ -379,6 +420,31 @@ export function evaluateTenancyPortalReadiness(
         : null,
     portalMeaning: "Salinan Pendua",
   });
+  // Bahagian B · Section 1 — Nama Surat Cara (`pds_suratcara`).
+  // Required. Distinct from pds_jenis below — both are required at
+  // Hantar gate 1 and the portal does NOT cascade-populate one from
+  // the other (see `src/lib/sewa-pajakan-gate-chain.ts` line 192).
+  // The accepted code/label pair must be in INSTRUMENT_NAME_OPTIONS.
+  const instrumentNameSelection = instrument?.portalInstrumentName;
+  const instrumentNameCodeKnown =
+    instrumentNameSelection !== undefined &&
+    INSTRUMENT_NAME_CODE_SET.has(
+      instrumentNameSelection.code as TenancyPortalInstrumentNameCode
+    );
+  fields.push({
+    fieldKey: "instrument.portalInstrumentName",
+    label: "Instrument name (Bahagian B · pds_suratcara)",
+    section: "bahagian_b",
+    state: instrumentNameCodeKnown ? "ready" : "missing",
+    currentValue: instrumentNameCodeKnown
+      ? `${instrumentNameSelection.code} · ${instrumentNameSelection.label}`
+      : null,
+    portalMeaning: "Nama Surat Cara",
+    notes: instrumentNameCodeKnown
+      ? "Distinct field from pds_jenis below. Both are required at Hantar gate 1."
+      : 'Required. Pick one of the documented Nama Surat Cara options (today: "Perjanjian Sewa" / 1101).',
+  });
+
   // Bahagian B · Section 3 — Diskripsi Surat Cara (`pds_jenis`).
   // Required. The selected value also drives whether the rent-schedule
   // shape can be evaluated at all: only the two rent-based types
@@ -792,6 +858,50 @@ export function validateTenancyPortalDetailsInput(
       portalDescriptionType: ri.portalDescriptionType as TenancyPortalDescriptionType,
       rentSchedule: schedule,
     };
+
+    // Optional Bahagian B · pds_suratcara block. When present, the
+    // code must be one of `INSTRUMENT_NAME_OPTIONS`. Operator-supplied
+    // labels are accepted as-is BUT if a known label exists for the
+    // code we normalise to the canonical one to keep the option table
+    // authoritative.
+    if (
+      ri.portalInstrumentName !== undefined &&
+      ri.portalInstrumentName !== null
+    ) {
+      if (typeof ri.portalInstrumentName !== "object") {
+        return {
+          ok: false,
+          error: "instrument.portalInstrumentName must be an object.",
+        };
+      }
+      const rin = ri.portalInstrumentName as Record<string, unknown>;
+      if (
+        typeof rin.code !== "string" ||
+        !INSTRUMENT_NAME_CODE_SET.has(
+          rin.code as TenancyPortalInstrumentNameCode
+        )
+      ) {
+        return {
+          ok: false,
+          error:
+            "instrument.portalInstrumentName.code must be one of: " +
+            INSTRUMENT_NAME_OPTIONS.map((o) => o.code).join(", ") +
+            ".",
+        };
+      }
+      const code = rin.code as TenancyPortalInstrumentNameCode;
+      const canonicalLabel = INSTRUMENT_NAME_LABEL_BY_CODE[code];
+      const suppliedLabel =
+        typeof rin.label === "string" && rin.label.trim()
+          ? rin.label.trim()
+          : canonicalLabel;
+      const normalisedName: TenancyPortalInstrumentName = {
+        code,
+        label: canonicalLabel ?? suppliedLabel,
+      };
+      value.instrument.portalInstrumentName = normalisedName;
+    }
+
     if (typeof ri.operatorNote === "string" && ri.operatorNote.trim()) {
       value.instrument.operatorNote = ri.operatorNote.trim();
     }

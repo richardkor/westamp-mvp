@@ -687,6 +687,40 @@ export interface TenancyPortalParty {
 }
 
 /**
+ * Bahagian B · Section 1 — Nama Surat Cara (`pds_suratcara`).
+ *
+ * The portal's "Nama Surat Cara" dropdown identifies the *name* of
+ * the instrument and is REQUIRED at Hantar gate 1 (proven by the
+ * Apr 2026 live walk; see `src/lib/sewa-pajakan-gate-chain.ts`).
+ *
+ * IMPORTANT: this field is DISTINCT from `pds_jenis` (Jenis Surat
+ * Cara / description sub-type). Both are required at Hantar gate 1
+ * and pds_jenis options are NOT cascade-populated from pds_suratcara
+ * (live-walk evidence: 7 static options pre- and post-pds_suratcara
+ * select).
+ *
+ * Today only one value is documented from repo evidence:
+ *   1101 / "Perjanjian Sewa"
+ * — accepted at the live walk, recorded in `stsds-lane-knowledge.ts`.
+ * Additional codes will be added as further live-walk evidence is
+ * captured. We do NOT invent codes.
+ */
+export type TenancyPortalInstrumentNameCode = "1101";
+
+/**
+ * Operator-captured pds_suratcara value. The model only stores the
+ * code + label pair; the portal field key and Bahasa Malaysia label
+ * are constants, surfaced by the payload compiler / instruction
+ * draft so consumers don't redefine them.
+ */
+export interface TenancyPortalInstrumentName {
+  /** Stable portal value code (e.g. "1101"). */
+  code: TenancyPortalInstrumentNameCode;
+  /** Operator-facing label for the selected code (e.g. "Perjanjian Sewa"). */
+  label: string;
+}
+
+/**
  * Bahagian B · Section 3 — Diskripsi Surat Cara (`pds_jenis`).
  *
  * The e-Duti Setem Sewa/Pajakan portal exposes this as a static
@@ -760,6 +794,15 @@ export interface TenancyPortalInstrument {
   instrumentDate: string;
   /** Number of duplicate copies for stamping. >= 0. */
   duplicateCopies: number;
+  /**
+   * Bahagian B · Section 1 — Nama Surat Cara (`pds_suratcara`).
+   * Operator-confirmed instrument name. Required at Hantar gate 1.
+   * Distinct from `portalDescriptionType` (pds_jenis) below — both
+   * must be set independently. Optional in the persisted shape so
+   * legacy / partially-captured jobs remain valid; required by the
+   * readiness evaluator before automation can be deemed ready.
+   */
+  portalInstrumentName?: TenancyPortalInstrumentName;
   /**
    * Bahagian B · Section 3 — Diskripsi Surat Cara (`pds_jenis`).
    * Operator-selected from a fixed list of observed portal options.
