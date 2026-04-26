@@ -8734,6 +8734,269 @@ section[data-section] {
   overflow: auto;
 }
 
+/* Tenancy portal browser instruction draft preview */
+
+.tpr-instr-draft {
+  margin: 14px 0 4px;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.tpr-instr-draft > .tpr-instr-draft-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  color: var(--text-default);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.tpr-instr-draft > .tpr-instr-draft-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tpr-instr-draft > .tpr-instr-draft-summary::before {
+  content: "▸ ";
+  color: var(--text-soft);
+}
+
+.tpr-instr-draft[open] > .tpr-instr-draft-summary::before {
+  content: "▾ ";
+}
+
+.tpr-instr-draft-summary-title {
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.tpr-instr-draft[open] > .tpr-instr-draft-summary {
+  border-bottom-style: solid;
+}
+
+.tpr-instr-draft-body {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text-default);
+}
+
+.tpr-instr-draft-warning {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  background: var(--brand-orange-soft);
+  border: 1px solid var(--brand-orange-line);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--brand-orange-strong);
+  line-height: 1.45;
+}
+
+.tpr-instr-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.tpr-instr-count-cell {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+}
+
+.tpr-instr-count-cell strong {
+  color: var(--text-strong);
+}
+
+.tpr-instr-count-mutating {
+  border-left: 3px solid #d97706;
+}
+
+.tpr-instr-count-final {
+  border-left: 3px solid #b91c1c;
+}
+
+.tpr-instr-section {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.tpr-instr-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-tint);
+  flex-wrap: wrap;
+}
+
+.tpr-instr-section-header h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tpr-instr-section-header-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tpr-instr-section-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tpr-instr-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tpr-instr-step {
+  padding: 8px 12px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.tpr-instr-step:last-child {
+  border-bottom: none;
+}
+
+.tpr-instr-step-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tpr-instr-step-seq {
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.tpr-instr-step-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-default);
+  line-height: 1.45;
+}
+
+.tpr-instr-step-kind {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.tpr-instr-step-kind-non_mutating {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.tpr-instr-step-kind-form_fill_only {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.tpr-instr-step-kind-mutating_requires_authorization {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.tpr-instr-step-kind-irreversible_requires_final_approval {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.tpr-instr-step-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
+.tpr-instr-step-meta-cell strong,
+.tpr-instr-step-meta-cell code,
+.tpr-instr-step-value {
+  color: var(--text-default);
+}
+
+.tpr-instr-step-meta-cell code {
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.tpr-instr-selector-known {
+  color: #15803d;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.tpr-instr-selector-inferred {
+  color: #92400e;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.tpr-instr-selector-unknown_needs_live_mapping {
+  color: #b91c1c;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.tpr-instr-step-notes {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.45;
+}
+
+.tpr-instr-section-blockers {
+  margin: 0;
+  padding: 8px 12px 10px 30px;
+  font-size: 11px;
+  color: #92400e;
+  background: #fff7ed;
+  border-top: 1px solid var(--border);
+}
+
+/* Visual hint for mutating + irreversible steps in the row itself */
+
+.tpr-instr-step-mutating_requires_authorization {
+  background: #fffbeb;
+}
+
+.tpr-instr-step-irreversible_requires_final_approval {
+  background: #fff1f2;
+}
+
 .tpr-party-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

@@ -149,17 +149,78 @@ export type TenancyPortalPayloadRentScheduleMode =
  */
 export type TenancyPortalPayloadAutomationSupport = "supported" | "blocked";
 
+/**
+ * Bahagian B · instrument-name block (`pds_suratcara`).
+ *
+ * The e-Duti Setem Sewa/Pajakan portal exposes TWO distinct
+ * instrument-classification fields on Maklumat Am — both required
+ * at the Hantar gate, neither cascading from the other:
+ *   - `pds_suratcara`  ("Nama Surat Cara")   — proven Hantar gate 1
+ *   - `pds_jenis`      ("Jenis Surat Cara")  — separate static dropdown
+ *
+ * Evidence: `src/lib/sewa-pajakan-gate-chain.ts` lines 98–99 list
+ * both fields with distinct labels; line 192 states explicitly that
+ * pds_jenis options are NOT cascade-populated from pds_suratcara.
+ * The recorded live-walk in `src/lib/stsds-lane-knowledge.ts`
+ * confirmed `pds_suratcara=1101 (Perjanjian Sewa) accepted` at
+ * Hantar gate 1.
+ *
+ * The WeStamp data model does NOT yet capture an operator-confirmed
+ * value for `pds_suratcara`. Per the data-gap-closure scope, this
+ * compiler treats the value as missing — never silently injects a
+ * default — and blocks Bahagian B automation support accordingly.
+ */
+export interface TenancyPortalPayloadInstrumentName {
+  /** Portal field key — stable observed evidence. */
+  portalFieldKey: "pds_suratcara";
+  /** Portal-side Bahasa Malaysia label. */
+  portalLabel: "Nama Surat Cara";
+  /**
+   * Whether WeStamp has captured an operator-confirmed value for
+   * `pds_suratcara`. Always `false` today because the data model
+   * has no field for it. A future capture milestone will flip this
+   * to `true`.
+   */
+  captured: false;
+  /** Operator-confirmed value, if captured. Always `null` today. */
+  value: null;
+  /**
+   * Stable human-readable reason describing the gap. Surfaced in
+   * the payload preview and instruction draft preview so operators
+   * see the blocker without having to read the readiness evaluator.
+   */
+  missingReason: string;
+}
+
 /** Bahagian B · summary block. */
 export interface TenancyPortalPayloadBahagianB {
   instrumentDate: string | null;
   duplicateCopies: number | null;
+  /**
+   * `pds_suratcara` block. Currently always `captured: false` because
+   * the data model has no operator-capture field for it. The
+   * compiler surfaces it explicitly so the payload preview and the
+   * downstream instruction draft can mark Bahagian B as blocked.
+   */
+  instrumentName: TenancyPortalPayloadInstrumentName;
   portalDescriptionType: TenancyPortalDescriptionType | null;
   portalDescriptionLabel: string | null;
   rentScheduleMode: TenancyPortalPayloadRentScheduleMode;
   rentSchedule: TenancyPortalPayloadRentPeriod[];
   automationSupportStatus: TenancyPortalPayloadAutomationSupport;
-  /** Free-text reason when blocked. Null when supported. */
+  /** Free-text reason when blocked. Null when supported. Combined
+   *  reason string covering pds_suratcara missing and / or pds_jenis
+   *  unsupported. */
   automationSupportReason: string | null;
+  /**
+   * Subset of automation-blocking reasons that are about pds_jenis
+   * being an unsupported portal option (vs missing data). Used by
+   * the top-level `unsupportedAutomationReasons` aggregator so the
+   * operator preview can distinguish "data not captured yet" from
+   * "this portal option will never be automation-supported until
+   * model is extended".
+   */
+  descriptionTypeAutomationUnsupportedReason: string | null;
 }
 
 /** Bahagian C · summary block. */
@@ -370,8 +431,16 @@ export function compileTenancyPortalPayload(
       blockingReasons.push(reason);
     }
   }
-  if (bahagianB.automationSupportStatus === "blocked" && bahagianB.automationSupportReason) {
-    unsupportedAutomationReasons.push(bahagianB.automationSupportReason);
+  // Only the pds_jenis-by-design unsupported reason flows into
+  // `unsupportedAutomationReasons`. The pds_suratcara missing reason
+  // is a data-capture gap, not an automation-design limitation; it
+  // already surfaces in `blockingReasons` via the Bahagian B
+  // section's combined "Automation: ..." line (see
+  // `buildSectionReadiness`).
+  if (bahagianB.descriptionTypeAutomationUnsupportedReason) {
+    unsupportedAutomationReasons.push(
+      bahagianB.descriptionTypeAutomationUnsupportedReason
+    );
   }
 
   const overall: TenancyPortalPayloadOverall =
@@ -419,6 +488,15 @@ function mapParty(p: TenancyPortalParty): TenancyPortalPayloadParty {
   };
 }
 
+/**
+ * Stable text for the pds_suratcara missing-value reason. Surfaced
+ * verbatim in the payload preview, the instruction draft, and the
+ * automation-support reason aggregation. Kept here so all consumers
+ * use the same wording.
+ */
+const PDS_SURATCARA_MISSING_REASON =
+  'pds_suratcara ("Nama Surat Cara") is a separate Hantar gate 1 portal field, distinct from pds_jenis ("Jenis Surat Cara"). WeStamp does not yet capture an operator-confirmed value for it. Automation is blocked until the data model and operator capture path are extended.';
+
 function mapBahagianB(
   tpd: TenancyPortalDetails | undefined
 ): TenancyPortalPayloadBahagianB {
@@ -440,21 +518,42 @@ function mapBahagianB(
     rentScheduleMode = "unsupported";
   }
 
-  let automationSupportStatus: TenancyPortalPayloadAutomationSupport;
-  let automationSupportReason: string | null;
-  if (!descKnown) {
-    automationSupportStatus = "blocked";
-    automationSupportReason =
-      "Bahagian B description (pds_jenis) not yet selected.";
-  } else if (descSupportsSchedule) {
-    automationSupportStatus = "supported";
-    automationSupportReason = null;
-  } else {
-    automationSupportStatus = "blocked";
-    automationSupportReason = `pds_jenis "${
-      DESCRIPTION_TYPE_LABELS[descType]
-    }" is not supported by current automation. Handle this job outside the assisted path until the data model is extended.`;
+  // pds_suratcara is always uncaptured today — see TenancyPortalPayloadInstrumentName.
+  const instrumentName: TenancyPortalPayloadInstrumentName = {
+    portalFieldKey: "pds_suratcara",
+    portalLabel: "Nama Surat Cara",
+    captured: false,
+    value: null,
+    missingReason: PDS_SURATCARA_MISSING_REASON,
+  };
+
+  // Combine pds_suratcara and pds_jenis reasons into a single
+  // automation-support decision. The Bahagian B section is supported
+  // ONLY when both conditions hold:
+  //   1. pds_suratcara has a captured operator-confirmed value, AND
+  //   2. pds_jenis is selected and is one of the two rent-schedule
+  //      description types (fixed_rent_during_tenancy /
+  //      variable_rent_during_tenancy).
+  // Either gap blocks Bahagian B automation. The reasons are joined
+  // with a separator so the operator preview can surface every
+  // blocker, not just the first. The pds_jenis-unsupported reason is
+  // tracked separately so the top-level aggregator can distinguish
+  // "data missing" from "automation unsupported by design".
+  const reasons: string[] = [];
+  let descriptionTypeAutomationUnsupportedReason: string | null = null;
+  if (!instrumentName.captured) {
+    reasons.push(instrumentName.missingReason);
   }
+  if (!descKnown) {
+    reasons.push("Bahagian B description (pds_jenis) not yet selected.");
+  } else if (!descSupportsSchedule) {
+    descriptionTypeAutomationUnsupportedReason = `pds_jenis "${DESCRIPTION_TYPE_LABELS[descType]}" is not supported by current automation. Handle this job outside the assisted path until the data model is extended.`;
+    reasons.push(descriptionTypeAutomationUnsupportedReason);
+  }
+  const automationSupportStatus: TenancyPortalPayloadAutomationSupport =
+    reasons.length === 0 ? "supported" : "blocked";
+  const automationSupportReason: string | null =
+    reasons.length === 0 ? null : reasons.join(" · ");
 
   const rentSchedule: TenancyPortalPayloadRentPeriod[] =
     instrument?.rentSchedule.map((r) => ({
@@ -471,12 +570,14 @@ function mapBahagianB(
       typeof instrument?.duplicateCopies === "number"
         ? instrument.duplicateCopies
         : null,
+    instrumentName,
     portalDescriptionType: descKnown ? descType : null,
     portalDescriptionLabel: descKnown ? DESCRIPTION_TYPE_LABELS[descType] : null,
     rentScheduleMode,
     rentSchedule,
     automationSupportStatus,
     automationSupportReason,
+    descriptionTypeAutomationUnsupportedReason,
   };
 }
 

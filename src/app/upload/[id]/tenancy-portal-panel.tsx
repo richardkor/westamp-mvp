@@ -32,6 +32,12 @@ import {
   compileTenancyPortalPayload,
   type TenancyPortalPayload,
 } from "../../../lib/tenancy-portal-payload";
+import {
+  compileTenancyBrowserInstructions,
+  type TenancyBrowserInstructionDraft,
+  type TenancyBrowserInstructionKind,
+  type TenancyBrowserInstructionSection,
+} from "../../../lib/tenancy-browser-instructions";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -337,6 +343,10 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
     () => compileTenancyPortalPayload(job),
     [job]
   );
+  const initialInstructionDraft = useMemo(
+    () => compileTenancyBrowserInstructions(initialPayload),
+    [initialPayload]
+  );
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Draft>(() =>
     buildInitialDraft(job.tenancyPortalDetails)
@@ -371,6 +381,13 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
     if (!editing) return initialPayload;
     return compileTenancyPortalPayload(liveJobInput);
   }, [editing, liveJobInput, initialPayload]);
+
+  // Browser instruction draft is downstream of the payload — it
+  // reuses the same payload object, so cheap to recompile in tandem.
+  const liveInstructionDraft: TenancyBrowserInstructionDraft = useMemo(() => {
+    if (!editing) return initialInstructionDraft;
+    return compileTenancyBrowserInstructions(livePayload);
+  }, [editing, livePayload, initialInstructionDraft]);
 
   async function handleSave() {
     setSaving(true);
@@ -562,6 +579,16 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
           missing"; this one answers "what would be sent". Updates
           live as the operator edits. */}
       <PayloadPreview payload={livePayload} />
+
+      {/* ── Browser instruction draft preview ──────────────────
+          Non-mutating, non-executable draft of the browser steps
+          WeStamp would perform later on the e-Duti Setem
+          Sewa/Pajakan flow. Distinct from the payload preview
+          above: that one answers "what would be sent"; this one
+          answers "how would those values be filled in". Compiled
+          in-memory only — never saved to the job, never executed,
+          never sends anything to the portal. */}
+      <InstructionDraftPreview draft={liveInstructionDraft} />
 
       {/* ── Edit form ──────────────────────────────────────────── */}
       <div className="tpr-edit-toggle">
@@ -1521,5 +1548,220 @@ function PayloadSectionHeader({
         {state === "ready" ? "Ready" : "Blocked"}
       </span>
     </div>
+  );
+}
+
+// ─── Browser instruction draft preview ─────────────────────────────
+
+const INSTRUCTION_SECTION_LABELS: Record<
+  TenancyBrowserInstructionSection,
+  string
+> = {
+  maklumat_am: "Maklumat Am · Lane Selection",
+  bahagian_a: "Bahagian A · Parties",
+  bahagian_b: "Bahagian B · Instrument & Rent",
+  bahagian_c: "Bahagian C · Property",
+  rumusan: "Rumusan Pengiraan",
+  lampiran: "Lampiran",
+  perakuan: "Perakuan",
+};
+
+const INSTRUCTION_KIND_LABELS: Record<
+  TenancyBrowserInstructionKind,
+  string
+> = {
+  non_mutating: "Read / navigate",
+  form_fill_only: "Fill field",
+  mutating_requires_authorization: "Mutating · authorization required",
+  irreversible_requires_final_approval:
+    "Irreversible · final approval required",
+};
+
+function formatStepValue(
+  v: string | number | boolean | null | undefined
+): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "boolean") return v ? "yes" : "no";
+  if (typeof v === "number") return String(v);
+  if (v.trim() === "") return "—";
+  return v;
+}
+
+function InstructionDraftPreview({
+  draft,
+}: {
+  draft: TenancyBrowserInstructionDraft;
+}) {
+  return (
+    <details className="tpr-instr-draft" aria-label="Browser instruction draft">
+      <summary className="tpr-instr-draft-summary">
+        <span className="tpr-instr-draft-summary-title">
+          Browser Instruction Draft
+        </span>
+        <span
+          className={`tpr-overall tpr-overall-${draft.overall}`}
+          title={`generated ${draft.generatedAt}`}
+        >
+          {draft.overall === "ready"
+            ? "Draft ready (non-executed)"
+            : "Draft blocked"}
+        </span>
+      </summary>
+      <div className="tpr-instr-draft-body">
+        <p className="tpr-instr-draft-warning">
+          <strong>Not executed.</strong> This draft does NOT save,
+          submit, upload, pay, or retrieve anything. It is a deterministic
+          plan of what browser automation would do later, generated from
+          the compiled tenancy portal payload above.
+        </p>
+
+        {/* Aggregate kind counts */}
+        <div className="tpr-instr-counts">
+          <span className="tpr-instr-count-cell">
+            Total: <strong>{draft.totalInstructions}</strong>
+          </span>
+          <span className="tpr-instr-count-cell">
+            Read / navigate:{" "}
+            <strong>{draft.kindCounts.non_mutating}</strong>
+          </span>
+          <span className="tpr-instr-count-cell">
+            Fill field:{" "}
+            <strong>{draft.kindCounts.form_fill_only}</strong>
+          </span>
+          <span className="tpr-instr-count-cell tpr-instr-count-mutating">
+            Mutating:{" "}
+            <strong>
+              {draft.kindCounts.mutating_requires_authorization}
+            </strong>
+          </span>
+          <span className="tpr-instr-count-cell tpr-instr-count-final">
+            Irreversible:{" "}
+            <strong>
+              {draft.kindCounts.irreversible_requires_final_approval}
+            </strong>
+          </span>
+        </div>
+
+        {/* Aggregate blocking / unsupported reasons */}
+        {draft.overall === "blocked" && draft.blockingReasons.length > 0 && (
+          <div className="tpr-payload-blockers">
+            <p className="tpr-payload-blockers-title">Why blocked</p>
+            <ul>
+              {draft.blockingReasons.map((reason, i) => (
+                <li key={i}>{reason}</li>
+              ))}
+            </ul>
+            {draft.unsupportedAutomationReasons.length > 0 && (
+              <p className="tpr-payload-unsupported">
+                <strong>Automation unsupported:</strong>{" "}
+                {draft.unsupportedAutomationReasons.join(" · ")}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Section plans */}
+        {draft.sections.map((section) => (
+          <div key={section.section} className="tpr-instr-section">
+            <div className="tpr-instr-section-header">
+              <h4>{INSTRUCTION_SECTION_LABELS[section.section]}</h4>
+              <div className="tpr-instr-section-header-right">
+                <span className="tpr-instr-section-count">
+                  {section.steps.length} step
+                  {section.steps.length === 1 ? "" : "s"}
+                </span>
+                <span
+                  className={`tpr-overall tpr-overall-${section.state}`}
+                  title={`section state: ${section.state}`}
+                >
+                  {section.state === "ready" ? "Ready" : "Blocked"}
+                </span>
+                {section.automationSupport === "blocked" && (
+                  <span
+                    className="tpr-overall tpr-overall-blocked"
+                    title="automation support: blocked"
+                  >
+                    Automation unsupported
+                  </span>
+                )}
+              </div>
+            </div>
+            {section.steps.length === 0 ? (
+              <p className="tpr-payload-empty">No steps generated.</p>
+            ) : (
+              <ol className="tpr-instr-steps">
+                {section.steps.map((step) => (
+                  <li
+                    key={step.seq}
+                    className={`tpr-instr-step tpr-instr-step-${step.kind}`}
+                  >
+                    <div className="tpr-instr-step-line">
+                      <span className="tpr-instr-step-seq">
+                        #{step.seq}
+                      </span>
+                      <span
+                        className={`tpr-instr-step-kind tpr-instr-step-kind-${step.kind}`}
+                        title={INSTRUCTION_KIND_LABELS[step.kind]}
+                      >
+                        {INSTRUCTION_KIND_LABELS[step.kind]}
+                      </span>
+                      <span className="tpr-instr-step-desc">
+                        {step.description}
+                      </span>
+                    </div>
+                    <div className="tpr-instr-step-meta">
+                      {step.portalLabel && (
+                        <span className="tpr-instr-step-meta-cell">
+                          Portal label:{" "}
+                          <strong>{step.portalLabel}</strong>
+                        </span>
+                      )}
+                      {step.portalFieldKey && (
+                        <span className="tpr-instr-step-meta-cell">
+                          Field key:{" "}
+                          <code>{step.portalFieldKey}</code>
+                        </span>
+                      )}
+                      <span className="tpr-instr-step-meta-cell">
+                        Selector:{" "}
+                        <em
+                          className={`tpr-instr-selector tpr-instr-selector-${step.selectorCertainty}`}
+                        >
+                          {step.selectorCertainty}
+                        </em>
+                      </span>
+                      {step.value !== undefined && (
+                        <span className="tpr-instr-step-meta-cell">
+                          Value:{" "}
+                          <span className="tpr-instr-step-value">
+                            {formatStepValue(step.value)}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    {step.notes && (
+                      <p className="tpr-instr-step-notes">{step.notes}</p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+            {section.blockingReasons.length > 0 && (
+              <ul className="tpr-instr-section-blockers">
+                {section.blockingReasons.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+
+        {/* Raw draft (collapsed) */}
+        <details className="tpr-payload-raw">
+          <summary>Raw instruction draft (JSON)</summary>
+          <pre>{JSON.stringify(draft, null, 2)}</pre>
+        </details>
+      </div>
+    </details>
   );
 }
