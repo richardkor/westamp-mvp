@@ -51,12 +51,15 @@ import type {
  * portal options need different data (premium, crop share, amendment
  * reference) that this milestone does NOT model — the readiness
  * evaluator marks them as unsupported by current automation.
+ *
+ * Exported so the payload compiler (`tenancy-portal-payload.ts`) can
+ * use the same set without redefining it.
  */
-const DESCRIPTION_TYPES_WITH_RENT_SCHEDULE: ReadonlySet<TenancyPortalDescriptionType> =
+export const DESCRIPTION_TYPES_WITH_RENT_SCHEDULE: ReadonlySet<TenancyPortalDescriptionType> =
   new Set(["fixed_rent_during_tenancy", "variable_rent_during_tenancy"]);
 
-/** Allowed values for the portal description type. */
-const ALLOWED_DESCRIPTION_TYPES: ReadonlySet<TenancyPortalDescriptionType> =
+/** Allowed values for the portal description type. Exported for reuse. */
+export const ALLOWED_DESCRIPTION_TYPES: ReadonlySet<TenancyPortalDescriptionType> =
   new Set([
     "fixed_rent_during_tenancy",
     "variable_rent_during_tenancy",
@@ -66,8 +69,12 @@ const ALLOWED_DESCRIPTION_TYPES: ReadonlySet<TenancyPortalDescriptionType> =
     "crop_share_only",
   ]);
 
-/** Public-friendly labels — used by the gap preview. */
-const DESCRIPTION_TYPE_LABELS: Record<TenancyPortalDescriptionType, string> = {
+/**
+ * Public-friendly labels (Bahasa Malaysia portal text). Exported so
+ * the payload compiler can render the same labels without
+ * redefinition.
+ */
+export const DESCRIPTION_TYPE_LABELS: Record<TenancyPortalDescriptionType, string> = {
   fixed_rent_during_tenancy:
     "Perjanjian Sewa/Pajakan · Bayaran Sewa Tetap Dalam Tempoh Penyewaan",
   variable_rent_during_tenancy:

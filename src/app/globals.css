@@ -8526,6 +8526,214 @@ section[data-section] {
   line-height: 1.4;
 }
 
+/* Tenancy portal payload preview (compiler output) */
+
+.tpr-payload-preview {
+  margin: 14px 0 4px;
+  padding: 14px 16px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.tpr-payload-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.tpr-payload-header h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.tpr-payload-intro {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.tpr-payload-blockers {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: #92400e;
+  line-height: 1.45;
+}
+
+.tpr-payload-blockers-title {
+  margin: 0 0 4px;
+  font-weight: 700;
+  color: #92400e;
+}
+
+.tpr-payload-blockers ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.tpr-payload-unsupported {
+  margin: 6px 0 0;
+  padding-top: 6px;
+  border-top: 1px dashed #fed7aa;
+  color: #92400e;
+}
+
+.tpr-payload-section {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.tpr-payload-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-tint);
+}
+
+.tpr-payload-section-header h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tpr-payload-section-body {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-default);
+}
+
+.tpr-payload-line {
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
+.tpr-payload-line:last-child {
+  margin-bottom: 0;
+}
+
+.tpr-payload-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tpr-payload-parties {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tpr-payload-party-detail {
+  font-size: 11px;
+  color: var(--text-soft);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.tpr-payload-rent-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.tpr-payload-rent-table th,
+.tpr-payload-rent-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.tpr-payload-rent-table th {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tpr-payload-warn {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: var(--radius-sm);
+  color: #92400e;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.tpr-payload-warn-inline {
+  color: #92400e;
+  font-style: italic;
+  font-size: 11px;
+}
+
+.tpr-payload-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  font-style: italic;
+}
+
+.tpr-payload-raw {
+  margin-top: 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.tpr-payload-raw > summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  list-style: none;
+}
+
+.tpr-payload-raw > summary::before {
+  content: "▸ ";
+}
+
+.tpr-payload-raw[open] > summary::before {
+  content: "▾ ";
+}
+
+.tpr-payload-raw pre {
+  padding: 10px 12px;
+  margin: 0;
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  color: var(--text-default);
+  background: var(--surface-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px dashed var(--border);
+  max-height: 320px;
+  overflow: auto;
+}
+
 .tpr-party-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

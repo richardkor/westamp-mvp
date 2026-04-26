@@ -28,6 +28,10 @@ import {
   type TenancyPortalReadinessState,
   type TenancyPortalSection,
 } from "../../../lib/tenancy-portal-requirements";
+import {
+  compileTenancyPortalPayload,
+  type TenancyPortalPayload,
+} from "../../../lib/tenancy-portal-payload";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -303,16 +307,34 @@ function buildSavePayload(d: Draft): Record<string, unknown> {
 
 interface PanelProps {
   jobId: string;
-  /** Subset of the StampingJob the panel actually needs. Type-only. */
+  /**
+   * Subset of the StampingJob the panel actually needs.
+   * - `tenancyPortalDetails` — primary data source.
+   * - `storagePath` — drives the Lampiran payload.
+   * - `originalFileName` / `mimeType` — surfaced in Lampiran preview.
+   * - `documentCategory` — gate (panel only renders for tenancy).
+   * - `stampingDetails` — already-calculated duty for Rumusan
+   *   preview. The compiler reuses the existing duty value verbatim;
+   *   it never recalculates.
+   */
   job: Pick<
     StampingJob,
-    "tenancyPortalDetails" | "storagePath" | "documentCategory"
+    | "tenancyPortalDetails"
+    | "storagePath"
+    | "originalFileName"
+    | "mimeType"
+    | "documentCategory"
+    | "stampingDetails"
   >;
 }
 
 export function TenancyPortalPanel({ jobId, job }: PanelProps) {
   const initialReport = useMemo(
     () => evaluateTenancyPortalReadiness(job),
+    [job]
+  );
+  const initialPayload = useMemo(
+    () => compileTenancyPortalPayload(job),
     [job]
   );
   const [editing, setEditing] = useState(false);
@@ -322,25 +344,33 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // The draft can be evaluated in real time so the operator sees the
-  // gap report update as they fill in fields. We feed the live draft
-  // into the same evaluator using the same shape the API would persist.
+  // Build a synthetic job-input from the live draft so the readiness
+  // report and payload preview update in real time as the operator
+  // edits. Both the readiness evaluator and the payload compiler
+  // accept the same minimal `Pick<>` shape.
+  const liveJobInput = useMemo(() => {
+    if (!editing) return job;
+    const livePayload = buildSavePayload(draft);
+    const liveTpd: TenancyPortalDetails = {
+      updatedAt: new Date().toISOString(),
+      parties: (livePayload.parties as TenancyPortalParty[]) ?? [],
+      instrument: livePayload.instrument as
+        | TenancyPortalDetails["instrument"]
+        | undefined,
+      property: livePayload.property as TenancyPortalProperty | undefined,
+    };
+    return { ...job, tenancyPortalDetails: liveTpd };
+  }, [editing, draft, job]);
+
   const liveReport: TenancyPortalReadinessReport = useMemo(() => {
     if (!editing) return initialReport;
-    const livePayload = buildSavePayload(draft);
-    return evaluateTenancyPortalReadiness({
-      tenancyPortalDetails: {
-        updatedAt: new Date().toISOString(),
-        parties: (livePayload.parties as TenancyPortalParty[]) ?? [],
-        instrument: livePayload.instrument as
-          | TenancyPortalDetails["instrument"]
-          | undefined,
-        property: livePayload.property as TenancyPortalProperty | undefined,
-      },
-      storagePath: job.storagePath,
-      documentCategory: job.documentCategory,
-    });
-  }, [editing, draft, initialReport, job.storagePath, job.documentCategory]);
+    return evaluateTenancyPortalReadiness(liveJobInput);
+  }, [editing, liveJobInput, initialReport]);
+
+  const livePayload: TenancyPortalPayload = useMemo(() => {
+    if (!editing) return initialPayload;
+    return compileTenancyPortalPayload(liveJobInput);
+  }, [editing, liveJobInput, initialPayload]);
 
   async function handleSave() {
     setSaving(true);
@@ -524,6 +554,14 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
           </table>
         </div>
       </details>
+
+      {/* ── Portal payload preview ─────────────────────────────
+          Shows the structured payload WeStamp would send to e-Duti
+          Setem if the job were ready, section by section. Distinct
+          from the gap preview above: that one answers "what is
+          missing"; this one answers "what would be sent". Updates
+          live as the operator edits. */}
+      <PayloadPreview payload={livePayload} />
 
       {/* ── Edit form ──────────────────────────────────────────── */}
       <div className="tpr-edit-toggle">
@@ -1123,5 +1161,365 @@ function Field({ label, children }: FieldProps) {
       <span className="tpr-field-label">{label}</span>
       {children}
     </label>
+  );
+}
+
+// ─── Portal payload preview ────────────────────────────────────────
+
+const PAYLOAD_SECTION_LABELS: Record<
+  TenancyPortalPayload["sectionReadiness"][number]["section"],
+  string
+> = {
+  bahagian_a: "Bahagian A · Parties",
+  bahagian_b: "Bahagian B · Instrument & Rent",
+  bahagian_c: "Bahagian C · Property",
+  rumusan: "Rumusan Pengiraan",
+  lampiran: "Lampiran",
+  perakuan: "Perakuan",
+};
+
+const RENT_MODE_LABELS: Record<
+  TenancyPortalPayload["bahagianB"]["rentScheduleMode"],
+  string
+> = {
+  fixed: "Fixed (single period)",
+  variable: "Variable (multiple periods)",
+  unsupported: "Unsupported (current automation cannot represent this)",
+  not_yet_selected: "Not yet selected",
+};
+
+function formatRm(value: number | null): string {
+  if (value === null) return "—";
+  return `RM ${value.toLocaleString("en-MY", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatScalar(v: string | number | null): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "number") return String(v);
+  return v.trim() === "" ? "—" : v;
+}
+
+function PayloadPreview({ payload }: { payload: TenancyPortalPayload }) {
+  const a = payload.bahagianA;
+  const b = payload.bahagianB;
+  const c = payload.bahagianC;
+  return (
+    <section
+      className="tpr-payload-preview"
+      aria-label="Tenancy portal payload preview"
+    >
+      <header className="tpr-payload-header">
+        <h3>Portal Payload Preview</h3>
+        <span
+          className={`tpr-overall tpr-overall-${payload.overall}`}
+          title={`generated ${payload.generatedAt}`}
+        >
+          {payload.overall === "ready"
+            ? "Payload ready for portal"
+            : "Payload blocked"}
+        </span>
+      </header>
+      <p className="tpr-payload-intro">
+        What WeStamp would send to e-Duti Setem, section by section,
+        if the job were portal-data-ready. This is NOT an automation
+        run — final submission remains a supervised gate.
+      </p>
+
+      {/* Aggregate blocking reasons */}
+      {payload.overall === "blocked" && payload.blockingReasons.length > 0 && (
+        <div className="tpr-payload-blockers">
+          <p className="tpr-payload-blockers-title">Why blocked</p>
+          <ul>
+            {payload.blockingReasons.map((reason, i) => (
+              <li key={i}>{reason}</li>
+            ))}
+          </ul>
+          {payload.unsupportedAutomationReasons.length > 0 && (
+            <p className="tpr-payload-unsupported">
+              <strong>Automation unsupported:</strong>{" "}
+              {payload.unsupportedAutomationReasons.join(" · ")}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Bahagian A */}
+      <div className="tpr-payload-section">
+        <PayloadSectionHeader
+          title={PAYLOAD_SECTION_LABELS.bahagian_a}
+          state={
+            payload.sectionReadiness.find((s) => s.section === "bahagian_a")
+              ?.state ?? "blocked"
+          }
+        />
+        <div className="tpr-payload-section-body">
+          <p className="tpr-payload-line">
+            <strong>{a.landlordCount}</strong> landlord
+            {a.landlordCount === 1 ? "" : "s"}
+            {" · "}
+            <strong>{a.tenantCount}</strong> tenant
+            {a.tenantCount === 1 ? "" : "s"}
+          </p>
+          {a.parties.length === 0 ? (
+            <p className="tpr-payload-empty">No parties captured yet.</p>
+          ) : (
+            <ul className="tpr-payload-parties">
+              {a.parties.map((p, i) => (
+                <li key={i}>
+                  <strong>
+                    {p.role === "landlord" ? "Landlord" : "Tenant"}
+                  </strong>{" "}
+                  · {p.portalPartyCategoryLabel} ·{" "}
+                  {p.name || <em>(unnamed)</em>}
+                  <div className="tpr-payload-party-detail">
+                    {p.identityType ? (
+                      <>
+                        {p.identityType === "nric"
+                          ? "NRIC"
+                          : p.identityType === "passport"
+                            ? "Passport"
+                            : "Co. reg."}
+                        : {formatScalar(p.identityNumber)}{" "}
+                      </>
+                    ) : (
+                      <>ID type: — </>
+                    )}
+                    · TIN:{" "}
+                    {p.tin
+                      ? p.tin
+                      : p.tinAutoGenerationExpected
+                        ? "(auto-generated by MyTax)"
+                        : "—"}{" "}
+                    · Mobile: {formatScalar(p.mobile)}
+                  </div>
+                  <div className="tpr-payload-party-detail">
+                    {formatScalar(p.addressLine1)}
+                    {p.addressLine2 ? `, ${p.addressLine2}` : ""},{" "}
+                    {formatScalar(p.postcode)} {formatScalar(p.city)},{" "}
+                    {formatScalar(p.state)}, {formatScalar(p.country)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {/* Bahagian B */}
+      <div className="tpr-payload-section">
+        <PayloadSectionHeader
+          title={PAYLOAD_SECTION_LABELS.bahagian_b}
+          state={
+            payload.sectionReadiness.find((s) => s.section === "bahagian_b")
+              ?.state ?? "blocked"
+          }
+        />
+        <div className="tpr-payload-section-body">
+          <p className="tpr-payload-line">
+            Tarikh Surat Cara: <strong>{formatScalar(b.instrumentDate)}</strong>{" "}
+            · Salinan Pendua:{" "}
+            <strong>{formatScalar(b.duplicateCopies)}</strong>
+          </p>
+          <p className="tpr-payload-line">
+            <strong>pds_jenis:</strong>{" "}
+            {b.portalDescriptionLabel ?? <em>not selected</em>}
+          </p>
+          <p className="tpr-payload-line">
+            Rent schedule mode: <strong>{RENT_MODE_LABELS[b.rentScheduleMode]}</strong>
+          </p>
+          {b.automationSupportStatus === "blocked" && (
+            <p className="tpr-payload-warn">
+              Automation: blocked.{" "}
+              {b.automationSupportReason ?? "See blockers above."}
+            </p>
+          )}
+          {b.rentSchedule.length === 0 ? (
+            <p className="tpr-payload-empty">No rent schedule rows captured.</p>
+          ) : (
+            <table className="tpr-payload-rent-table">
+              <thead>
+                <tr>
+                  <th>Period</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th>Monthly rent</th>
+                  <th>Months</th>
+                </tr>
+              </thead>
+              <tbody>
+                {b.rentSchedule.map((r, i) => (
+                  <tr key={i}>
+                    <td>#{i + 1}</td>
+                    <td>{r.startDate}</td>
+                    <td>{r.endDate}</td>
+                    <td>{formatRm(r.monthlyRent)}</td>
+                    <td>{r.durationMonths ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      {/* Bahagian C */}
+      <div className="tpr-payload-section">
+        <PayloadSectionHeader
+          title={PAYLOAD_SECTION_LABELS.bahagian_c}
+          state={
+            payload.sectionReadiness.find((s) => s.section === "bahagian_c")
+              ?.state ?? "blocked"
+          }
+        />
+        <div className="tpr-payload-section-body">
+          <p className="tpr-payload-line">
+            {formatScalar(c.addressLine1)}
+            {c.addressLine2 ? `, ${c.addressLine2}` : ""},{" "}
+            {formatScalar(c.postcode)} {formatScalar(c.city)},{" "}
+            {formatScalar(c.state)}, {formatScalar(c.country)}
+          </p>
+          <p className="tpr-payload-line">
+            Jenis Harta: <strong>{formatScalar(c.propertyTypeLabel)}</strong>
+            {" · "}
+            Jenis Bangunan:{" "}
+            <strong>{formatScalar(c.buildingType)}</strong>
+            {c.buildingTypeRequiredButMissing && (
+              <span className="tpr-payload-warn-inline">
+                {" "}
+                — required when Jenis Harta = Kediaman
+              </span>
+            )}
+            {" · "}
+            Perabot: <strong>{formatScalar(c.furnishedStatus)}</strong>
+          </p>
+          <p className="tpr-payload-line">
+            Floor: <strong>{formatScalar(c.floor)}</strong> · Number of floors:{" "}
+            <strong>{formatScalar(c.numberOfFloors)}</strong> · Luas Premis:{" "}
+            <strong>
+              {c.premisesAreaSqm === null ? "—" : `${c.premisesAreaSqm} m²`}
+            </strong>
+            {c.premisesAreaIsZeroFallback && (
+              <span className="tpr-payload-warn-inline">
+                {" "}
+                — operator-confirmed fallback (no value on instrument)
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+
+      {/* Rumusan */}
+      <div className="tpr-payload-section">
+        <PayloadSectionHeader
+          title={PAYLOAD_SECTION_LABELS.rumusan}
+          state={
+            payload.sectionReadiness.find((s) => s.section === "rumusan")
+              ?.state ?? "blocked"
+          }
+        />
+        <div className="tpr-payload-section-body">
+          <p className="tpr-payload-line">
+            WeStamp internal calculated duty:{" "}
+            <strong>{formatRm(payload.rumusan.westampInternalCalculatedDuty)}</strong>
+          </p>
+          {payload.rumusan.rentTotalSummary ? (
+            <p className="tpr-payload-line">
+              Rent total summary:{" "}
+              <strong>
+                {payload.rumusan.rentTotalSummary.totalMonths} months ·{" "}
+                {formatRm(payload.rumusan.rentTotalSummary.totalRent)}
+              </strong>
+            </p>
+          ) : (
+            <p className="tpr-payload-empty">
+              Rent total summary not yet derivable.
+            </p>
+          )}
+          <p className="tpr-payload-line">
+            Comparison status:{" "}
+            <strong>
+              {payload.rumusan.comparisonStatus === "ready_for_future_comparison"
+                ? "Ready for future portal-vs-WeStamp comparison"
+                : "Not compared"}
+            </strong>
+          </p>
+        </div>
+      </div>
+
+      {/* Lampiran */}
+      <div className="tpr-payload-section">
+        <PayloadSectionHeader
+          title={PAYLOAD_SECTION_LABELS.lampiran}
+          state={
+            payload.sectionReadiness.find((s) => s.section === "lampiran")
+              ?.state ?? "blocked"
+          }
+        />
+        <div className="tpr-payload-section-body">
+          <p className="tpr-payload-line">
+            Source PDF:{" "}
+            <strong>{formatScalar(payload.lampiran.originalFileName)}</strong>{" "}
+            ({formatScalar(payload.lampiran.mimeType)})
+          </p>
+          <p className="tpr-payload-line">
+            Storage path:{" "}
+            <code>{formatScalar(payload.lampiran.sourcePdfStoragePath)}</code>
+          </p>
+          <p className="tpr-payload-line">
+            Ready to upload at execution time:{" "}
+            <strong>{payload.lampiran.readyToUpload ? "yes" : "no"}</strong>
+          </p>
+        </div>
+      </div>
+
+      {/* Perakuan */}
+      <div className="tpr-payload-section">
+        <PayloadSectionHeader
+          title={PAYLOAD_SECTION_LABELS.perakuan}
+          state={
+            payload.sectionReadiness.find((s) => s.section === "perakuan")
+              ?.state ?? "blocked"
+          }
+        />
+        <div className="tpr-payload-section-body">
+          <p className="tpr-payload-line">
+            Final submission gate: <strong>supervised</strong>
+          </p>
+          <p className="tpr-payload-line">
+            Final submission allowed at payload stage: <strong>no</strong>
+          </p>
+          <p className="tpr-payload-note">{payload.perakuan.note}</p>
+        </div>
+      </div>
+
+      {/* Raw payload (collapsed) */}
+      <details className="tpr-payload-raw">
+        <summary>Raw payload (JSON)</summary>
+        <pre>{JSON.stringify(payload, null, 2)}</pre>
+      </details>
+    </section>
+  );
+}
+
+function PayloadSectionHeader({
+  title,
+  state,
+}: {
+  title: string;
+  state: TenancyPortalPayload["sectionReadiness"][number]["state"];
+}) {
+  return (
+    <div className="tpr-payload-section-header">
+      <h4>{title}</h4>
+      <span
+        className={`tpr-overall tpr-overall-${state}`}
+        title={`section state: ${state}`}
+      >
+        {state === "ready" ? "Ready" : "Blocked"}
+      </span>
+    </div>
   );
 }

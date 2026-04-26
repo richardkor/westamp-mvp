@@ -2829,7 +2829,10 @@ export default function IntakeDetailsPage({
             job={{
               tenancyPortalDetails: job.tenancyPortalDetails,
               storagePath: job.storagePath,
+              originalFileName: job.originalFileName,
+              mimeType: job.mimeType,
               documentCategory: job.documentCategory,
+              stampingDetails: job.stampingDetails,
             }}
           />
         )}
