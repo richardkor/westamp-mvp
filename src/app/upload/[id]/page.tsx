@@ -30,6 +30,8 @@ import {
 } from "../../../lib/nominal-duty-lifecycle";
 import { resolveConfirmedTenancyPreparationValues } from "../../../lib/tenancy-preparation-resolver";
 import { derivePublicStatus } from "../../../lib/public-status";
+import type { TenancyPortalDetails as ImportedTenancyPortalDetails } from "../../../lib/stamping-types";
+import { TenancyPortalPanel } from "./tenancy-portal-panel";
 
 // ─── Types (mirrored from stamping-types for client use) ─────────────
 
@@ -834,6 +836,13 @@ interface StampingJob {
   nominalDutyState?: NominalDutyState;
   nominalDutyStateUpdatedAt?: string;
   nominalDutyStateNote?: string;
+  /**
+   * Tenancy portal-required-details block (Sewa/Pajakan). Mirrors
+   * `TenancyPortalDetails` from `src/lib/stamping-types.ts`. Captured
+   * by the operator via the Tenancy Portal Required Details panel.
+   * Internal only — not surfaced on the public receipt.
+   */
+  tenancyPortalDetails?: ImportedTenancyPortalDetails;
 }
 
 interface CatalogueSearchResult {
@@ -2803,6 +2812,27 @@ export default function IntakeDetailsPage({
           </section>
         );
       })()}
+
+      {/* ── Tenancy Portal Required Details (internal capture) ─────
+          Operator-only panel that captures the structured Sewa /
+          Pajakan portal fields the e-Duti Setem submission requires.
+          Only rendered for tenancy-agreement jobs (other categories
+          have their own handling). Excludes manual-review and failed
+          jobs because they should be resolved before portal capture
+          is attempted. Does NOT touch the portal, payment, or
+          fulfilment — purely the data layer. */}
+      {job.documentCategory === "tenancy_agreement" &&
+        !isManualReview &&
+        !isFailed && (
+          <TenancyPortalPanel
+            jobId={job.id}
+            job={{
+              tenancyPortalDetails: job.tenancyPortalDetails,
+              storagePath: job.storagePath,
+              documentCategory: job.documentCategory,
+            }}
+          />
+        )}
 
       {/* ── Nominal Duty Handling (internal, operator-only) ──────────
           Repositioned to appear immediately after the record summary

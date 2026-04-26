@@ -8231,3 +8231,343 @@ section[data-section] {
 .operator-command-centre .op-cc-next-action-label {
   color: var(--brand-orange-strong);
 }
+
+/* ── Tenancy Portal Required Details panel (internal operator) ─── */
+
+.tpr-panel {
+  margin: 16px 0;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid #2563eb;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.tpr-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.tpr-panel-header h2 {
+  font-size: 17px;
+  margin: 0;
+  color: var(--text-strong);
+  letter-spacing: -0.005em;
+}
+
+.tpr-overall {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.tpr-overall-ready {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.tpr-overall-blocked {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.tpr-intro {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.tpr-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tpr-summary-cell {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-soft);
+}
+
+.tpr-summary-cell strong {
+  color: var(--text-strong);
+}
+
+.tpr-summary-ready { border-left: 3px solid #16a34a; }
+.tpr-summary-missing { border-left: 3px solid #dc2626; }
+.tpr-summary-conditional { border-left: 3px solid #d97706; }
+.tpr-summary-fallback { border-left: 3px solid #9333ea; }
+
+/* Gap preview disclosure */
+
+.tpr-gap-disclosure {
+  margin: 8px 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+
+.tpr-gap-disclosure > summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-default);
+  list-style: none;
+}
+
+.tpr-gap-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tpr-gap-disclosure > summary::before {
+  content: "▸ ";
+  color: var(--text-soft);
+}
+
+.tpr-gap-disclosure[open] > summary::before {
+  content: "▾ ";
+}
+
+.tpr-table-wrap {
+  overflow-x: auto;
+  padding: 0 10px 10px;
+}
+
+.tpr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.tpr-table th {
+  text-align: left;
+  padding: 6px 8px;
+  font-weight: 600;
+  color: var(--text-soft);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.tpr-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.tpr-section-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.tpr-portal-meaning {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.tpr-current-value {
+  color: var(--text-strong);
+}
+
+.tpr-no-value {
+  color: var(--text-subtle);
+}
+
+.tpr-state-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.tpr-state-ready { background: #dcfce7; color: #15803d; }
+.tpr-state-missing { background: #fee2e2; color: #b91c1c; }
+.tpr-state-conditional_missing { background: #fef3c7; color: #92400e; }
+.tpr-state-operator_fallback { background: #f3e8ff; color: #6b21a8; }
+
+.tpr-row-missing td { background: #fff1f2; }
+.tpr-row-conditional_missing td { background: #fffbeb; }
+.tpr-row-operator_fallback td { background: #faf5ff; }
+
+.tpr-note {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
+/* Edit form */
+
+.tpr-edit-toggle {
+  margin: 8px 0;
+}
+
+.tpr-form {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 16px;
+}
+
+.tpr-form-section {
+  margin-bottom: 18px;
+}
+
+.tpr-form-section h3 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-strong);
+  margin: 0 0 8px;
+}
+
+.tpr-form-section h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-default);
+  margin: 0;
+}
+
+.tpr-form-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.tpr-form-section-add {
+  display: flex;
+  gap: 6px;
+}
+
+.tpr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px 12px;
+}
+
+.tpr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.tpr-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tpr-field input[type="text"],
+.tpr-field input[type="number"],
+.tpr-field input[type="date"],
+.tpr-field select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-default);
+}
+
+.tpr-field input:focus,
+.tpr-field select:focus {
+  outline: none;
+  border-color: var(--brand-orange);
+  box-shadow: 0 0 0 2px var(--brand-orange-soft);
+}
+
+.tpr-checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-default);
+  padding-top: 4px;
+}
+
+.tpr-field-helper-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.tpr-party-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  background: var(--surface-soft);
+  margin-bottom: 10px;
+}
+
+.tpr-party-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 10px;
+}
+
+.tpr-rent-schedule {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tpr-rent-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) auto;
+  gap: 8px 10px;
+  align-items: end;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.tpr-rent-row:last-child {
+  border-bottom: none;
+}
+
+.tpr-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}

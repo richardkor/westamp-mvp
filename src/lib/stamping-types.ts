@@ -144,7 +144,12 @@ export type JobEventType =
   // job record is the source of truth for "archived"; these events
   // record the audit trail of when archive/restore happened and why.
   | "job_archived"
-  | "job_restored";
+  | "job_restored"
+  // Tenancy portal-required-details capture. Internal operator action
+  // that updates the structured `tenancyPortalDetails` block used to
+  // close the e-Duti Setem Sewa/Pajakan data gap. Does NOT touch the
+  // portal, payment, or fulfilment.
+  | "tenancy_portal_details_updated";
 
 export interface JobEvent {
   /** Event type identifier. */
@@ -585,6 +590,284 @@ export interface ExecutionAttempt {
   note: string;
 }
 
+// ─── Tenancy Portal Required Details (Sewa/Pajakan) ───────────────────
+
+/**
+ * Structured capture of the tenancy-specific e-Duti Setem (Sewa/Pajakan)
+ * portal fields that the live portal requires for submission.
+ *
+ * Scope notes
+ * ───────────
+ * - Captures only fields that the portal observably requires or that
+ *   are submission-blocking per recorded gate-chain evidence.
+ * - Intentionally OMITS: landlord/tenant email; signed-in-Malaysia /
+ *   signed-outside-Malaysia status; received-in-Malaysia date. These
+ *   are not required by the portal at the present level of evidence
+ *   and are deliberately left out of this milestone.
+ * - This is INTERNAL operator-captured data. It is not surfaced on the
+ *   public receipt and does not feed `derivePublicStatus`.
+ * - Saving this block is an operator-only action via
+ *   `POST /api/intake/[id]/tenancy-portal-details`.
+ */
+
+/**
+ * Whether a party is an individual or a registered/non-registered
+ * business entity. The portal asks operators to pick one; the choice
+ * affects which identity field is required.
+ */
+export type TenancyPortalPartyType =
+  | "individual"
+  | "company_ssm"
+  | "company_non_ssm";
+
+/** Party role: which side of the tenancy this party occupies. */
+export type TenancyPortalPartyRole = "landlord" | "tenant";
+
+/**
+ * Identity document type used by the portal. NRIC for Malaysian
+ * individuals, passport for non-Malaysian individuals, company
+ * registration number for companies.
+ */
+export type TenancyPortalIdentityType =
+  | "nric"
+  | "passport"
+  | "company_registration";
+
+/**
+ * Nationality status — only meaningful for `type === "individual"`.
+ * Companies use registration jurisdiction separately.
+ */
+export type TenancyPortalNationality = "malaysian" | "non_malaysian";
+
+/**
+ * Single landlord or tenant record. The data model supports any number
+ * of landlords and any number of tenants — the operator panel renders
+ * the parties array dynamically.
+ */
+export interface TenancyPortalParty {
+  /** Landlord or tenant. */
+  role: TenancyPortalPartyRole;
+  /** Individual / SSM-registered entity / non-SSM entity. */
+  type: TenancyPortalPartyType;
+  /** Name as written on the instrument. Free text. */
+  nameAsPerInstrument: string;
+  /** Only meaningful when `type === "individual"`. Null for companies. */
+  nationality?: TenancyPortalNationality | null;
+  /** NRIC / passport / company registration number type. */
+  identityType?: TenancyPortalIdentityType;
+  /** Identity number value. Operator-entered. */
+  identityNumber?: string;
+  /**
+   * Tax Identification Number (TIN), if known. The portal MAY auto-
+   * generate a TIN after identity number entry — in that case operators
+   * leave this field blank and set `tinAutoGenerationExpected = true`.
+   * NEVER fabricate a TIN.
+   */
+  tin?: string;
+  /**
+   * Internal hint that the portal is expected to auto-generate the
+   * TIN once the identity number is entered. Not a stored portal
+   * value. Operator-set.
+   */
+  tinAutoGenerationExpected?: boolean;
+  /** First line of mailing address. */
+  addressLine1: string;
+  /** Optional second line. */
+  addressLine2?: string;
+  postcode: string;
+  city: string;
+  state: string;
+  country: string;
+  /** Mobile / contact number. Required by the portal. */
+  mobile: string;
+  /** Optional landline. */
+  phone?: string;
+  /** Optional internal operator note about this party. */
+  operatorNote?: string;
+}
+
+/**
+ * Bahagian B · Section 3 — Diskripsi Surat Cara (`pds_jenis`).
+ *
+ * The e-Duti Setem Sewa/Pajakan portal exposes this as a static
+ * dropdown that does NOT auto-populate from the previous instrument-
+ * type selection. Six values are encoded here from observed portal
+ * evidence; a seventh option exists in the portal but its exact
+ * label has not been recorded — when an operator captures it, it
+ * can be added without breaking the model.
+ *
+ * Mapping notes
+ * ─────────────
+ * - `fixed_rent_during_tenancy`        — Perjanjian Sewa / Pajakan ·
+ *                                        Bayaran Sewa Tetap Dalam
+ *                                        Tempoh Penyewaan. Single
+ *                                        rent across the tenancy.
+ * - `variable_rent_during_tenancy`     — Perjanjian Sewa / Pajakan ·
+ *                                        Bayaran Sewa Berbeza Dalam
+ *                                        Tempoh Penyewaan. Different
+ *                                        rent across periods.
+ * - `amendment_to_original_tenancy`    — Perjanjian Sewa / Pajakan ·
+ *                                        Terdapat Pindaan Ke Atas
+ *                                        Perjanjian Sewa / Pajakan
+ *                                        Yang Asal.
+ * - `other_item_49f`                   — Lain-lain (BUTIRAN 49(f),
+ *                                        Jadual Pertama Akta Setem
+ *                                        1949).
+ * - `premium_only`                     — Premium atau balasan sahaja.
+ * - `crop_share_only`                  — Nisbah hasil tanaman sahaja.
+ *
+ * Of these, only the first two are currently representable by the
+ * standard `rentSchedule` shape. The remaining four require
+ * substantively different data (premium amount, crop share ratio,
+ * amendment reference) that this milestone does NOT model. They are
+ * accepted here so operators can record the actual portal selection,
+ * but the readiness evaluator marks any job with one of those four
+ * values as not supported by current automation — the operator must
+ * handle stamping outside the assisted path until the model is
+ * extended.
+ */
+export type TenancyPortalDescriptionType =
+  | "fixed_rent_during_tenancy"
+  | "variable_rent_during_tenancy"
+  | "amendment_to_original_tenancy"
+  | "other_item_49f"
+  | "premium_only"
+  | "crop_share_only";
+
+/**
+ * One row of the rent schedule. For a fixed-rent tenancy, the array
+ * contains a single entry whose `startDate`/`endDate` covers the
+ * whole instrument. For a variable-rent tenancy, multiple entries
+ * cover successive periods.
+ */
+export interface TenancyPortalRentPeriod {
+  /** ISO 8601 yyyy-mm-dd. */
+  startDate: string;
+  /** ISO 8601 yyyy-mm-dd. */
+  endDate: string;
+  /** Monthly rent in RM for this period. */
+  monthlyRent: number;
+  /** Operator-entered or derived. Optional. */
+  durationMonths?: number;
+}
+
+/**
+ * Bahagian B — Instrument and rent details. Excludes signed-in-MY /
+ * received-in-MY at this milestone (deliberate per scope guardrails).
+ */
+export interface TenancyPortalInstrument {
+  /** Tarikh Surat Cara. ISO 8601 yyyy-mm-dd. */
+  instrumentDate: string;
+  /** Number of duplicate copies for stamping. >= 0. */
+  duplicateCopies: number;
+  /**
+   * Bahagian B · Section 3 — Diskripsi Surat Cara (`pds_jenis`).
+   * Operator-selected from a fixed list of observed portal options.
+   * The readiness evaluator uses this value to decide whether the
+   * `rentSchedule` shape is appropriate (fixed = one row,
+   * variable = multiple rows) or whether the job is outside the
+   * supported automation path (amendment / other-49f / premium-only /
+   * crop-share-only).
+   */
+  portalDescriptionType: TenancyPortalDescriptionType;
+  /**
+   * Rent schedule rows. Length >= 1 when description type is
+   * `fixed_rent_during_tenancy`; length >= 2 expected when
+   * `variable_rent_during_tenancy`. Other description types do not
+   * have a schedule shape supported by this model — see the
+   * readiness evaluator for treatment.
+   */
+  rentSchedule: TenancyPortalRentPeriod[];
+  /** Optional operator note about the instrument. */
+  operatorNote?: string;
+}
+
+/**
+ * Property type — Jenis Harta. Mirrors the four observed portal options
+ * for tenancy. Other options can be added when more portal evidence is
+ * recorded.
+ */
+export type TenancyPortalPropertyType =
+  | "kediaman"
+  | "perdagangan"
+  | "perindustrian"
+  | "tanah_kosong";
+
+/**
+ * Building type — Jenis Bangunan. Required when property type is
+ * `kediaman`; conditional otherwise. Free string within a known set
+ * so the model is extensible without code change.
+ */
+export type TenancyPortalBuildingType =
+  | "rumah_teres"
+  | "rumah_banglo"
+  | "rumah_berkembar"
+  | "rumah_kluster"
+  | "townhouse"
+  | "apartment"
+  | "kondominium"
+  | "studio"
+  | "lain_lain";
+
+/** Furnished status — Perabot. Optional unless portal requires it. */
+export type TenancyPortalFurnishedStatus =
+  | "fully_furnished"
+  | "partially_furnished"
+  | "unfurnished";
+
+/**
+ * Bahagian C — Property details. Captures the address-level fields
+ * proven necessary by the Apr 2026 gate-chain walk plus the property-
+ * type / building-type / furnishing fields needed for sewa_pajakan.
+ */
+export interface TenancyPortalProperty {
+  addressLine1: string;
+  addressLine2?: string;
+  postcode: string;
+  city: string;
+  state: string;
+  country: string;
+  /** Jenis Harta. */
+  propertyType: TenancyPortalPropertyType;
+  /** Jenis Bangunan. Required when `propertyType === "kediaman"`. */
+  buildingType?: TenancyPortalBuildingType;
+  /** Perabot. */
+  furnishedStatus?: TenancyPortalFurnishedStatus;
+  /** Floor / level / lot label. Free text. */
+  floor?: string;
+  /** Number of floors in the building. */
+  numberOfFloors?: number;
+  /**
+   * Premises area in square metres. The portal requires a numeric
+   * value. If the tenancy agreement does not specify one, the operator
+   * may enter `0` AND set `premisesAreaIsZeroFallback = true` to mark
+   * this as an explicit fallback rather than a real zero.
+   */
+  premisesAreaSqm: number;
+  /** Explicit operator/user-confirmed fallback flag — see field above. */
+  premisesAreaIsZeroFallback?: boolean;
+  /** Optional operator note about the property. */
+  operatorNote?: string;
+}
+
+/**
+ * Top-level tenancy portal-required-details block. Persisted on the
+ * `StampingJob` record as `tenancyPortalDetails`. Absent until the
+ * operator first saves through the capture panel.
+ */
+export interface TenancyPortalDetails {
+  /** ISO 8601 timestamp of the latest operator save. */
+  updatedAt: string;
+  /** All landlord and tenant parties, in any order. */
+  parties: TenancyPortalParty[];
+  /** Bahagian B block. Optional until the operator captures it. */
+  instrument?: TenancyPortalInstrument;
+  /** Bahagian C block. Optional until the operator captures it. */
+  property?: TenancyPortalProperty;
+  /** Optional operator note about overall portal-readiness. */
+  operatorNote?: string;
+}
+
 // ─── Stamping Job Record ──────────────────────────────────────────────
 
 export interface StampingJob {
@@ -859,4 +1142,18 @@ export interface StampingJob {
    * the `events[]` array as `job_archived` / `job_restored` entries.
    */
   archivedReason?: string;
+  /**
+   * Internal tenancy-portal required-details block. Captures the
+   * structured Sewa/Pajakan data the e-Duti Setem portal requires
+   * (parties, instrument/rent, property). Operator-entered via
+   * `POST /api/intake/[id]/tenancy-portal-details`. Absent until the
+   * operator first saves through the capture panel. Only applies to
+   * tenancy-agreement jobs; ignored for nominal-duty / other lanes.
+   *
+   * Does NOT replace `stampingDetails` or `confirmedTenancyInputs`.
+   * It complements them by adding the party/property/rent-schedule
+   * structure that the portal needs but the existing duty-calc layer
+   * does not represent.
+   */
+  tenancyPortalDetails?: TenancyPortalDetails;
 }
