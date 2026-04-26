@@ -39,6 +39,10 @@ import {
   type TenancyBrowserInstructionKind,
   type TenancyBrowserInstructionSection,
 } from "../../../lib/tenancy-browser-instructions";
+import {
+  evaluateTenancyPortalRunReadiness,
+  type TenancyPortalRunReadinessReport,
+} from "../../../lib/tenancy-portal-run-readiness";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -415,6 +419,15 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
     return compileTenancyBrowserInstructions(livePayload);
   }, [editing, livePayload, initialInstructionDraft]);
 
+  // Consolidated readiness gate. Reuses the same `liveJobInput` so
+  // the verdict updates live as the operator edits — the gate
+  // internally calls the same evaluator / payload / instruction-draft
+  // helpers we already render below, but folds them into one verdict
+  // for the operator's primary decision point.
+  const liveRunReadiness: TenancyPortalRunReadinessReport = useMemo(() => {
+    return evaluateTenancyPortalRunReadiness(liveJobInput);
+  }, [liveJobInput]);
+
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -520,6 +533,15 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
         fields that the e-Duti Setem portal needs. Not surfaced to the
         user. No portal action runs from this panel.
       </p>
+
+      {/* ── Portal Run Readiness (consolidated verdict) ──────────
+          Single decision-point block that folds the three existing
+          layers (required-details readiness, payload compiler,
+          instruction-draft compiler) plus the source-PDF check into
+          one verdict the operator can act on. Sits ABOVE the
+          existing gap / payload / instruction-draft previews — those
+          remain intact below for detail. */}
+      <RunReadinessSummary report={liveRunReadiness} />
 
       {/* ── Readiness summary counts ────────────────────────────── */}
       <div className="tpr-summary">
@@ -1826,5 +1848,98 @@ function InstructionDraftPreview({
         </details>
       </div>
     </details>
+  );
+}
+
+// ─── Consolidated Portal Run Readiness summary ─────────────────────
+
+function RunReadinessSummary({
+  report,
+}: {
+  report: TenancyPortalRunReadinessReport;
+}) {
+  const isReady = report.verdict === "ready_for_supervised_run";
+  return (
+    <section
+      className={`tpr-run-readiness tpr-run-readiness-${report.verdict}`}
+      aria-label="Portal run readiness — consolidated verdict"
+    >
+      <header className="tpr-run-readiness-header">
+        <h3>Portal Run Readiness</h3>
+        <span
+          className={`tpr-overall tpr-overall-${isReady ? "ready" : "blocked"}`}
+          title={`generated ${report.generatedAt}`}
+        >
+          {isReady ? "Ready for supervised portal run" : "Blocked"}
+        </span>
+      </header>
+
+      <p className="tpr-run-readiness-action">
+        <span className="tpr-run-readiness-action-label">
+          Next recommended action
+        </span>
+        <span className="tpr-run-readiness-action-text">
+          {report.nextRecommendedAction}
+        </span>
+      </p>
+
+      <div className="tpr-run-readiness-layers">
+        <span
+          className={`tpr-run-readiness-layer tpr-run-readiness-layer-${report.requiredDetailsStatus}`}
+        >
+          Required details: <strong>{report.requiredDetailsStatus}</strong>
+        </span>
+        <span
+          className={`tpr-run-readiness-layer tpr-run-readiness-layer-${report.payloadStatus}`}
+        >
+          Payload: <strong>{report.payloadStatus}</strong>
+        </span>
+        <span
+          className={`tpr-run-readiness-layer tpr-run-readiness-layer-${report.instructionDraftStatus}`}
+        >
+          Instruction draft: <strong>{report.instructionDraftStatus}</strong>
+        </span>
+        <span
+          className={`tpr-run-readiness-layer tpr-run-readiness-layer-${
+            report.sourcePdfReady ? "ready" : "blocked"
+          }`}
+        >
+          Source PDF: <strong>{report.sourcePdfReady ? "ready" : "missing"}</strong>
+        </span>
+        <span className="tpr-run-readiness-layer tpr-run-readiness-layer-mutating">
+          Mutating steps: <strong>{report.mutatingStepsCount}</strong>
+        </span>
+        <span className="tpr-run-readiness-layer tpr-run-readiness-layer-irreversible">
+          Irreversible steps: <strong>{report.irreversibleStepsCount}</strong>
+        </span>
+      </div>
+
+      {!isReady && report.blockingReasons.length > 0 && (
+        <div className="tpr-run-readiness-blockers">
+          <p className="tpr-run-readiness-blockers-title">Top blocking reasons</p>
+          <ul>
+            {/* Cap to a sane number — the gap preview below shows the
+                full list. The summary is for at-a-glance triage. */}
+            {report.blockingReasons.slice(0, 6).map((r, i) => (
+              <li key={i}>{r}</li>
+            ))}
+            {report.blockingReasons.length > 6 && (
+              <li className="tpr-run-readiness-blockers-more">
+                +{report.blockingReasons.length - 6} more — see detailed
+                previews below.
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
+      {report.warnings.length > 0 && (
+        <ul className="tpr-run-readiness-warnings">
+          {report.warnings.map((w, i) => (
+            <li key={i}>{w}</li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
