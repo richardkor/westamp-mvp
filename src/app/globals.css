@@ -7152,6 +7152,290 @@ section[data-section] {
   color: #1d4ed8;
 }
 
+/* ── Operator Command Centre ─────────────────────────────────────────
+   Compact operational summary card placed near the top of
+   /upload/[id]. Reuses the visual language of the existing intake
+   details card but emphasises the operational fields and surfaces
+   the next-action line in a contrasting block. */
+
+.operator-command-centre {
+  margin: 16px 0;
+  padding: 16px 18px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.op-cc-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.op-cc-header h2 {
+  font-size: 16px;
+  margin: 0;
+  color: #1e293b;
+}
+
+.op-cc-back {
+  font-size: 12px;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.op-cc-back:hover {
+  text-decoration: underline;
+}
+
+.op-cc-intro {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.op-cc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px 18px;
+  margin: 0 0 12px;
+}
+
+.op-cc-cell {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.op-cc-cell dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.op-cc-cell dd {
+  margin: 0;
+  font-size: 13px;
+  color: #1e293b;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.op-cc-cell-link a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.op-cc-cell-link a:hover {
+  text-decoration: underline;
+}
+
+.op-cc-public-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.op-cc-public-status-hint {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.op-cc-next-action {
+  margin-top: 4px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+}
+
+.op-cc-next-action-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #4338ca;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.op-cc-next-action-text {
+  margin: 0;
+  font-size: 14px;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+/* ── Advanced / Diagnostics disclosure ───────────────────────────────
+   Wraps the long internal-evidence panel chains in a collapsed-by-
+   default <details>. Visually de-emphasises the section so day-to-
+   day operators are not buried in engineering material; nothing is
+   removed or hidden permanently. */
+
+.advanced-diagnostics {
+  margin: 24px 0 16px;
+  padding: 0;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.advanced-diagnostics > .advanced-diagnostics-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  user-select: none;
+}
+
+.advanced-diagnostics > .advanced-diagnostics-summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-diagnostics > .advanced-diagnostics-summary::before {
+  content: "▸ ";
+  color: #64748b;
+  font-size: 12px;
+}
+
+.advanced-diagnostics[open] > .advanced-diagnostics-summary::before {
+  content: "▾ ";
+}
+
+.advanced-diagnostics-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  letter-spacing: 0.02em;
+}
+
+.advanced-diagnostics-hint {
+  font-size: 11px;
+  color: #64748b;
+  font-style: italic;
+}
+
+.advanced-diagnostics[open] {
+  background: #fafafa;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+.advanced-diagnostics[open] > .advanced-diagnostics-summary {
+  background: #f1f5f9;
+  border-radius: 6px 6px 0 0;
+}
+
+/* ── Public Receipt Timeline ─────────────────────────────────────────
+   Calm, lane-agnostic checklist on /receipt/[id]. The states
+   "done" / "current" / "upcoming" are visually distinct but never
+   alarming; "upcoming" steps remain readable rather than greyed out
+   into uselessness. */
+
+.receipt-timeline-wrap {
+  margin: 20px 0;
+  padding: 14px 16px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.receipt-timeline-heading {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  letter-spacing: 0.02em;
+}
+
+.receipt-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.receipt-timeline-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.receipt-timeline-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 1px;
+}
+
+.receipt-timeline-done .receipt-timeline-marker {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.receipt-timeline-current .receipt-timeline-marker {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.receipt-timeline-upcoming .receipt-timeline-marker {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.receipt-timeline-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.receipt-timeline-label {
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.receipt-timeline-current .receipt-timeline-label {
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.receipt-timeline-upcoming .receipt-timeline-label {
+  color: #64748b;
+}
+
+.receipt-timeline-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
 /* ─── Public Receipt Page ────────────────────────────────────────────── */
 
 .receipt-intro {

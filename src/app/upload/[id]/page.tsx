@@ -29,6 +29,7 @@ import {
   NOMINAL_DUTY_STATE_NOTE_MAX_LENGTH,
 } from "../../../lib/nominal-duty-lifecycle";
 import { resolveConfirmedTenancyPreparationValues } from "../../../lib/tenancy-preparation-resolver";
+import { derivePublicStatus } from "../../../lib/public-status";
 
 // ─── Types (mirrored from stamping-types for client use) ─────────────
 
@@ -2579,6 +2580,230 @@ export default function IntakeDetailsPage({
         </div>
       </div>
 
+      {/* ── Operator Command Centre ──────────────────────────────────
+          Compact operational summary placed near the top of the page
+          so an operator can see lane, status, public status, what to
+          do next, and the headline payment / certificate / user-
+          confirmation indicators without scrolling through the
+          diagnostic stack. The wording is operational, not technical:
+          no automation jargon, no "submitted to portal" claims, no
+          fixed-duty assumptions for General/Other.
+          The next-action line is derived per lane (tenancy / nominal-
+          duty registry / other) and is intentionally a single string
+          aimed at the next handling decision. */}
+      {(() => {
+        // ── Derived: public status ────────────────────────────────
+        // Mirrors what the user sees on /receipt/[id]. Operator can
+        // glance at this to keep operator-side and user-side narratives
+        // aligned.
+        const publicStatusLabel = derivePublicStatus({
+          status: job.status,
+          fulfilmentState: job.fulfilmentState
+            ? {
+                delivered: job.fulfilmentState.delivered,
+                certificateStatus: job.fulfilmentState.certificateStatus,
+                paymentStatus: job.fulfilmentState.paymentStatus,
+              }
+            : null,
+        });
+
+        // ── Derived: handling lane ────────────────────────────────
+        let handlingLane = "Tenancy (sewa_pajakan)";
+        if (isNominalDuty && nominalDutyEntry) {
+          handlingLane = `${nominalDutyEntry.internalLabel} · ${nominalDutyEntry.handlingModeLabel}`;
+        } else if (job.documentCategory === "other") {
+          handlingLane = "Other / Not Sure — classify before proceeding";
+        }
+
+        // ── Derived: user-confirmation indicator ──────────────────
+        // The full user-confirmation flow does not exist yet; this
+        // line acknowledges the future shape without promising it.
+        let userConfirmation = "Not yet required";
+        if (job.nominalDutyState === "awaiting_user") {
+          userConfirmation = "Yes — waiting for user reply";
+        } else if (job.nominalDutyState === "cannot_proceed") {
+          userConfirmation = "Action needed — see internal note";
+        } else if (job.fulfilmentState?.delivered === true) {
+          userConfirmation = "Not applicable — delivered";
+        }
+
+        // ── Derived: payment indicator ────────────────────────────
+        let paymentIndicator = "Not yet started";
+        const fs = job.fulfilmentState;
+        if (fs?.paymentStatus === "awaiting_payment") {
+          paymentIndicator = "Pending — awaiting operator action";
+        } else if (fs?.paymentStatus === "payment_marked_done") {
+          paymentIndicator = fs.paymentMarkedAt
+            ? `Paid (recorded ${new Date(fs.paymentMarkedAt).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })})`
+            : "Paid";
+        } else if (fs?.paymentStatus === "not_applicable") {
+          paymentIndicator = "Not applicable";
+        }
+
+        // ── Derived: certificate indicator ────────────────────────
+        let certificateIndicator = "Not yet issued";
+        if (fs?.delivered === true) {
+          certificateIndicator = "Delivered";
+        } else if (fs?.certificateStatus === "certificate_retrieved") {
+          certificateIndicator = "Retrieved — ready to mark delivered";
+        } else if (fs?.certificateStatus === "waiting_for_certificate") {
+          certificateIndicator = "Pending — waiting for certificate";
+        }
+
+        // ── Derived: next operator action ─────────────────────────
+        // Lane-aware. Order is most-specific-first (delivered ends
+        // the chain). Wording is operational, not technical.
+        let nextAction = "Open the record below.";
+        if (isManualReview) {
+          nextAction = "Manual review required. Review the record below.";
+        } else if (isFailed) {
+          nextAction = "Job marked failed. Review the record below.";
+        } else if (fs?.delivered === true) {
+          nextAction = "Delivered. No further action required.";
+        } else if (fs?.certificateStatus === "certificate_retrieved") {
+          nextAction = "Certificate retrieved. Mark delivered when ready.";
+        } else if (fs?.certificateStatus === "waiting_for_certificate") {
+          nextAction = "Waiting for certificate. Upload it when received.";
+        } else if (fs?.paymentStatus === "awaiting_payment") {
+          nextAction = fs.adjudicationNumber
+            ? "Adjudication recorded. Mark payment done when paid."
+            : "Record adjudication number, then mark payment done.";
+        } else if (job.nominalDutyState === "awaiting_user") {
+          nextAction =
+            "Awaiting user reply. Follow up if too much time has passed.";
+        } else if (job.nominalDutyState === "cannot_proceed") {
+          nextAction =
+            "Job cannot proceed on the assisted path. See internal note.";
+        } else if (isNominalDuty) {
+          // Registry categories: review the document face, confirm
+          // category, advance the internal lifecycle. No portal
+          // automation runs for these jobs.
+          if (
+            !job.nominalDutyState ||
+            job.nominalDutyState === "received"
+          ) {
+            nextAction =
+              "Verify document face, confirm category, then move handling state to under review.";
+          } else if (job.nominalDutyState === "under_review") {
+            nextAction =
+              "Continue review. When ready, proceed to fulfilment via e-Duti Setem.";
+          } else if (job.nominalDutyState === "external_portal_in_progress") {
+            nextAction =
+              "External e-Duti Setem work in progress. Record adjudication when issued.";
+          } else if (job.nominalDutyState === "completed") {
+            nextAction =
+              "External stamping complete. Continue with payment / certificate fulfilment.";
+          }
+        } else if (job.documentCategory === "other") {
+          // General / Not Sure: never assumed RM10. Classify first.
+          nextAction =
+            "Classify this document before proceeding. Do not assume fixed duty.";
+        } else if (job.documentCategory === "tenancy_agreement") {
+          // Tenancy lane progression hints, ordered.
+          if (job.status === "uploaded") {
+            nextAction =
+              "Review extracted values, then capture stamping details.";
+          } else if (job.status === "intake_reviewed") {
+            nextAction = "Confirm preparation, then mark ready.";
+          } else if (job.status === "prepared") {
+            nextAction = "Mark ready for the next preparation step.";
+          } else if (job.status === "ready_for_submission") {
+            nextAction =
+              "Proceed with portal preparation and fulfilment via e-Duti Setem.";
+          }
+        }
+
+        return (
+          <section
+            className="operator-command-centre"
+            aria-label="Operator command centre — operational summary"
+          >
+            <header className="op-cc-header">
+              <h2>Operator Command Centre</h2>
+              <a className="op-cc-back" href="/jobs">
+                ← Back to /jobs queue
+              </a>
+            </header>
+            <p className="op-cc-intro">
+              Operational summary. Day-to-day handling normally needs
+              only this block. Detailed engineering panels remain
+              available below under Advanced / Diagnostics.
+            </p>
+
+            <dl className="op-cc-grid">
+              <div className="op-cc-cell">
+                <dt>Category</dt>
+                <dd>
+                  {CATEGORY_LABELS[job.documentCategory] ??
+                    job.documentCategory}
+                </dd>
+              </div>
+              <div className="op-cc-cell">
+                <dt>Handling lane</dt>
+                <dd>{handlingLane}</dd>
+              </div>
+              <div className="op-cc-cell">
+                <dt>Internal status</dt>
+                <dd>
+                  <span
+                    className={`intake-status-badge intake-status-${job.status}`}
+                  >
+                    {STATUS_LABELS[job.status] ?? job.status}
+                  </span>
+                </dd>
+              </div>
+              <div className="op-cc-cell">
+                <dt>Public status</dt>
+                <dd>
+                  <span className="op-cc-public-status">
+                    {publicStatusLabel}
+                  </span>
+                  <span className="op-cc-public-status-hint">
+                    {" "}
+                    (what the user sees)
+                  </span>
+                </dd>
+              </div>
+              <div className="op-cc-cell">
+                <dt>User confirmation</dt>
+                <dd>{userConfirmation}</dd>
+              </div>
+              <div className="op-cc-cell">
+                <dt>Payment</dt>
+                <dd>{paymentIndicator}</dd>
+              </div>
+              <div className="op-cc-cell">
+                <dt>Certificate</dt>
+                <dd>{certificateIndicator}</dd>
+              </div>
+              <div className="op-cc-cell op-cc-cell-link">
+                <dt>Uploaded source</dt>
+                <dd>
+                  {job.storagePath ? (
+                    <a
+                      href={`/api/intake/${job.id}/source-download`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View Uploaded PDF
+                    </a>
+                  ) : (
+                    <span style={{ color: "#999" }}>—</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+
+            <div className="op-cc-next-action">
+              <span className="op-cc-next-action-label">
+                Next operator action
+              </span>
+              <p className="op-cc-next-action-text">{nextAction}</p>
+            </div>
+          </section>
+        );
+      })()}
+
       {/* ── Nominal Duty Handling (internal, operator-only) ──────────
           Repositioned to appear immediately after the record summary
           so nominal-duty operators (Employment Contract, Statutory
@@ -3854,6 +4079,30 @@ export default function IntakeDetailsPage({
           )}
         </div>
       )}
+
+      {/* ── Advanced / Diagnostics — engineering panel cluster 1 ────
+          Wraps the long internal-evidence chain (execution preview,
+          automation plan, browser instructions, mock execution, lane
+          knowledge, save and next-tab gates, Bahagian A gates) in a
+          single collapsed-by-default disclosure. None of this content
+          is removed; it is simply de-emphasised so day-to-day
+          operators are not buried in it. Open by default? No — the
+          Operator Command Centre and the panels above are normally
+          enough for handling. Open this section only when an
+          engineer or operator needs to inspect underlying state.
+          The conditional rendering of each panel inside the chain is
+          unchanged; this <details> only controls visual hierarchy. */}
+      <details className="advanced-diagnostics">
+        <summary className="advanced-diagnostics-summary">
+          <span className="advanced-diagnostics-title">
+            Advanced / Diagnostics — Portal preview, automation plan,
+            and Maklumat Am gates
+          </span>
+          <span className="advanced-diagnostics-hint">
+            Click to expand. Detailed engineering and portal-state
+            evidence. Day-to-day handling normally does not need this.
+          </span>
+        </summary>
 
       {/* ── Portal Execution Preview ────────────────────────────────
           Hidden for nominal-duty registry jobs: portal execution
@@ -6851,6 +7100,9 @@ export default function IntakeDetailsPage({
         </div>
       )}
 
+      </details>
+      {/* ── /Advanced / Diagnostics — engineering panel cluster 1 ─── */}
+
       {/* ── Payment & Certificate Lifecycle ─────────────────────────────
           Shown for any operator-worked job regardless of lane: tenancy
           jobs (which acquire `routingSuggestion` via the Portal Routing
@@ -7179,6 +7431,23 @@ export default function IntakeDetailsPage({
           </p>
         )}
       </div>
+
+      {/* ── Advanced / Diagnostics — engineering panel cluster 2 ────
+          Wraps the portal-evidence cluster (probe, assertions, dry
+          run) in a single collapsed-by-default disclosure. Same
+          rationale as cluster 1: the panels are kept intact and
+          fully accessible — only the visual hierarchy changes. */}
+      <details className="advanced-diagnostics">
+        <summary className="advanced-diagnostics-summary">
+          <span className="advanced-diagnostics-title">
+            Advanced / Diagnostics — Portal probe, assertions, and dry run
+          </span>
+          <span className="advanced-diagnostics-hint">
+            Click to expand. Internal portal-state evidence used to
+            verify expectations against e-Duti Setem snapshots. Not
+            required for routine handling.
+          </span>
+        </summary>
 
       {/* ── STSDS Portal Probe ──────────────────────────────────────── */}
       {job.routingSuggestion && !isManualReview && !isFailed && (
@@ -7799,6 +8068,9 @@ export default function IntakeDetailsPage({
           )}
         </div>
       )}
+
+      </details>
+      {/* ── /Advanced / Diagnostics — engineering panel cluster 2 ─── */}
 
       {/* ── Tenancy: stamping details form (status = uploaded) ─────── */}
       {needsDetails && (

@@ -20,6 +20,25 @@
 import { useState, useEffect } from "react";
 import { isNominalDutyCategory } from "../../../lib/nominal-duty-registry";
 
+/**
+ * Public-safe progress step received from the receipt API. Mirrors
+ * `PublicTimelineStep` in `src/lib/public-timeline.ts`. Only public
+ * copy travels here — no internal status enums, no nominal-duty
+ * vocabulary, no portal jargon.
+ */
+interface PublicTimelineStep {
+  key:
+    | "received"
+    | "under_review"
+    | "awaiting_confirmation"
+    | "awaiting_payment"
+    | "stamping_in_progress"
+    | "completed";
+  label: string;
+  state: "done" | "current" | "upcoming";
+  description?: string;
+}
+
 interface PublicReceipt {
   id: string;
   originalFileName: string;
@@ -28,6 +47,7 @@ interface PublicReceipt {
   createdAt: string;
   publicStatus: string;
   certificateReady: boolean;
+  timeline: PublicTimelineStep[];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -171,6 +191,59 @@ export default function ReceiptPage({
           </span>
         </div>
       </div>
+
+      {/* ── Public progress timeline ─────────────────────────────────
+          Same shape across every category. Each step's state is
+          derived in `src/lib/public-timeline.ts` from sanitised
+          inputs only — no internal status enums, nominal-duty
+          terminology, or portal jargon ever reach this page. Steps
+          that don't apply yet are shown neutrally as "upcoming"
+          rather than removed, so the timeline looks consistent
+          across Tenancy, Employment Contract, Statutory Declaration,
+          and Other / Not Sure submissions. */}
+      {receipt.timeline && receipt.timeline.length > 0 && (
+        <div className="receipt-timeline-wrap" aria-label="Submission progress">
+          <h2 className="receipt-timeline-heading">Progress</h2>
+          <ol className="receipt-timeline">
+            {receipt.timeline.map((step) => {
+              const stateClass = `receipt-timeline-step receipt-timeline-${step.state}`;
+              const ariaCurrent =
+                step.state === "current" ? "step" : undefined;
+              return (
+                <li
+                  key={step.key}
+                  className={stateClass}
+                  aria-current={ariaCurrent}
+                >
+                  <span className="receipt-timeline-marker" aria-hidden="true">
+                    {step.state === "done" ? "✓" : step.state === "current" ? "●" : "○"}
+                  </span>
+                  <span className="receipt-timeline-body">
+                    <span className="receipt-timeline-label">{step.label}</span>
+                    {step.description && (
+                      <span className="receipt-timeline-desc">
+                        {step.description}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          {/* Footnote intentionally removed.
+              A previous version showed a static "Document details
+              review: not yet requested. User confirmation: not yet
+              required." line below the timeline. That copy could
+              contradict the timeline, which legitimately shows
+              "Awaiting your confirmation" as `current` when the
+              operator has marked the job as awaiting_user (or
+              cannot_proceed). The timeline is now the single source
+              of truth for this step on the public page. A future
+              user-confirmation flow will plug into the existing
+              "Awaiting your confirmation" step without changing this
+              page's shape. */}
+        </div>
+      )}
 
       {/* What happens next — calm, public-facing progress framing.
           Keeps backend mechanics out of sight; surfaces a soft

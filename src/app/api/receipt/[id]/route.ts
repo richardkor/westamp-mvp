@@ -15,6 +15,7 @@ import { NextRequest } from "next/server";
 import { getJob } from "../../../../lib/stamping-store";
 import { DOCUMENT_CATEGORY_LABELS } from "../../../../lib/stamping-types";
 import { derivePublicStatus } from "../../../../lib/public-status";
+import { derivePublicTimeline } from "../../../../lib/public-timeline";
 
 export async function GET(
   request: NextRequest,
@@ -68,16 +69,31 @@ export async function GET(
     );
   }
 
+  // Sanitised fulfilment subset used by both the public status and
+  // the public timeline. Anything outside this subset is internal.
+  const safeFulfilment = job.fulfilmentState
+    ? {
+        delivered: job.fulfilmentState.delivered,
+        certificateStatus: job.fulfilmentState.certificateStatus,
+        paymentStatus: job.fulfilmentState.paymentStatus,
+      }
+    : null;
+
   // Return safe public-only subset
   const publicStatus = derivePublicStatus({
     status: job.status,
-    fulfilmentState: job.fulfilmentState
-      ? {
-          delivered: job.fulfilmentState.delivered,
-          certificateStatus: job.fulfilmentState.certificateStatus,
-          paymentStatus: job.fulfilmentState.paymentStatus,
-        }
-      : null,
+    fulfilmentState: safeFulfilment,
+  });
+
+  // Public-facing progress timeline. The lifecycle hint is passed in
+  // ONLY so the helper can decide whether to highlight the
+  // "Awaiting your confirmation" step — it is not surfaced in the
+  // resulting payload (the helper returns labels and states only).
+  const timeline = derivePublicTimeline({
+    status: job.status,
+    hasFulfilmentState: job.fulfilmentState !== undefined,
+    fulfilmentState: safeFulfilment,
+    nominalDutyState: job.nominalDutyState ?? null,
   });
 
   // Certificate is downloadable only when delivered + certificate file exists
@@ -97,6 +113,7 @@ export async function GET(
       createdAt: job.createdAt,
       publicStatus,
       certificateReady,
+      timeline,
     },
     {
       headers: { "Cache-Control": "no-store" },
