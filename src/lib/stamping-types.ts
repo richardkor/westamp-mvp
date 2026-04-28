@@ -1056,6 +1056,160 @@ export interface TenancyPortalProperty {
   operatorNote?: string;
 }
 
+// ─── Maklumat Am · Sewa/Pajakan portal metadata ─────────────────────
+//
+// Added in Milestone A2 (2026-04-29) after the ε-3 supervised
+// field-mapping run proved these portal fields exist on the Maklumat
+// Am tab and are referenced by the Hantar gate. The field-mapping
+// report (`docs/2026-04-28-tenancy-portal-field-mapping.md` §4.4)
+// catalogues them; this block makes them capturable.
+//
+// IMPORTANT: `pds_radio_ya` / `pds_radio_tidak` are observed in the
+// portal DOM but their purpose is NOT YET CONFIRMED. They are
+// intentionally NOT captured here until a future field-mapping pass
+// pins down what they control. Do not invent a model for them.
+
+/**
+ * Operator-captured portal `<select>` value where the full option
+ * list is not yet enumerated in WeStamp. The operator types the
+ * option's stable portal `<option value>` code (and optionally the
+ * human-readable label) so the readiness gate can verify presence
+ * without WeStamp inventing the full enum from incomplete evidence.
+ *
+ * Used for `pds_dutisetem` (17 options observed but not catalogued)
+ * and `pds_remit` (16 options, same situation).
+ */
+export interface TenancyPortalCapturedSelect {
+  /**
+   * Stable portal `<option value>` code. Required when this object
+   * exists — the validator rejects empty / blank codes. Free string
+   * because the portal's option codes vary across `<select>`s.
+   */
+  code: string;
+  /**
+   * Operator-supplied portal label (e.g. "Sewa / Pajakan"). Optional;
+   * helps the operator preview show what the code means. Never
+   * required by the readiness gate — labels are documentation, not
+   * portal payload.
+   */
+  label?: string;
+}
+
+/**
+ * Bahagian B / Maklumat Am · Section 4 — Hubungan Surat Cara
+ * (`pds_ps`).
+ *
+ * Observed `<option value>` codes:
+ *   - "p" → "Prinsipal"
+ *   - "s" → "Surat Cara berkaitan Pajakan 49(e)"
+ * The third option is the empty placeholder ("Sila pilih...") which
+ * is NOT a valid selection.
+ */
+export type TenancyPortalInstrumentRelationship =
+  | "principal"
+  | "related_lease_49e";
+
+/**
+ * Mapping from WeStamp's stable enum to the portal `<option value>`
+ * code observed for `pds_ps`. Source of truth — payload compiler reads
+ * from this table.
+ */
+export const TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_PORTAL_CODES: Record<
+  TenancyPortalInstrumentRelationship,
+  "p" | "s"
+> = {
+  principal: "p",
+  related_lease_49e: "s",
+};
+
+/**
+ * Operator-facing labels for `pds_ps` — mirrors the portal labels
+ * observed during the field-mapping run.
+ */
+export const TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_LABELS: Record<
+  TenancyPortalInstrumentRelationship,
+  string
+> = {
+  principal: "Prinsipal",
+  related_lease_49e: "Surat Cara berkaitan Pajakan 49(e)",
+};
+
+/**
+ * Bahagian B / Maklumat Am · `pds_perjanjian` treaty / diplomatic
+ * exemption flags. Observed in the portal DOM as three independent
+ * checkboxes sharing the `pds_perjanjian` name attribute but with
+ * distinct ids (`#kmkt`, `#klnm`, `#vienna`).
+ *
+ * The semantic meaning of each flag is documented in the field-
+ * mapping report — diplomatic / multilateral-treaty exemption from
+ * stamp duty under specific conventions. WeStamp does NOT advise on
+ * which flag applies; the operator captures whichever the agreement
+ * explicitly invokes.
+ *
+ * Booleans only. Storage may omit `false` values to keep persisted
+ * shape minimal — the readiness gate and payload compiler treat
+ * absent and `false` identically (no exemption claimed).
+ */
+export interface TenancyPortalTreatyExemption {
+  /** `pds_perjanjian` checkbox id `#kmkt`. */
+  kmkt?: boolean;
+  /** `pds_perjanjian` checkbox id `#klnm`. */
+  klnm?: boolean;
+  /** `pds_perjanjian` checkbox id `#vienna` — Vienna Convention exemption. */
+  vienna?: boolean;
+}
+
+/**
+ * Maklumat Am sub-block on the Sewa/Pajakan portal.
+ *
+ * Partial-save semantics (mirrors A1 land-registry pattern): every
+ * field is optional in *storage* even though some are required by the
+ * portal. The validator rejects MALFORMED supplied values but accepts
+ * MISSING values. Readiness blockers fire per-field as long as any
+ * required field is unfilled, so partial saves are safe — they
+ * persist, survive reload, and keep readiness blocked until complete.
+ */
+export interface TenancyPortalMaklumatAm {
+  /**
+   * Portal field: `pds_dutisetem` ("Jenis Duti Setem"). 17 options
+   * observed during the field-mapping run; the full option list has
+   * NOT been catalogued so we use a generic captured-select rather
+   * than a fixed enum. Required by the portal; optional in storage.
+   */
+  dutyStampType?: TenancyPortalCapturedSelect;
+  /**
+   * Portal field: `pds_ps` (instrument relationship — Prinsipal or
+   * 49(e)). Required by the portal; optional in storage.
+   */
+  instrumentRelationship?: TenancyPortalInstrumentRelationship;
+  /**
+   * Portal field: `pds_balasan` (consideration / premium amount).
+   * Single-value text input on the portal. WeStamp captures it as a
+   * positive `number`. **NEVER auto-derived from `rentSchedule`** —
+   * the portal treats it as a separate operator-supplied value, and
+   * silently conflating the two could submit incorrect figures.
+   *
+   * Required for some `pds_jenis` paths; the readiness gate decides
+   * which based on existing evidence. Validator rejects 0 / negative
+   * / non-finite when supplied; absence is allowed.
+   */
+  balasan?: number;
+  /**
+   * Portal field: `pds_remit` ("Pelepasan / Remission"). 16 options
+   * observed; option list NOT catalogued. Captured-select like
+   * `pds_dutisetem`. Optional throughout — current evidence does NOT
+   * prove this is required at Hantar gate; flag for re-evaluation if
+   * future field-mapping evidence proves otherwise.
+   */
+  remission?: TenancyPortalCapturedSelect;
+  /**
+   * Portal field: `pds_perjanjian` checkbox group (kmkt / klnm /
+   * vienna). Optional throughout — unchecked is the normal case and
+   * does not block readiness.
+   */
+  treatyExemption?: TenancyPortalTreatyExemption;
+}
+
 /**
  * Top-level tenancy portal-required-details block. Persisted on the
  * `StampingJob` record as `tenancyPortalDetails`. Absent until the
@@ -1070,6 +1224,12 @@ export interface TenancyPortalDetails {
   instrument?: TenancyPortalInstrument;
   /** Bahagian C block. Optional until the operator captures it. */
   property?: TenancyPortalProperty;
+  /**
+   * Maklumat Am block (Milestone A2). Optional until the operator
+   * captures it. See `TenancyPortalMaklumatAm` for the per-field
+   * contract and the partial-persistence semantics.
+   */
+  maklumatAm?: TenancyPortalMaklumatAm;
   /** Optional operator note about overall portal-readiness. */
   operatorNote?: string;
 }

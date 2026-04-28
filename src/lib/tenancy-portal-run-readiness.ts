@@ -36,7 +36,11 @@ import type {
   TenancyPortalParty,
   TenancyPortalProperty,
 } from "./stamping-types";
-import { ALLOWED_LAND_AREA_UNITS } from "./tenancy-portal-requirements";
+import {
+  ALLOWED_INSTRUMENT_RELATIONSHIPS,
+  ALLOWED_LAND_AREA_UNITS,
+  PDS_JENIS_REQUIRING_BALASAN,
+} from "./tenancy-portal-requirements";
 import { evaluateTenancyPortalReadiness } from "./tenancy-portal-requirements";
 import {
   compileTenancyPortalPayload,
@@ -67,6 +71,11 @@ export type TenancyPortalFieldMappingGapCategory =
   | "multi_pass_unsupported"
   /** Bahagian C land-registry fields the WeStamp model has no slot for. */
   | "land_registry_not_modelled"
+  /**
+   * Maklumat Am portal fields that are now modelled but still need
+   * operator capture before the run can be deemed ready (Milestone A2).
+   */
+  | "maklumat_am_not_captured"
   /** Portal value-set mismatch (enum / dropdown) requiring explicit handling. */
   | "portal_enum_mismatch"
   /** Per-party gaps (citizenship-3way / NRIC sub-type / gender / SSM rep id). */
@@ -595,6 +604,87 @@ export function evaluateTenancyPortalFieldMappingGaps(
     }
   }
 
+  // ── B2) Maklumat Am required field captures (Milestone A2) ──
+  // The Maklumat Am sub-block is now modelled (see
+  // `TenancyPortalMaklumatAm` in `stamping-types.ts`) but specific
+  // fields still need operator capture before a tenancy job can be
+  // declared ready. This category fires per-field blockers exactly
+  // like the land-registry category.
+  //
+  // Conditional rules:
+  //   - pds_dutisetem        always required
+  //   - pds_ps               always required (must be a known enum)
+  //   - pds_balasan          required when pds_jenis is in
+  //                          PDS_JENIS_REQUIRING_BALASAN; otherwise
+  //                          captured-but-optional. Malformed
+  //                          (non-positive) values always block.
+  //   - pds_remit            optional throughout — never blocks
+  //   - pds_perjanjian flags optional throughout — never block
+  //   - pds_radio_ya/tidak   intentionally NOT modelled (purpose
+  //                          unconfirmed); not surfaced as a gap.
+  const ma = tpd?.maklumatAm;
+
+  // pds_dutisetem missing
+  if (
+    !ma ||
+    !ma.dutyStampType ||
+    typeof ma.dutyStampType.code !== "string" ||
+    ma.dutyStampType.code.trim() === ""
+  ) {
+    gaps.push({
+      category: "maklumat_am_not_captured",
+      code: "pds_dutisetem_not_captured",
+      reason:
+        'Maklumat Am field pds_dutisetem ("Jenis Duti Setem") is required by the portal and not yet captured on this job.',
+    });
+  }
+
+  // pds_ps missing or unknown
+  if (
+    !ma ||
+    typeof ma.instrumentRelationship !== "string" ||
+    !ALLOWED_INSTRUMENT_RELATIONSHIPS.has(ma.instrumentRelationship)
+  ) {
+    gaps.push({
+      category: "maklumat_am_not_captured",
+      code: "pds_ps_not_captured",
+      reason:
+        'Maklumat Am field pds_ps (instrument relationship) is required by the portal and not yet captured. Must be one of: principal (p · Prinsipal), related_lease_49e (s · Surat Cara berkaitan Pajakan 49(e)).',
+    });
+  }
+
+  // pds_balasan — three sub-cases:
+  //   (i)   supplied but malformed (non-positive / non-finite) → block
+  //   (ii)  missing AND pds_jenis path requires it → block
+  //   (iii) missing AND pds_jenis path doesn't require it → no block
+  const balasanSupplied =
+    ma !== undefined && ma !== null && typeof ma.balasan === "number";
+  const balasanIsPositive =
+    balasanSupplied &&
+    Number.isFinite(ma!.balasan!) &&
+    (ma!.balasan as number) > 0;
+  const descTypeForBalasan = tpd?.instrument?.portalDescriptionType ?? null;
+  const balasanRequiredHere =
+    descTypeForBalasan !== null &&
+    PDS_JENIS_REQUIRING_BALASAN.has(descTypeForBalasan);
+  if (balasanSupplied && !balasanIsPositive) {
+    gaps.push({
+      category: "maklumat_am_not_captured",
+      code: "pds_balasan_invalid",
+      reason:
+        'Maklumat Am field pds_balasan ("Balasan / Premium") was supplied but is not a positive finite number. The portal expects a single positive consideration amount.',
+    });
+  } else if (!balasanSupplied && balasanRequiredHere) {
+    gaps.push({
+      category: "maklumat_am_not_captured",
+      code: "pds_balasan_not_captured",
+      reason: `Maklumat Am field pds_balasan is required when pds_jenis is ${descTypeForBalasan}. WeStamp does NOT auto-derive this from the rent schedule — operator must enter the consideration explicitly.`,
+    });
+  }
+
+  // pds_remit / pds_perjanjian / pds_radio_ya / pds_radio_tidak —
+  // intentionally do NOT emit blockers (per A2 scope).
+
   // ── C) Portal enum mismatch risks ───────────────────────────
   const property: TenancyPortalProperty | undefined = tpd?.property;
 
@@ -756,6 +846,7 @@ export function groupTenancyPortalFieldMappingGaps(
   const order: TenancyPortalFieldMappingGapCategory[] = [
     "multi_pass_unsupported",
     "land_registry_not_modelled",
+    "maklumat_am_not_captured",
     "portal_enum_mismatch",
     "party_model_not_modelled",
   ];

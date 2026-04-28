@@ -44,6 +44,7 @@ import type {
   TenancyPortalDetails,
   TenancyPortalFurnishedStatus,
   TenancyPortalIdentityType,
+  TenancyPortalInstrumentRelationship,
   TenancyPortalLandAreaUnit,
   TenancyPortalNationality,
   TenancyPortalParty,
@@ -52,15 +53,19 @@ import type {
   TenancyPortalPropertyType,
 } from "./stamping-types";
 import {
+  TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_LABELS,
+  TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_PORTAL_CODES,
   TENANCY_PORTAL_LAND_AREA_UNIT_LABELS,
   TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES,
 } from "./stamping-types";
 
 import {
   ALLOWED_DESCRIPTION_TYPES,
+  ALLOWED_INSTRUMENT_RELATIONSHIPS,
   DESCRIPTION_TYPE_LABELS,
   DESCRIPTION_TYPES_WITH_RENT_SCHEDULE,
   evaluateTenancyPortalReadiness,
+  PDS_JENIS_REQUIRING_BALASAN,
 } from "./tenancy-portal-requirements";
 
 // ─── Output types ───────────────────────────────────────────────────
@@ -246,6 +251,76 @@ export interface TenancyPortalPayloadBahagianB {
 }
 
 /**
+ * Maklumat Am block in the compiled payload (Milestone A2).
+ *
+ * Surfaces every captured Maklumat Am field alongside its portal
+ * field name so the operator preview shows exactly how each value
+ * will be sent. The `captured` flag is true only when every
+ * REQUIRED field for the current `pds_jenis` path is present and
+ * valid.
+ */
+export interface TenancyPortalPayloadMaklumatAm {
+  /**
+   * True when every required Maklumat Am field for the current
+   * `pds_jenis` path is captured and valid. False otherwise — the
+   * UI uses this to render the "incomplete" state.
+   */
+  captured: boolean;
+  /**
+   * `pds_dutisetem` — duty-stamp type. Captured-select payload —
+   * the `code` is what the portal expects; the `label` is operator
+   * documentation only.
+   */
+  dutyStampType: {
+    portalFieldKey: "pds_dutisetem";
+    code: string | null;
+    label: string | null;
+  };
+  /**
+   * `pds_ps` — instrument relationship. Carries WeStamp's stable
+   * enum (`unitCode`), the portal-side `<option value>` (`portalCode`,
+   * one of "p" / "s"), and the operator-facing label.
+   */
+  instrumentRelationship: {
+    portalFieldKey: "pds_ps";
+    unitCode: TenancyPortalInstrumentRelationship | null;
+    portalCode: "p" | "s" | null;
+    label: string | null;
+  };
+  /**
+   * `pds_balasan` — consideration / premium amount. Null when not
+   * captured. `requiredForCurrentJenis` reports whether the current
+   * `pds_jenis` path makes this a required field — operators read
+   * this to know whether the absence is a blocker.
+   */
+  balasan: {
+    portalFieldKey: "pds_balasan";
+    value: number | null;
+    requiredForCurrentJenis: boolean;
+  };
+  /**
+   * `pds_remit` — optional remission code. Captured-select.
+   */
+  remission: {
+    portalFieldKey: "pds_remit";
+    code: string | null;
+    label: string | null;
+  };
+  /**
+   * `pds_perjanjian` — treaty / diplomatic exemption flags. Each
+   * flag is a tri-state in the payload preview (`true` = checked,
+   * `false`/`null` = not checked) so the operator can see at a
+   * glance which exemptions the agreement claims.
+   */
+  treatyExemption: {
+    portalFieldKey: "pds_perjanjian";
+    kmkt: boolean;
+    klnm: boolean;
+    vienna: boolean;
+  };
+}
+
+/**
  * Bahagian C · land-registry block in the compiled payload.
  *
  * Structurally distinct from `TenancyPortalLandRegistry` on the data
@@ -378,6 +453,14 @@ export interface TenancyPortalPayload {
   bahagianA: TenancyPortalPayloadBahagianA;
   bahagianB: TenancyPortalPayloadBahagianB;
   bahagianC: TenancyPortalPayloadBahagianC;
+  /**
+   * Maklumat Am block (Milestone A2). Always present in the payload
+   * preview so the operator can see which fields are still missing;
+   * per-field `code` / `value` keys are null when not captured.
+   * `captured` is true only when every required field is valid for
+   * the current `pds_jenis` path.
+   */
+  maklumatAm: TenancyPortalPayloadMaklumatAm;
   rumusan: TenancyPortalPayloadRumusan;
   lampiran: TenancyPortalPayloadLampiran;
   perakuan: TenancyPortalPayloadPerakuan;
@@ -520,6 +603,11 @@ export function compileTenancyPortalPayload(
       ? "ready"
       : "blocked";
 
+  // Maklumat Am block (Milestone A2). Computed AFTER bahagianB so we
+  // can pass the resolved `pds_jenis` value into the captured-flag
+  // computation (some balasan rules depend on it).
+  const maklumatAm = mapMaklumatAm(tpd, bahagianB.portalDescriptionType);
+
   return {
     generatedAt,
     overall,
@@ -528,6 +616,7 @@ export function compileTenancyPortalPayload(
     bahagianA,
     bahagianB,
     bahagianC,
+    maklumatAm,
     rumusan,
     lampiran,
     perakuan,
@@ -666,6 +755,104 @@ function mapBahagianB(
     automationSupportStatus,
     automationSupportReason,
     descriptionTypeAutomationUnsupportedReason,
+  };
+}
+
+/**
+ * Compile the Maklumat Am payload block. Pure derivation from
+ * `tpd.maklumatAm` plus the resolved `pds_jenis` (used to decide
+ * whether `pds_balasan` is currently required for the captured-flag
+ * computation). Never invents portal values.
+ */
+function mapMaklumatAm(
+  tpd: TenancyPortalDetails | undefined,
+  resolvedDescType: TenancyPortalDescriptionType | null
+): TenancyPortalPayloadMaklumatAm {
+  const ma = tpd?.maklumatAm;
+
+  // pds_dutisetem
+  const dutyStampCode = NON_EMPTY(ma?.dutyStampType?.code)
+    ? (ma?.dutyStampType?.code ?? null)
+    : null;
+  const dutyStampLabel = NON_EMPTY(ma?.dutyStampType?.label)
+    ? (ma?.dutyStampType?.label ?? null)
+    : null;
+  const dutyStampOk = dutyStampCode !== null;
+
+  // pds_ps
+  const instrRel = ma?.instrumentRelationship ?? null;
+  const instrRelKnown =
+    typeof instrRel === "string" && ALLOWED_INSTRUMENT_RELATIONSHIPS.has(instrRel);
+  const instrRelPortalCode = instrRelKnown
+    ? TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_PORTAL_CODES[instrRel]
+    : null;
+  const instrRelLabel = instrRelKnown
+    ? TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_LABELS[instrRel]
+    : null;
+
+  // pds_balasan — required when pds_jenis is in the
+  // PDS_JENIS_REQUIRING_BALASAN set; captured-but-optional otherwise.
+  const balasanRequiredForCurrentJenis =
+    resolvedDescType !== null &&
+    PDS_JENIS_REQUIRING_BALASAN.has(resolvedDescType);
+  const balasanIsValid =
+    typeof ma?.balasan === "number" &&
+    Number.isFinite(ma.balasan) &&
+    ma.balasan > 0;
+  const balasanValue = balasanIsValid ? (ma?.balasan ?? null) : null;
+
+  // pds_remit — optional throughout
+  const remitCode = NON_EMPTY(ma?.remission?.code)
+    ? (ma?.remission?.code ?? null)
+    : null;
+  const remitLabel = NON_EMPTY(ma?.remission?.label)
+    ? (ma?.remission?.label ?? null)
+    : null;
+
+  // pds_perjanjian — booleans normalised to true/false in the payload
+  const treaty = ma?.treatyExemption;
+  const treatyKmkt = treaty?.kmkt === true;
+  const treatyKlnm = treaty?.klnm === true;
+  const treatyVienna = treaty?.vienna === true;
+
+  // captured: every required Maklumat Am field for the current
+  // pds_jenis path is present and valid. Optional fields (remit /
+  // treaty) never enter the captured decision; balasan only enters
+  // when the current pds_jenis path requires it.
+  const captured =
+    dutyStampOk &&
+    instrRelKnown &&
+    (!balasanRequiredForCurrentJenis || balasanIsValid);
+
+  return {
+    captured,
+    dutyStampType: {
+      portalFieldKey: "pds_dutisetem",
+      code: dutyStampCode,
+      label: dutyStampLabel,
+    },
+    instrumentRelationship: {
+      portalFieldKey: "pds_ps",
+      unitCode: instrRelKnown ? instrRel : null,
+      portalCode: instrRelPortalCode,
+      label: instrRelLabel,
+    },
+    balasan: {
+      portalFieldKey: "pds_balasan",
+      value: balasanValue,
+      requiredForCurrentJenis: balasanRequiredForCurrentJenis,
+    },
+    remission: {
+      portalFieldKey: "pds_remit",
+      code: remitCode,
+      label: remitLabel,
+    },
+    treatyExemption: {
+      portalFieldKey: "pds_perjanjian",
+      kmkt: treatyKmkt,
+      klnm: treatyKlnm,
+      vienna: treatyVienna,
+    },
   };
 }
 

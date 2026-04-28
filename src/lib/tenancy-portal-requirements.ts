@@ -43,12 +43,66 @@ import type {
   TenancyPortalFurnishedStatus,
   TenancyPortalInstrumentName,
   TenancyPortalInstrumentNameCode,
+  TenancyPortalInstrumentRelationship,
   TenancyPortalLandAreaUnit,
   TenancyPortalLandRegistry,
+  TenancyPortalMaklumatAm,
   TenancyPortalParty,
   TenancyPortalPropertyType,
 } from "./stamping-types";
-import { TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES } from "./stamping-types";
+import {
+  TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_PORTAL_CODES,
+  TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES,
+} from "./stamping-types";
+
+/**
+ * Allowed enum values for `pds_ps` (instrument relationship). Re-
+ * exported as a Set so the validator and the readiness evaluator
+ * agree on the same value space without duplicating the keys.
+ */
+export const ALLOWED_INSTRUMENT_RELATIONSHIPS: ReadonlySet<TenancyPortalInstrumentRelationship> =
+  new Set(
+    Object.keys(
+      TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_PORTAL_CODES
+    ) as TenancyPortalInstrumentRelationship[]
+  );
+
+/**
+ * `pds_jenis` values for which `pds_balasan` (consideration) is
+ * required at the Hantar gate.
+ *
+ * Evidence audit (Milestone A2 review patch, 2026-04-29):
+ *   - The 2026-04-22 live gate-chain walk (recorded in
+ *     `stsds-submission-readiness.ts`) enumerated 14 `:invalid`
+ *     fields at Hantar gate 2: pds_jenis, pds_poskod, pds_city,
+ *     pds_harta_state, pds_harta_type, pds_floor, pds_mp,
+ *     pds_harta_cat, pds_harta_perabot, pds_lot, pds_mukim,
+ *     pds_daerah, pds_luas, par_id. **pds_balasan was NOT among
+ *     them.** That is direct portal evidence the field was not
+ *     blocking submission on the fixed-rent path tested.
+ *   - `sewa-pajakan-gate-chain.ts` and `stsds-lane-knowledge.ts`
+ *     contain no mention of pds_balasan as a Hantar gate field.
+ *   - The 2026-04-28 ε-3 field-mapping report records pds_balasan
+ *     as a single text input on Bahagian B but makes no claim that
+ *     the portal requires it for any pds_jenis path.
+ *
+ * Conclusion: fixed_rent_during_tenancy must NOT be treated as
+ * requiring pds_balasan. It is captured-but-optional there.
+ *
+ * `premium_only` is retained on the structural argument that under
+ * this pds_jenis the rent-schedule shape is not used and the only
+ * Maklumat Am field that can carry the premium amount is
+ * pds_balasan. This is structural, not observed — a future reviewer
+ * may lift this entry if even the structural argument is judged too
+ * strong without a direct live-walk confirmation.
+ *
+ * Exported so the readiness gate and payload compiler use the same
+ * set without duplicating the rule.
+ */
+export const PDS_JENIS_REQUIRING_BALASAN: ReadonlySet<TenancyPortalDescriptionType> =
+  new Set<TenancyPortalDescriptionType>([
+    "premium_only",
+  ]);
 
 /**
  * Allowed values for the Bahagian C land-area unit (`pds_luasunit`).
@@ -745,6 +799,135 @@ export function evaluateTenancyPortalReadiness(
     });
   }
 
+  // ── Maklumat Am — Sewa/Pajakan portal metadata ───────────────
+  // Added in Milestone A2 (2026-04-29). Section enum stays as
+  // `bahagian_b` for these rows because the existing convention
+  // already groups Maklumat Am-tab fields (pds_suratcara, pds_jenis)
+  // under `bahagian_b`. The data model itself stores them under a
+  // distinct `tenancyPortalDetails.maklumatAm` sub-object.
+  const maklumatAm = tpd?.maklumatAm;
+
+  // pds_dutisetem — required by the portal. Captured-select shape:
+  // we don't know the full 17-option list yet, so the readiness rule
+  // only checks that the operator has supplied a non-empty code.
+  const dutyStampCode = maklumatAm?.dutyStampType?.code;
+  fields.push({
+    fieldKey: "maklumatAm.dutyStampType",
+    label: "Duty type · Jenis Duti Setem (Maklumat Am · pds_dutisetem)",
+    section: "bahagian_b",
+    state: NON_EMPTY(dutyStampCode) ? "ready" : "missing",
+    currentValue: NON_EMPTY(dutyStampCode)
+      ? maklumatAm?.dutyStampType?.label
+        ? `${dutyStampCode} · ${maklumatAm.dutyStampType.label}`
+        : dutyStampCode
+      : null,
+    portalMeaning: "pds_dutisetem · Jenis Duti Setem",
+    notes: NON_EMPTY(dutyStampCode)
+      ? undefined
+      : "Required. Operator-captured portal code (17-option dropdown; full enum not yet catalogued in WeStamp).",
+  });
+
+  // pds_ps — required, narrow 2-value enum
+  const instrRel = maklumatAm?.instrumentRelationship;
+  const instrRelKnown =
+    typeof instrRel === "string" &&
+    ALLOWED_INSTRUMENT_RELATIONSHIPS.has(instrRel);
+  fields.push({
+    fieldKey: "maklumatAm.instrumentRelationship",
+    label: "Instrument relationship (Maklumat Am · pds_ps)",
+    section: "bahagian_b",
+    state: instrRelKnown ? "ready" : "missing",
+    currentValue: instrRelKnown ? instrRel : null,
+    portalMeaning: "pds_ps · Hubungan Surat Cara",
+    notes: instrRelKnown
+      ? undefined
+      : 'Required. Pick "principal" (p · Prinsipal) or "related_lease_49e" (s · Surat Cara berkaitan Pajakan 49(e)).',
+  });
+
+  // pds_balasan — conditional on pds_jenis. The conditional rule
+  // mirrors the gap evaluator: required when pds_jenis is fixed-rent
+  // OR premium-only; captured-but-optional otherwise. Malformed
+  // values (non-positive) are flagged as `missing` so the row is
+  // visibly broken in the preview.
+  const balasan = maklumatAm?.balasan;
+  const balasanSupplied = typeof balasan === "number";
+  const balasanIsValid =
+    balasanSupplied && Number.isFinite(balasan) && balasan > 0;
+  const balasanRequiredHere =
+    descTypeIsKnown && PDS_JENIS_REQUIRING_BALASAN.has(descType);
+  let balasanState: TenancyPortalReadinessState;
+  let balasanNote: string | undefined;
+  if (balasanSupplied && !balasanIsValid) {
+    // Operator supplied a value but it's malformed — surface as
+    // missing so the operator sees the row broken and fixes it.
+    balasanState = "missing";
+    balasanNote =
+      "Supplied value is not a positive number. pds_balasan must be > 0 when supplied.";
+  } else if (balasanRequiredHere) {
+    balasanState = balasanIsValid ? "ready" : "missing";
+    if (!balasanIsValid) {
+      balasanNote = `Required when pds_jenis = "${DESCRIPTION_TYPE_LABELS[descType as TenancyPortalDescriptionType]}". NEVER auto-derived from rent schedule.`;
+    }
+  } else {
+    // pds_jenis path doesn't require balasan; informational row.
+    balasanState = "ready";
+    balasanNote = balasanIsValid
+      ? "Captured. Optional for the current pds_jenis path."
+      : "Optional for the current pds_jenis path. NEVER auto-derived from rent schedule.";
+  }
+  fields.push({
+    fieldKey: "maklumatAm.balasan",
+    label: "Consideration · Balasan (Maklumat Am · pds_balasan)",
+    section: "bahagian_b",
+    state: balasanState,
+    currentValue: balasanSupplied ? String(balasan) : null,
+    portalMeaning: "pds_balasan · Balasan / Premium",
+    notes: balasanNote,
+  });
+
+  // pds_remit — optional. Always informational unless future
+  // evidence proves otherwise.
+  const remitCode = maklumatAm?.remission?.code;
+  fields.push({
+    fieldKey: "maklumatAm.remission",
+    label: "Remission · Remit (Maklumat Am · pds_remit, optional)",
+    section: "bahagian_b",
+    state: "ready",
+    currentValue: NON_EMPTY(remitCode)
+      ? maklumatAm?.remission?.label
+        ? `${remitCode} · ${maklumatAm.remission.label}`
+        : remitCode
+      : null,
+    portalMeaning: "pds_remit · Pelepasan / Remission",
+    notes: NON_EMPTY(remitCode)
+      ? undefined
+      : "Optional. 16-option dropdown; full enum not yet catalogued.",
+  });
+
+  // pds_perjanjian flags — optional. Always informational.
+  const treaty = maklumatAm?.treatyExemption;
+  const treatyChecked: string[] = [];
+  if (treaty?.kmkt === true) treatyChecked.push("kmkt");
+  if (treaty?.klnm === true) treatyChecked.push("klnm");
+  if (treaty?.vienna === true) treatyChecked.push("vienna");
+  fields.push({
+    fieldKey: "maklumatAm.treatyExemption",
+    label: "Treaty / diplomatic exemption (Maklumat Am · pds_perjanjian, optional)",
+    section: "bahagian_b",
+    state: "ready",
+    currentValue: treatyChecked.length > 0 ? treatyChecked.join(", ") : null,
+    portalMeaning: "pds_perjanjian · checkbox group (kmkt / klnm / vienna)",
+    notes:
+      treatyChecked.length > 0
+        ? undefined
+        : "Optional. Unchecked is the normal case.",
+  });
+
+  // pds_radio_ya / pds_radio_tidak — observed but purpose unconfirmed
+  // by the field-mapping run. Intentionally NOT modelled in A2.
+  // Future field-mapping evidence will determine whether these need
+  // capture; until then, do not surface a fake row.
+
   // ── Lampiran — source PDF presence ────────────────────────────
   fields.push({
     fieldKey: "lampiran.sourcePdf",
@@ -1216,6 +1399,157 @@ export function validateTenancyPortalDetailsInput(
 
     if (typeof rp.operatorNote === "string" && rp.operatorNote.trim()) {
       value.property.operatorNote = rp.operatorNote.trim();
+    }
+  }
+
+  // Optional Maklumat Am sub-block (Milestone A2). Same partial-save
+  // semantics as land-registry: missing / blank values are silently
+  // omitted; malformed values are rejected with a clear error. Sub-
+  // block is dropped entirely if no field made it through.
+  if (c.maklumatAm !== undefined && c.maklumatAm !== null) {
+    if (typeof c.maklumatAm !== "object") {
+      return { ok: false, error: "maklumatAm must be an object." };
+    }
+    const rma = c.maklumatAm as Record<string, unknown>;
+    const ma: TenancyPortalMaklumatAm = {};
+
+    // pds_dutisetem — captured-select. When supplied we require a
+    // non-empty `code` so the readiness gate has something to check;
+    // we accept an optional `label`.
+    if (rma.dutyStampType !== undefined && rma.dutyStampType !== null) {
+      if (typeof rma.dutyStampType !== "object") {
+        return {
+          ok: false,
+          error: "maklumatAm.dutyStampType must be an object when supplied.",
+        };
+      }
+      const ds = rma.dutyStampType as Record<string, unknown>;
+      if (ds.code !== undefined && ds.code !== null) {
+        if (typeof ds.code !== "string") {
+          return {
+            ok: false,
+            error:
+              "maklumatAm.dutyStampType.code must be a string when supplied.",
+          };
+        }
+        const trimmedCode = ds.code.trim();
+        if (trimmedCode !== "") {
+          const captured: { code: string; label?: string } = {
+            code: trimmedCode,
+          };
+          if (typeof ds.label === "string" && ds.label.trim()) {
+            captured.label = ds.label.trim();
+          }
+          ma.dutyStampType = captured;
+        }
+      }
+    }
+
+    // pds_ps — narrow enum
+    if (
+      rma.instrumentRelationship !== undefined &&
+      rma.instrumentRelationship !== null
+    ) {
+      if (
+        typeof rma.instrumentRelationship !== "string" ||
+        !ALLOWED_INSTRUMENT_RELATIONSHIPS.has(
+          rma.instrumentRelationship as TenancyPortalInstrumentRelationship
+        )
+      ) {
+        return {
+          ok: false,
+          error:
+            "maklumatAm.instrumentRelationship must be one of: " +
+            Array.from(ALLOWED_INSTRUMENT_RELATIONSHIPS).join(", ") +
+            " when supplied.",
+        };
+      }
+      ma.instrumentRelationship =
+        rma.instrumentRelationship as TenancyPortalInstrumentRelationship;
+    }
+
+    // pds_balasan — positive finite number when supplied
+    if (rma.balasan !== undefined && rma.balasan !== null) {
+      if (
+        typeof rma.balasan !== "number" ||
+        !Number.isFinite(rma.balasan) ||
+        rma.balasan <= 0
+      ) {
+        return {
+          ok: false,
+          error:
+            "maklumatAm.balasan must be a positive finite number when supplied.",
+        };
+      }
+      ma.balasan = rma.balasan;
+    }
+
+    // pds_remit — captured-select; same shape as dutyStampType.
+    if (rma.remission !== undefined && rma.remission !== null) {
+      if (typeof rma.remission !== "object") {
+        return {
+          ok: false,
+          error: "maklumatAm.remission must be an object when supplied.",
+        };
+      }
+      const rm = rma.remission as Record<string, unknown>;
+      if (rm.code !== undefined && rm.code !== null) {
+        if (typeof rm.code !== "string") {
+          return {
+            ok: false,
+            error:
+              "maklumatAm.remission.code must be a string when supplied.",
+          };
+        }
+        const trimmedCode = rm.code.trim();
+        if (trimmedCode !== "") {
+          const captured: { code: string; label?: string } = {
+            code: trimmedCode,
+          };
+          if (typeof rm.label === "string" && rm.label.trim()) {
+            captured.label = rm.label.trim();
+          }
+          ma.remission = captured;
+        }
+      }
+    }
+
+    // pds_perjanjian — three independent booleans. Anything other
+    // than `true` is treated as "not checked" (no exemption claimed)
+    // and is omitted from the persisted shape.
+    if (
+      rma.treatyExemption !== undefined &&
+      rma.treatyExemption !== null
+    ) {
+      if (typeof rma.treatyExemption !== "object") {
+        return {
+          ok: false,
+          error:
+            "maklumatAm.treatyExemption must be an object when supplied.",
+        };
+      }
+      const rt = rma.treatyExemption as Record<string, unknown>;
+      const treaty: { kmkt?: boolean; klnm?: boolean; vienna?: boolean } = {};
+      // Reject non-boolean supplied values so silent type drift is
+      // caught — but allow the keys to be omitted entirely.
+      for (const k of ["kmkt", "klnm", "vienna"] as const) {
+        const v = rt[k];
+        if (v === undefined || v === null) continue;
+        if (typeof v !== "boolean") {
+          return {
+            ok: false,
+            error: `maklumatAm.treatyExemption.${k} must be a boolean when supplied.`,
+          };
+        }
+        if (v === true) treaty[k] = true;
+      }
+      if (Object.keys(treaty).length > 0) {
+        ma.treatyExemption = treaty;
+      }
+    }
+
+    if (Object.keys(ma).length > 0) {
+      value.maklumatAm = ma;
     }
   }
 

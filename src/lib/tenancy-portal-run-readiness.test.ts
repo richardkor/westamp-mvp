@@ -468,10 +468,12 @@ describe("evaluateTenancyPortalRunReadiness · field-mapping integration", () =>
       report.portalFieldMappingGaps
     );
     const cats = grouped.map((g) => g.category);
-    // Canonical order: multi_pass · land_registry · enum_mismatch · party_model
+    // Canonical order: multi_pass · land_registry · maklumat_am ·
+    // enum_mismatch · party_model.
     const expected: TenancyPortalFieldMappingGapCategory[] = [
       "multi_pass_unsupported",
       "land_registry_not_modelled",
+      "maklumat_am_not_captured",
       "portal_enum_mismatch",
       "party_model_not_modelled",
     ];
@@ -988,5 +990,483 @@ describe("Milestone A1 review-patch · partial land-registry persistence", () =>
     expect(codes).not.toContain("pds_daerah_not_modelled");
     expect(codes).not.toContain("pds_luas_not_modelled");
     expect(codes).not.toContain("pds_luasunit_not_modelled");
+  });
+});
+
+// ─── Milestone A2 · Maklumat Am portal field capture ─────────────────
+
+/**
+ * Helper — build a job with optional Maklumat Am sub-block + an
+ * optional `pds_jenis` value (passed through the instrument block so
+ * the balasan-required-when-jenis rule can be exercised).
+ */
+function makeJobWithMaklumatAm(
+  maklumatAm: TenancyPortalDetails["maklumatAm"],
+  options: {
+    descType?: TenancyPortalDescriptionType;
+  } = {}
+): TenancyPortalRunReadinessJobInput {
+  const tpd: TenancyPortalDetails = {
+    updatedAt: new Date().toISOString(),
+    parties: [makeIndividualLandlord(), makeIndividualTenant()],
+    maklumatAm,
+  };
+  if (options.descType) {
+    tpd.instrument = {
+      instrumentDate: "2026-01-01",
+      duplicateCopies: 1,
+      portalDescriptionType: options.descType,
+      rentSchedule: [
+        { startDate: "2026-01-01", endDate: "2027-01-01", monthlyRent: 1000 },
+      ],
+    };
+  }
+  return {
+    tenancyPortalDetails: tpd,
+    storagePath: "uploads/test/sample.pdf",
+    originalFileName: "sample.pdf",
+    mimeType: "application/pdf",
+    documentCategory: "tenancy_agreement",
+    stampingDetails: undefined,
+  };
+}
+
+describe("Milestone A2 · Maklumat Am · readiness blockers", () => {
+  test("Missing pds_dutisetem fires pds_dutisetem_not_captured", () => {
+    const job = makeJobWithMaklumatAm(undefined);
+    expect(gapCodes(job)).toContain("pds_dutisetem_not_captured");
+  });
+
+  test("Missing pds_ps fires pds_ps_not_captured", () => {
+    const job = makeJobWithMaklumatAm(undefined);
+    expect(gapCodes(job)).toContain("pds_ps_not_captured");
+  });
+
+  test("Recognised pds_ps values lift the pds_ps blocker", () => {
+    const principal = makeJobWithMaklumatAm({
+      instrumentRelationship: "principal",
+    });
+    expect(gapCodes(principal)).not.toContain("pds_ps_not_captured");
+    const related49e = makeJobWithMaklumatAm({
+      instrumentRelationship: "related_lease_49e",
+    });
+    expect(gapCodes(related49e)).not.toContain("pds_ps_not_captured");
+  });
+
+  test("pds_dutisetem with non-empty code lifts the dutisetem blocker", () => {
+    const job = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101", label: "Sewa / Pajakan" },
+    });
+    expect(gapCodes(job)).not.toContain("pds_dutisetem_not_captured");
+  });
+
+  test("Partial Maklumat Am persists without falsely passing readiness", () => {
+    // Operator has filled pds_dutisetem but not pds_ps yet.
+    const job = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101" },
+    });
+    const codes = gapCodes(job);
+    expect(codes).not.toContain("pds_dutisetem_not_captured");
+    expect(codes).toContain("pds_ps_not_captured");
+    const report = evaluateTenancyPortalRunReadiness(job);
+    expect(report.verdict).toBe("blocked");
+  });
+
+  test("pds_balasan is NOT silently derived from monthly rent / rent schedule", () => {
+    // Job has a rent schedule but no balasan captured. We use
+    // premium_only as the path here because that's the only pds_jenis
+    // currently in PDS_JENIS_REQUIRING_BALASAN — readiness must block
+    // on missing balasan explicitly, not infer from rent.
+    const job = makeJobWithMaklumatAm(
+      {
+        dutyStampType: { code: "1101" },
+        instrumentRelationship: "principal",
+      },
+      { descType: "premium_only" }
+    );
+    const codes = gapCodes(job);
+    expect(codes).toContain("pds_balasan_not_captured");
+    // Confirm the reason mentions the no-auto-derive rule.
+    const report = evaluateTenancyPortalRunReadiness(job);
+    const reason = report.portalFieldMappingGaps.find(
+      (g) => g.code === "pds_balasan_not_captured"
+    )?.reason;
+    expect(reason).toMatch(/auto-derive|operator must enter/i);
+  });
+
+  test("pds_balasan is NOT required for fixed_rent_during_tenancy (post A2 review patch — no hard portal evidence)", () => {
+    const job = makeJobWithMaklumatAm(
+      {
+        dutyStampType: { code: "1101" },
+        instrumentRelationship: "principal",
+      },
+      { descType: "fixed_rent_during_tenancy" }
+    );
+    // No pds_balasan_not_captured / pds_balasan_invalid blockers
+    // when balasan is absent on a fixed-rent path.
+    const codes = gapCodes(job);
+    expect(codes).not.toContain("pds_balasan_not_captured");
+    expect(codes).not.toContain("pds_balasan_invalid");
+  });
+
+  test("Invalid pds_balasan (negative) fires pds_balasan_invalid regardless of pds_jenis", () => {
+    const job = makeJobWithMaklumatAm(
+      {
+        dutyStampType: { code: "1101" },
+        instrumentRelationship: "principal",
+        balasan: -100 as unknown as number, // bypass validator path
+      },
+      { descType: "fixed_rent_during_tenancy" }
+    );
+    // Even on a fixed-rent path (where balasan is optional), a
+    // supplied-but-malformed value must still block via
+    // pds_balasan_invalid.
+    expect(gapCodes(job)).toContain("pds_balasan_invalid");
+  });
+
+  test("pds_balasan NOT required for pds_jenis paths outside the requiring set", () => {
+    // Both crop_share_only and fixed_rent_during_tenancy are outside
+    // the requiring set after the A2 review patch.
+    const cropShare = makeJobWithMaklumatAm(
+      {
+        dutyStampType: { code: "1101" },
+        instrumentRelationship: "principal",
+      },
+      { descType: "crop_share_only" }
+    );
+    expect(gapCodes(cropShare)).not.toContain("pds_balasan_not_captured");
+
+    const fixedRent = makeJobWithMaklumatAm(
+      {
+        dutyStampType: { code: "1101" },
+        instrumentRelationship: "principal",
+      },
+      { descType: "fixed_rent_during_tenancy" }
+    );
+    expect(gapCodes(fixedRent)).not.toContain("pds_balasan_not_captured");
+  });
+
+  test("pds_balasan required for premium_only", () => {
+    const job = makeJobWithMaklumatAm(
+      {
+        dutyStampType: { code: "1101" },
+        instrumentRelationship: "principal",
+      },
+      { descType: "premium_only" }
+    );
+    expect(gapCodes(job)).toContain("pds_balasan_not_captured");
+  });
+
+  test("Missing pds_remit does NOT block readiness", () => {
+    const job = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101" },
+      instrumentRelationship: "principal",
+    });
+    const codes = gapCodes(job);
+    expect(codes.some((c) => c.includes("pds_remit"))).toBe(false);
+  });
+
+  test("Treaty / diplomatic flags default safely (omitted) and do not block", () => {
+    const job = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101" },
+      instrumentRelationship: "principal",
+    });
+    const codes = gapCodes(job);
+    expect(codes.some((c) => c.includes("pds_perjanjian"))).toBe(false);
+    expect(codes.some((c) => c.includes("treaty"))).toBe(false);
+  });
+
+  test("Treaty flags set to true also do not block readiness", () => {
+    const job = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101" },
+      instrumentRelationship: "principal",
+      treatyExemption: { vienna: true },
+    });
+    const codes = gapCodes(job);
+    expect(codes.some((c) => c.includes("pds_perjanjian"))).toBe(false);
+  });
+
+  test("Unrelated blockers remain unaffected when Maklumat Am is fully captured", () => {
+    const job: TenancyPortalRunReadinessJobInput = {
+      ...makeJob({}),
+      tenancyPortalDetails: {
+        updatedAt: new Date().toISOString(),
+        parties: [makeIndividualLandlord(), makeIndividualTenant()],
+        instrument: {
+          instrumentDate: "2026-01-01",
+          duplicateCopies: 1,
+          portalDescriptionType: "amendment_to_original_tenancy",
+          rentSchedule: [
+            { startDate: "2026-01-01", endDate: "2027-01-01", monthlyRent: 1000 },
+          ],
+        },
+        maklumatAm: {
+          dutyStampType: { code: "1101" },
+          instrumentRelationship: "principal",
+        },
+      },
+    };
+    const codes = gapCodes(job);
+    // Multi-pass blocker still there (pds_jenis = 1105)
+    expect(codes).toContain("pds_jenis_1105_unsupported");
+    // Party model blockers still there
+    expect(codes).toContain("party_0_gender_not_modelled");
+    expect(codes).toContain("party_1_citizenship_3way_not_modelled");
+    // But Maklumat Am required-field blockers are gone
+    expect(codes).not.toContain("pds_dutisetem_not_captured");
+    expect(codes).not.toContain("pds_ps_not_captured");
+  });
+});
+
+describe("Milestone A2 · Maklumat Am · payload compiler", () => {
+  test("Payload emits the correct portal field names and values when captured", () => {
+    // Use premium_only here because that's the pds_jenis path where
+    // balasan is required (per A2 review patch — fixed_rent no longer
+    // qualifies). This lets the test assert
+    // requiredForCurrentJenis === true alongside the other fields.
+    const job = makeJobWithMaklumatAm(
+      {
+        dutyStampType: { code: "1101", label: "Sewa / Pajakan" },
+        instrumentRelationship: "principal",
+        balasan: 50000,
+        remission: { code: "5", label: "Treaty exemption" },
+        treatyExemption: { vienna: true },
+      },
+      { descType: "premium_only" }
+    );
+    const payload = compileTenancyPortalPayload(job);
+    const ma = payload.maklumatAm;
+    expect(ma.captured).toBe(true);
+    expect(ma.dutyStampType.portalFieldKey).toBe("pds_dutisetem");
+    expect(ma.dutyStampType.code).toBe("1101");
+    expect(ma.dutyStampType.label).toBe("Sewa / Pajakan");
+    expect(ma.instrumentRelationship.portalFieldKey).toBe("pds_ps");
+    expect(ma.instrumentRelationship.unitCode).toBe("principal");
+    expect(ma.instrumentRelationship.portalCode).toBe("p");
+    expect(ma.instrumentRelationship.label).toBe("Prinsipal");
+    expect(ma.balasan.portalFieldKey).toBe("pds_balasan");
+    expect(ma.balasan.value).toBe(50000);
+    expect(ma.balasan.requiredForCurrentJenis).toBe(true);
+    expect(ma.remission.portalFieldKey).toBe("pds_remit");
+    expect(ma.remission.code).toBe("5");
+    expect(ma.remission.label).toBe("Treaty exemption");
+    expect(ma.treatyExemption.portalFieldKey).toBe("pds_perjanjian");
+    expect(ma.treatyExemption.vienna).toBe(true);
+    expect(ma.treatyExemption.kmkt).toBe(false);
+    expect(ma.treatyExemption.klnm).toBe(false);
+  });
+
+  test("Payload reports captured=false when required Maklumat Am field is missing", () => {
+    const job = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101" },
+      // instrumentRelationship deliberately omitted
+    });
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.maklumatAm.captured).toBe(false);
+  });
+
+  test("balasan.requiredForCurrentJenis tracks the pds_jenis path", () => {
+    // After the A2 review patch, only premium_only requires balasan.
+    // fixed_rent_during_tenancy and crop_share_only must report false.
+    const premium = makeJobWithMaklumatAm(
+      { dutyStampType: { code: "1101" }, instrumentRelationship: "principal" },
+      { descType: "premium_only" }
+    );
+    expect(
+      compileTenancyPortalPayload(premium).maklumatAm.balasan
+        .requiredForCurrentJenis
+    ).toBe(true);
+
+    const fixed = makeJobWithMaklumatAm(
+      { dutyStampType: { code: "1101" }, instrumentRelationship: "principal" },
+      { descType: "fixed_rent_during_tenancy" }
+    );
+    expect(
+      compileTenancyPortalPayload(fixed).maklumatAm.balasan
+        .requiredForCurrentJenis
+    ).toBe(false);
+
+    const cropShare = makeJobWithMaklumatAm(
+      { dutyStampType: { code: "1101" }, instrumentRelationship: "principal" },
+      { descType: "crop_share_only" }
+    );
+    expect(
+      compileTenancyPortalPayload(cropShare).maklumatAm.balasan
+        .requiredForCurrentJenis
+    ).toBe(false);
+
+    const noJenis = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101" },
+      instrumentRelationship: "principal",
+    });
+    expect(
+      compileTenancyPortalPayload(noJenis).maklumatAm.balasan
+        .requiredForCurrentJenis
+    ).toBe(false);
+  });
+
+  test("pds_ps maps each enum to the portal `<option value>` correctly", () => {
+    const principal = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101" },
+      instrumentRelationship: "principal",
+    });
+    expect(
+      compileTenancyPortalPayload(principal).maklumatAm.instrumentRelationship
+        .portalCode
+    ).toBe("p");
+    const related = makeJobWithMaklumatAm({
+      dutyStampType: { code: "1101" },
+      instrumentRelationship: "related_lease_49e",
+    });
+    expect(
+      compileTenancyPortalPayload(related).maklumatAm.instrumentRelationship
+        .portalCode
+    ).toBe("s");
+  });
+
+  test("Payload emits null values without throwing when no maklumatAm captured", () => {
+    const job = makeJobWithMaklumatAm(undefined);
+    const payload = compileTenancyPortalPayload(job);
+    const ma = payload.maklumatAm;
+    expect(ma.captured).toBe(false);
+    expect(ma.dutyStampType.code).toBe(null);
+    expect(ma.dutyStampType.label).toBe(null);
+    expect(ma.instrumentRelationship.unitCode).toBe(null);
+    expect(ma.instrumentRelationship.portalCode).toBe(null);
+    expect(ma.balasan.value).toBe(null);
+    expect(ma.remission.code).toBe(null);
+    expect(ma.treatyExemption.kmkt).toBe(false);
+  });
+
+  test("Payload preserves operator-supplied balasan value verbatim, not derived from rentSchedule", () => {
+    const job = makeJobWithMaklumatAm(
+      {
+        dutyStampType: { code: "1101" },
+        instrumentRelationship: "principal",
+        balasan: 12345.67,
+      },
+      { descType: "fixed_rent_during_tenancy" }
+    );
+    // The instrument fixture above uses monthlyRent: 1000 across one
+    // year (12000 in total) — the payload's balasan must be the
+    // operator-supplied 12345.67, NOT the rent total.
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.maklumatAm.balasan.value).toBe(12345.67);
+  });
+});
+
+describe("Milestone A2 · Maklumat Am · validator partial-save", () => {
+  test("Validator accepts a maklumatAm sub-block with only dutyStampType filled", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: {
+        dutyStampType: { code: "1101", label: "Sewa / Pajakan" },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.maklumatAm).toEqual({
+      dutyStampType: { code: "1101", label: "Sewa / Pajakan" },
+    });
+  });
+
+  test("Validator silently drops blank dutyStampType.code rather than rejecting", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: {
+        dutyStampType: { code: "   " },
+        instrumentRelationship: "principal",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Blank code dropped; instrumentRelationship kept.
+    expect(result.value.maklumatAm?.dutyStampType).toBeUndefined();
+    expect(result.value.maklumatAm?.instrumentRelationship).toBe("principal");
+  });
+
+  test("Validator REJECTS unknown instrumentRelationship", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: { instrumentRelationship: "made_up" },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/instrumentRelationship/);
+  });
+
+  test("Validator REJECTS negative balasan", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: { balasan: -50 },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/balasan/);
+    expect(result.error).toMatch(/positive finite number/);
+  });
+
+  test("Validator REJECTS non-boolean treaty flag", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: {
+        treatyExemption: { kmkt: "yes" as unknown as boolean },
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/treatyExemption.kmkt/);
+  });
+
+  test("Validator omits treaty sub-object when every flag is false / absent", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: {
+        dutyStampType: { code: "1101" },
+        treatyExemption: { kmkt: false, klnm: false, vienna: false },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.maklumatAm?.treatyExemption).toBeUndefined();
+  });
+
+  test("Validator omits the entire maklumatAm sub-block when every field is blank / absent", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: {
+        dutyStampType: { code: "" },
+        treatyExemption: {},
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.maklumatAm).toBeUndefined();
+  });
+
+  test("Round-trip: partial maklumatAm save persists exactly what the operator typed", () => {
+    const firstSave = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: { dutyStampType: { code: "1101" } },
+    });
+    expect(firstSave.ok).toBe(true);
+    if (!firstSave.ok) return;
+    expect(firstSave.value.maklumatAm).toEqual({
+      dutyStampType: { code: "1101" },
+    });
+
+    const secondSave = validateTenancyPortalDetailsInput({
+      parties: [makeIndividualLandlord(), makeIndividualTenant()],
+      maklumatAm: {
+        dutyStampType: { code: "1101" },
+        instrumentRelationship: "principal",
+      },
+    });
+    expect(secondSave.ok).toBe(true);
+    if (!secondSave.ok) return;
+    expect(secondSave.value.maklumatAm).toEqual({
+      dutyStampType: { code: "1101" },
+      instrumentRelationship: "principal",
+    });
   });
 });

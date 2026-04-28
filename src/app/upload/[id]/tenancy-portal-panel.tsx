@@ -55,6 +55,7 @@ import type {
   TenancyPortalFurnishedStatus,
   TenancyPortalIdentityType,
   TenancyPortalInstrumentNameCode,
+  TenancyPortalInstrumentRelationship,
   TenancyPortalLandAreaUnit,
   TenancyPortalNationality,
   TenancyPortalParty,
@@ -63,7 +64,10 @@ import type {
   TenancyPortalProperty,
   TenancyPortalPropertyType,
 } from "../../../lib/stamping-types";
-import { TENANCY_PORTAL_LAND_AREA_UNIT_LABELS } from "../../../lib/stamping-types";
+import {
+  TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_LABELS,
+  TENANCY_PORTAL_LAND_AREA_UNIT_LABELS,
+} from "../../../lib/stamping-types";
 
 /**
  * Operator-facing labels for the six observed Bahagian B description
@@ -176,6 +180,16 @@ interface Draft {
   landRegistryLuas: string;
   landRegistryLuasUnit: TenancyPortalLandAreaUnit | "";
   landRegistryKegunaan: string;
+  // Maklumat Am sub-block (Milestone A2, 2026-04-29).
+  maklumatAmDutyStampCode: string;
+  maklumatAmDutyStampLabel: string;
+  maklumatAmInstrumentRelationship: TenancyPortalInstrumentRelationship | "";
+  maklumatAmBalasan: string;
+  maklumatAmRemissionCode: string;
+  maklumatAmRemissionLabel: string;
+  maklumatAmTreatyKmkt: boolean;
+  maklumatAmTreatyKlnm: boolean;
+  maklumatAmTreatyVienna: boolean;
   operatorNote: string;
 }
 
@@ -260,6 +274,22 @@ function buildInitialDraft(existing?: TenancyPortalDetails): Draft {
       typeof lr?.luas === "number" ? String(lr.luas) : "",
     landRegistryLuasUnit: lr?.luasUnit ?? "",
     landRegistryKegunaan: lr?.kegunaan ?? "",
+    // Maklumat Am — seed from persisted state. Each field is
+    // independently optional in storage; the draft mirrors that.
+    maklumatAmDutyStampCode: existing?.maklumatAm?.dutyStampType?.code ?? "",
+    maklumatAmDutyStampLabel: existing?.maklumatAm?.dutyStampType?.label ?? "",
+    maklumatAmInstrumentRelationship:
+      existing?.maklumatAm?.instrumentRelationship ?? "",
+    maklumatAmBalasan:
+      typeof existing?.maklumatAm?.balasan === "number"
+        ? String(existing.maklumatAm.balasan)
+        : "",
+    maklumatAmRemissionCode: existing?.maklumatAm?.remission?.code ?? "",
+    maklumatAmRemissionLabel: existing?.maklumatAm?.remission?.label ?? "",
+    maklumatAmTreatyKmkt: existing?.maklumatAm?.treatyExemption?.kmkt === true,
+    maklumatAmTreatyKlnm: existing?.maklumatAm?.treatyExemption?.klnm === true,
+    maklumatAmTreatyVienna:
+      existing?.maklumatAm?.treatyExemption?.vienna === true,
     operatorNote: existing?.operatorNote ?? "",
   };
 }
@@ -412,6 +442,53 @@ function buildSavePayload(d: Draft): Record<string, unknown> {
     }
 
     body.property = property;
+  }
+
+  // Maklumat Am sub-block (Milestone A2). Same partial-save rule as
+  // landRegistry: only emit fields the operator actually filled. No
+  // fabricated defaults. Sub-block omitted entirely if every field
+  // is empty / unchecked. Booleans are emitted only when `true` —
+  // false / unchecked keys are simply absent.
+  const maDutyCode = d.maklumatAmDutyStampCode.trim();
+  const maDutyLabel = d.maklumatAmDutyStampLabel.trim();
+  const maRel = d.maklumatAmInstrumentRelationship;
+  const maBalasanRaw = d.maklumatAmBalasan.trim();
+  const maBalasanNum =
+    maBalasanRaw === "" ? null : Number(maBalasanRaw);
+  const maBalasanIsValid =
+    maBalasanNum !== null &&
+    Number.isFinite(maBalasanNum) &&
+    maBalasanNum > 0;
+  const maRemitCode = d.maklumatAmRemissionCode.trim();
+  const maRemitLabel = d.maklumatAmRemissionLabel.trim();
+  const maAnyTouched =
+    maDutyCode !== "" ||
+    maRel !== "" ||
+    maBalasanRaw !== "" ||
+    maRemitCode !== "" ||
+    d.maklumatAmTreatyKmkt ||
+    d.maklumatAmTreatyKlnm ||
+    d.maklumatAmTreatyVienna;
+  if (maAnyTouched) {
+    const ma: Record<string, unknown> = {};
+    if (maDutyCode !== "") {
+      const dutyStampType: Record<string, unknown> = { code: maDutyCode };
+      if (maDutyLabel !== "") dutyStampType.label = maDutyLabel;
+      ma.dutyStampType = dutyStampType;
+    }
+    if (maRel !== "") ma.instrumentRelationship = maRel;
+    if (maBalasanIsValid) ma.balasan = maBalasanNum;
+    if (maRemitCode !== "") {
+      const remission: Record<string, unknown> = { code: maRemitCode };
+      if (maRemitLabel !== "") remission.label = maRemitLabel;
+      ma.remission = remission;
+    }
+    const treaty: Record<string, unknown> = {};
+    if (d.maklumatAmTreatyKmkt) treaty.kmkt = true;
+    if (d.maklumatAmTreatyKlnm) treaty.klnm = true;
+    if (d.maklumatAmTreatyVienna) treaty.vienna = true;
+    if (Object.keys(treaty).length > 0) ma.treatyExemption = treaty;
+    if (Object.keys(ma).length > 0) body.maklumatAm = ma;
   }
 
   if (d.operatorNote.trim()) body.operatorNote = d.operatorNote.trim();
@@ -1439,6 +1516,182 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
             </div>
           </div>
 
+          {/* ── Maklumat Am Portal Fields ─────────────────────
+              Milestone A2 (2026-04-29). Captures the Maklumat Am
+              portal metadata observed during the ε-3 supervised
+              field-mapping run. Internal operator capture only —
+              NOT a public review page.
+
+              NOTE: pds_balasan is captured as a separate operator
+              entry. WeStamp NEVER auto-fills it from the rent
+              schedule — the portal treats it as a distinct field.
+
+              NOTE: pds_radio_ya / pds_radio_tidak are observed in
+              the portal DOM but the field-mapping run did not
+              confirm what they control. They are intentionally
+              NOT captured until mapped. */}
+          <div className="tpr-form-section">
+            <h3>Maklumat Am Portal Fields</h3>
+            <p className="tpr-form-helper">
+              These fields were observed during the Sewa/Pajakan
+              field-mapping run and are captured separately from the
+              tenancy rent schedule and property details.
+            </p>
+            <div className="tpr-grid">
+              <Field label="Duty type · Jenis Duti Setem (pds_dutisetem)">
+                <input
+                  type="text"
+                  value={draft.maklumatAmDutyStampCode}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      maklumatAmDutyStampCode: e.target.value,
+                    }))
+                  }
+                  placeholder="Portal option code"
+                />
+                <span className="tpr-field-helper-note">
+                  17-option dropdown observed; full enum not yet
+                  catalogued. Enter the portal option value (e.g.
+                  the numeric code shown in the portal HTML).
+                </span>
+              </Field>
+              <Field label="Duty type label (optional)">
+                <input
+                  type="text"
+                  value={draft.maklumatAmDutyStampLabel}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      maklumatAmDutyStampLabel: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. Sewa / Pajakan"
+                />
+              </Field>
+              <Field label="Instrument relationship (pds_ps)">
+                <select
+                  value={draft.maklumatAmInstrumentRelationship}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      maklumatAmInstrumentRelationship: e.target
+                        .value as TenancyPortalInstrumentRelationship | "",
+                    }))
+                  }
+                >
+                  <option value="">— select —</option>
+                  <option value="principal">
+                    {TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_LABELS.principal} (p)
+                  </option>
+                  <option value="related_lease_49e">
+                    {
+                      TENANCY_PORTAL_INSTRUMENT_RELATIONSHIP_LABELS.related_lease_49e
+                    }{" "}
+                    (s)
+                  </option>
+                </select>
+              </Field>
+              <Field label="Consideration · Balasan (pds_balasan)">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={draft.maklumatAmBalasan}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      maklumatAmBalasan: e.target.value,
+                    }))
+                  }
+                />
+                <span className="tpr-field-helper-note">
+                  Operator-supplied consideration / premium amount.
+                  Never auto-derived from the rent schedule. Required
+                  only for portal paths where WeStamp has evidence
+                  that Balasan is mandatory; otherwise captured when
+                  applicable. Must be a positive number when supplied.
+                </span>
+              </Field>
+              <Field label="Remission code (pds_remit, optional)">
+                <input
+                  type="text"
+                  value={draft.maklumatAmRemissionCode}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      maklumatAmRemissionCode: e.target.value,
+                    }))
+                  }
+                  placeholder="Portal option code"
+                />
+                <span className="tpr-field-helper-note">
+                  16-option dropdown observed; full enum not yet
+                  catalogued. Optional in this milestone.
+                </span>
+              </Field>
+              <Field label="Remission label (optional)">
+                <input
+                  type="text"
+                  value={draft.maklumatAmRemissionLabel}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      maklumatAmRemissionLabel: e.target.value,
+                    }))
+                  }
+                />
+              </Field>
+              <Field label="Treaty / diplomatic exemption flags (pds_perjanjian)">
+                <div className="tpr-checkbox-group">
+                  <label className="tpr-checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={draft.maklumatAmTreatyKmkt}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          maklumatAmTreatyKmkt: e.target.checked,
+                        }))
+                      }
+                    />
+                    kmkt
+                  </label>
+                  <label className="tpr-checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={draft.maklumatAmTreatyKlnm}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          maklumatAmTreatyKlnm: e.target.checked,
+                        }))
+                      }
+                    />
+                    klnm
+                  </label>
+                  <label className="tpr-checkbox-inline">
+                    <input
+                      type="checkbox"
+                      checked={draft.maklumatAmTreatyVienna}
+                      onChange={(e) =>
+                        setDraft((d) => ({
+                          ...d,
+                          maklumatAmTreatyVienna: e.target.checked,
+                        }))
+                      }
+                    />
+                    vienna
+                  </label>
+                </div>
+                <span className="tpr-field-helper-note">
+                  Optional. Unchecked is the normal case — never
+                  blocks readiness.
+                </span>
+              </Field>
+            </div>
+          </div>
+
           <div className="tpr-form-actions">
             {saveError && (
               <p className="field-error" role="alert">
@@ -1688,6 +1941,81 @@ function PayloadPreview({ payload }: { payload: TenancyPortalPayload }) {
               </tbody>
             </table>
           )}
+
+          {/* Maklumat Am sub-block (Milestone A2). Always rendered
+              so the operator can see whether each portal field is
+              captured. Per-field portal-field-key shown verbatim. */}
+          <div className="tpr-payload-maklumat-am">
+            <p className="tpr-payload-line">
+              <strong>Maklumat Am</strong>{" "}
+              {payload.maklumatAm.captured ? (
+                <span className="tpr-payload-line-ok">— captured</span>
+              ) : (
+                <span className="tpr-payload-warn-inline">
+                  — incomplete (required fields missing)
+                </span>
+              )}
+            </p>
+            <ul className="tpr-payload-maklumat-am-list">
+              <li>
+                <code>pds_dutisetem</code> · Duty type:{" "}
+                <strong>
+                  {payload.maklumatAm.dutyStampType.code === null
+                    ? "—"
+                    : payload.maklumatAm.dutyStampType.label
+                      ? `${payload.maklumatAm.dutyStampType.code} · ${payload.maklumatAm.dutyStampType.label}`
+                      : payload.maklumatAm.dutyStampType.code}
+                </strong>
+              </li>
+              <li>
+                <code>pds_ps</code> · Instrument relationship:{" "}
+                <strong>
+                  {payload.maklumatAm.instrumentRelationship.label ?? "—"}
+                  {payload.maklumatAm.instrumentRelationship.portalCode
+                    ? ` (portal code "${payload.maklumatAm.instrumentRelationship.portalCode}")`
+                    : ""}
+                </strong>
+              </li>
+              <li>
+                <code>pds_balasan</code> · Balasan:{" "}
+                <strong>
+                  {payload.maklumatAm.balasan.value === null
+                    ? "—"
+                    : formatRm(payload.maklumatAm.balasan.value)}
+                </strong>
+                {payload.maklumatAm.balasan.requiredForCurrentJenis && (
+                  <span className="tpr-payload-warn-inline">
+                    {" "}
+                    — required for current pds_jenis
+                  </span>
+                )}
+              </li>
+              <li>
+                <code>pds_remit</code> · Remission (optional):{" "}
+                <strong>
+                  {payload.maklumatAm.remission.code === null
+                    ? "—"
+                    : payload.maklumatAm.remission.label
+                      ? `${payload.maklumatAm.remission.code} · ${payload.maklumatAm.remission.label}`
+                      : payload.maklumatAm.remission.code}
+                </strong>
+              </li>
+              <li>
+                <code>pds_perjanjian</code> · Treaty exemption flags:{" "}
+                <strong>
+                  {(() => {
+                    const t = payload.maklumatAm.treatyExemption;
+                    const flags = [
+                      t.kmkt ? "kmkt" : null,
+                      t.klnm ? "klnm" : null,
+                      t.vienna ? "vienna" : null,
+                    ].filter((x): x is string => x !== null);
+                    return flags.length === 0 ? "none" : flags.join(", ");
+                  })()}
+                </strong>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -2138,6 +2466,7 @@ const GAP_CATEGORY_LABELS: Record<
 > = {
   multi_pass_unsupported: "Multi-pass not supported",
   land_registry_not_modelled: "Bahagian C land-registry fields not modelled",
+  maklumat_am_not_captured: "Maklumat Am portal fields not yet captured",
   portal_enum_mismatch: "Portal enum / dropdown mismatch",
   party_model_not_modelled: "Party model gaps (gender / PR / NRIC sub-type / SSM rep)",
 };
