@@ -55,6 +55,7 @@ import type {
   TenancyPortalFurnishedStatus,
   TenancyPortalIdentityType,
   TenancyPortalInstrumentNameCode,
+  TenancyPortalLandAreaUnit,
   TenancyPortalNationality,
   TenancyPortalParty,
   TenancyPortalPartyRole,
@@ -62,6 +63,7 @@ import type {
   TenancyPortalProperty,
   TenancyPortalPropertyType,
 } from "../../../lib/stamping-types";
+import { TENANCY_PORTAL_LAND_AREA_UNIT_LABELS } from "../../../lib/stamping-types";
 
 /**
  * Operator-facing labels for the six observed Bahagian B description
@@ -164,6 +166,16 @@ interface Draft {
   numberOfFloors: string;
   premisesAreaSqm: string;
   premisesAreaIsZeroFallback: boolean;
+  // Bahagian C · land-registry sub-block (Milestone A1, 2026-04-29).
+  // String-typed at the draft level so the operator can edit freely;
+  // coerced + validated server-side via `validateTenancyPortalDetailsInput`.
+  landRegistryMilikPenuh: string;
+  landRegistryLot: string;
+  landRegistryMukim: string;
+  landRegistryDaerah: string;
+  landRegistryLuas: string;
+  landRegistryLuasUnit: TenancyPortalLandAreaUnit | "";
+  landRegistryKegunaan: string;
   operatorNote: string;
 }
 
@@ -207,6 +219,7 @@ function buildInitialDraft(existing?: TenancyPortalDetails): Draft {
       monthlyRent: String(r.monthlyRent),
     })) ?? [{ startDate: "", endDate: "", monthlyRent: "" }];
   const property = existing?.property;
+  const lr = property?.landRegistry;
   return {
     parties,
     instrumentDate: existing?.instrument?.instrumentDate ?? "",
@@ -239,6 +252,14 @@ function buildInitialDraft(existing?: TenancyPortalDetails): Draft {
         : "",
     premisesAreaIsZeroFallback:
       property?.premisesAreaIsZeroFallback === true,
+    landRegistryMilikPenuh: lr?.milikPenuh ?? "",
+    landRegistryLot: lr?.lot ?? "",
+    landRegistryMukim: lr?.mukim ?? "",
+    landRegistryDaerah: lr?.daerah ?? "",
+    landRegistryLuas:
+      typeof lr?.luas === "number" ? String(lr.luas) : "",
+    landRegistryLuasUnit: lr?.luasUnit ?? "",
+    landRegistryKegunaan: lr?.kegunaan ?? "",
     operatorNote: existing?.operatorNote ?? "",
   };
 }
@@ -338,6 +359,58 @@ function buildSavePayload(d: Draft): Record<string, unknown> {
     if (d.premisesAreaIsZeroFallback) {
       property.premisesAreaIsZeroFallback = true;
     }
+
+    // Bahagian C · land-registry sub-block.
+    //
+    // Partial-save semantics (post-A1-review patch): only emit fields
+    // the operator has actually filled. Blanks are NOT sent — sending
+    // an empty string would cause the server validator to reject the
+    // whole save under the old strict-completeness rule and lose the
+    // values the operator did fill. The server now accepts partial
+    // captures (see `validateTenancyPortalDetailsInput`) and the
+    // readiness gate keeps blocking until every required portal
+    // field is captured and valid, so partial saves are safe.
+    //
+    // We deliberately do NOT default `luas` to 0 — that would invent
+    // a value the operator never typed. Same rule for every other
+    // field. A field is only sent when the operator typed it.
+    const lrTextFields = {
+      milikPenuh: d.landRegistryMilikPenuh.trim(),
+      lot: d.landRegistryLot.trim(),
+      mukim: d.landRegistryMukim.trim(),
+      daerah: d.landRegistryDaerah.trim(),
+    };
+    const luasRaw = d.landRegistryLuas.trim();
+    const luasNum = luasRaw === "" ? null : Number(luasRaw);
+    const luasIsValid =
+      luasNum !== null && Number.isFinite(luasNum) && luasNum > 0;
+    const luasUnit = d.landRegistryLuasUnit;
+    const lrKegunaan = d.landRegistryKegunaan.trim();
+    const lrAnyTouched =
+      lrTextFields.milikPenuh !== "" ||
+      lrTextFields.lot !== "" ||
+      lrTextFields.mukim !== "" ||
+      lrTextFields.daerah !== "" ||
+      luasRaw !== "" ||
+      luasUnit !== "" ||
+      lrKegunaan !== "";
+    if (lrAnyTouched) {
+      const lr: Record<string, unknown> = {};
+      if (lrTextFields.milikPenuh !== "") lr.milikPenuh = lrTextFields.milikPenuh;
+      if (lrTextFields.lot !== "") lr.lot = lrTextFields.lot;
+      if (lrTextFields.mukim !== "") lr.mukim = lrTextFields.mukim;
+      if (lrTextFields.daerah !== "") lr.daerah = lrTextFields.daerah;
+      if (luasIsValid) lr.luas = luasNum;
+      if (luasUnit !== "") lr.luasUnit = luasUnit;
+      if (lrKegunaan !== "") lr.kegunaan = lrKegunaan;
+      // Only attach the sub-block if at least one value made it through.
+      // An all-blank touched-but-empty form does not need an empty
+      // sub-block on the server.
+      if (Object.keys(lr).length > 0) {
+        property.landRegistry = lr;
+      }
+    }
+
     body.property = property;
   }
 
@@ -1236,6 +1309,134 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
                 </label>
               </Field>
             </div>
+
+            {/* ── Bahagian C · Land-Registry Fields ──────────────
+                Milestone A1 (2026-04-29). Captures the seven
+                Bahagian C land-registry portal fields discovered
+                during the ε-3 supervised field-mapping run. Six
+                are required; pds_kegunaan is optional. Internal
+                operator capture only — NOT a public review page.
+
+                NOTE: pds_luas (land-title area) is intentionally
+                separate from the Premises area (Luas Premis) above.
+                The portal treats them as different fields and
+                WeStamp must not auto-fill one from the other. */}
+            <div className="tpr-form-subsection">
+              <h4>Bahagian C Land-Registry Fields</h4>
+              <p className="tpr-form-helper">
+                These fields were observed during the Sewa/Pajakan
+                field-mapping run and are required before WeStamp can
+                truthfully prepare a supervised portal run.
+              </p>
+              <div className="tpr-grid">
+                <Field label="Milik Penuh (pds_mp)">
+                  <input
+                    type="text"
+                    value={draft.landRegistryMilikPenuh}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        landRegistryMilikPenuh: e.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Lot number (pds_lot)">
+                  <input
+                    type="text"
+                    value={draft.landRegistryLot}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        landRegistryLot: e.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Mukim (pds_mukim)">
+                  <input
+                    type="text"
+                    value={draft.landRegistryMukim}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        landRegistryMukim: e.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Daerah (pds_daerah)">
+                  <input
+                    type="text"
+                    value={draft.landRegistryDaerah}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        landRegistryDaerah: e.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Land area · Luas Tanah (pds_luas)">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={draft.landRegistryLuas}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        landRegistryLuas: e.target.value,
+                      }))
+                    }
+                  />
+                  <span className="tpr-field-helper-note">
+                    Land-title area. Distinct from Premises area
+                    (Luas Premis) above — never auto-filled from it.
+                    Must be a positive number.
+                  </span>
+                </Field>
+                <Field label="Land-area unit (pds_luasunit)">
+                  <select
+                    value={draft.landRegistryLuasUnit}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        landRegistryLuasUnit: e.target.value as
+                          | TenancyPortalLandAreaUnit
+                          | "",
+                      }))
+                    }
+                  >
+                    <option value="">— select —</option>
+                    <option value="ekar">
+                      {TENANCY_PORTAL_LAND_AREA_UNIT_LABELS.ekar}
+                    </option>
+                    <option value="hektar">
+                      {TENANCY_PORTAL_LAND_AREA_UNIT_LABELS.hektar}
+                    </option>
+                    <option value="kps">
+                      {TENANCY_PORTAL_LAND_AREA_UNIT_LABELS.kps}
+                    </option>
+                    <option value="mps">
+                      {TENANCY_PORTAL_LAND_AREA_UNIT_LABELS.mps}
+                    </option>
+                  </select>
+                </Field>
+                <Field label="Property usage (pds_kegunaan, optional)">
+                  <input
+                    type="text"
+                    value={draft.landRegistryKegunaan}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        landRegistryKegunaan: e.target.value,
+                      }))
+                    }
+                  />
+                </Field>
+              </div>
+            </div>
           </div>
 
           <div className="tpr-form-actions">
@@ -1533,6 +1734,66 @@ function PayloadPreview({ payload }: { payload: TenancyPortalPayload }) {
               </span>
             )}
           </p>
+          {/* Bahagian C land-registry sub-block (Milestone A1).
+              Always rendered when the property block exists so the
+              operator can see whether each portal field is captured.
+              Per-field portal-field-key is shown verbatim so the
+              operator preview matches what a future automation step
+              would send. */}
+          <div className="tpr-payload-land-registry">
+            <p className="tpr-payload-line">
+              <strong>Land registry</strong>{" "}
+              {c.landRegistry.captured ? (
+                <span className="tpr-payload-line-ok">— captured</span>
+              ) : (
+                <span className="tpr-payload-warn-inline">
+                  — incomplete (required fields missing)
+                </span>
+              )}
+            </p>
+            <ul className="tpr-payload-land-registry-list">
+              <li>
+                <code>pds_mp</code> · Milik Penuh:{" "}
+                <strong>
+                  {formatScalar(c.landRegistry.milikPenuh.value)}
+                </strong>
+              </li>
+              <li>
+                <code>pds_lot</code> · Lot:{" "}
+                <strong>{formatScalar(c.landRegistry.lot.value)}</strong>
+              </li>
+              <li>
+                <code>pds_mukim</code> · Mukim:{" "}
+                <strong>{formatScalar(c.landRegistry.mukim.value)}</strong>
+              </li>
+              <li>
+                <code>pds_daerah</code> · Daerah:{" "}
+                <strong>{formatScalar(c.landRegistry.daerah.value)}</strong>
+              </li>
+              <li>
+                <code>pds_luas</code> · Luas Tanah:{" "}
+                <strong>
+                  {c.landRegistry.luas.value === null
+                    ? "—"
+                    : String(c.landRegistry.luas.value)}
+                </strong>
+                {" · "}
+                <code>pds_luasunit</code>:{" "}
+                <strong>
+                  {c.landRegistry.luasUnit.label ?? "—"}
+                  {c.landRegistry.luasUnit.portalCode
+                    ? ` (portal code ${c.landRegistry.luasUnit.portalCode})`
+                    : ""}
+                </strong>
+              </li>
+              <li>
+                <code>pds_kegunaan</code> · Kegunaan (optional):{" "}
+                <strong>
+                  {formatScalar(c.landRegistry.kegunaan.value)}
+                </strong>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
 

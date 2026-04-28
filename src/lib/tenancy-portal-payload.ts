@@ -44,11 +44,16 @@ import type {
   TenancyPortalDetails,
   TenancyPortalFurnishedStatus,
   TenancyPortalIdentityType,
+  TenancyPortalLandAreaUnit,
   TenancyPortalNationality,
   TenancyPortalParty,
   TenancyPortalPartyRole,
   TenancyPortalPartyType,
   TenancyPortalPropertyType,
+} from "./stamping-types";
+import {
+  TENANCY_PORTAL_LAND_AREA_UNIT_LABELS,
+  TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES,
 } from "./stamping-types";
 
 import {
@@ -240,6 +245,48 @@ export interface TenancyPortalPayloadBahagianB {
   descriptionTypeAutomationUnsupportedReason: string | null;
 }
 
+/**
+ * Bahagian C · land-registry block in the compiled payload.
+ *
+ * Structurally distinct from `TenancyPortalLandRegistry` on the data
+ * model side: the payload version exposes the portal field name
+ * alongside the value so the operator preview shows exactly how each
+ * value will be sent. The `luasUnit` value carries both WeStamp's
+ * stable enum (`unitCode`) and the portal `<option value>` code
+ * (`portalCode`) so future automation can map without re-deriving.
+ */
+export interface TenancyPortalPayloadLandRegistry {
+  /**
+   * True when every required land-registry field is captured and
+   * valid. `pds_kegunaan` is excluded from this check (optional).
+   */
+  captured: boolean;
+  /** `pds_mp` ("Milik Penuh"). Null when not captured. */
+  milikPenuh: { portalFieldKey: "pds_mp"; value: string | null };
+  /** `pds_lot`. Null when not captured. */
+  lot: { portalFieldKey: "pds_lot"; value: string | null };
+  /** `pds_mukim`. Null when not captured. */
+  mukim: { portalFieldKey: "pds_mukim"; value: string | null };
+  /** `pds_daerah`. Null when not captured. */
+  daerah: { portalFieldKey: "pds_daerah"; value: string | null };
+  /** `pds_luas` — land-title area. Null when not captured. */
+  luas: { portalFieldKey: "pds_luas"; value: number | null };
+  /**
+   * `pds_luasunit` — unit selector. Carries WeStamp's stable enum
+   * code, the portal-side `<option value>` code, and the operator-
+   * facing label so the preview can render all three without re-
+   * deriving.
+   */
+  luasUnit: {
+    portalFieldKey: "pds_luasunit";
+    unitCode: TenancyPortalLandAreaUnit | null;
+    portalCode: "1" | "2" | "3" | "4" | null;
+    label: string | null;
+  };
+  /** `pds_kegunaan` — optional usage description. */
+  kegunaan: { portalFieldKey: "pds_kegunaan"; value: string | null };
+}
+
 /** Bahagian C · summary block. */
 export interface TenancyPortalPayloadBahagianC {
   addressLine1: string | null;
@@ -262,6 +309,13 @@ export interface TenancyPortalPayloadBahagianC {
   /** True only when the value is explicitly `0` and the operator
    *  fallback flag is set. */
   premisesAreaIsZeroFallback: boolean;
+  /**
+   * Bahagian C land-registry sub-block. Always present in the
+   * payload preview so the operator can see which fields are still
+   * missing; per-field `value` keys are null when not captured.
+   * `captured` is true only when every required field is valid.
+   */
+  landRegistry: TenancyPortalPayloadLandRegistry;
 }
 
 /** Rumusan Pengiraan · placeholder block. */
@@ -629,6 +683,63 @@ function mapBahagianC(
   const premisesAreaIsZeroFallback =
     areaIsZero && property?.premisesAreaIsZeroFallback === true;
 
+  // ── Land-registry sub-block ─────────────────────────────────
+  // Every required field must be present and valid for `captured`
+  // to be true. `pds_kegunaan` is optional and never enters the
+  // captured-decision. Portal-field-key strings are stable literals
+  // typed as TS string literals so the payload-shape consumer can
+  // rely on them at compile time.
+  const lr = property?.landRegistry;
+  const luasIsValidNumber =
+    typeof lr?.luas === "number" && Number.isFinite(lr.luas) && lr.luas > 0;
+  const luasUnitCode = lr?.luasUnit ?? null;
+  const luasUnitPortalCode = luasUnitCode
+    ? TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES[luasUnitCode]
+    : null;
+  const luasUnitLabel = luasUnitCode
+    ? TENANCY_PORTAL_LAND_AREA_UNIT_LABELS[luasUnitCode]
+    : null;
+  const lrCaptured =
+    NON_EMPTY(lr?.milikPenuh) &&
+    NON_EMPTY(lr?.lot) &&
+    NON_EMPTY(lr?.mukim) &&
+    NON_EMPTY(lr?.daerah) &&
+    luasIsValidNumber &&
+    luasUnitCode !== null;
+  const landRegistryPayload: TenancyPortalPayloadBahagianC["landRegistry"] = {
+    captured: lrCaptured,
+    milikPenuh: {
+      portalFieldKey: "pds_mp",
+      value: NON_EMPTY(lr?.milikPenuh) ? lr?.milikPenuh ?? null : null,
+    },
+    lot: {
+      portalFieldKey: "pds_lot",
+      value: NON_EMPTY(lr?.lot) ? lr?.lot ?? null : null,
+    },
+    mukim: {
+      portalFieldKey: "pds_mukim",
+      value: NON_EMPTY(lr?.mukim) ? lr?.mukim ?? null : null,
+    },
+    daerah: {
+      portalFieldKey: "pds_daerah",
+      value: NON_EMPTY(lr?.daerah) ? lr?.daerah ?? null : null,
+    },
+    luas: {
+      portalFieldKey: "pds_luas",
+      value: luasIsValidNumber ? lr?.luas ?? null : null,
+    },
+    luasUnit: {
+      portalFieldKey: "pds_luasunit",
+      unitCode: luasUnitCode,
+      portalCode: luasUnitPortalCode,
+      label: luasUnitLabel,
+    },
+    kegunaan: {
+      portalFieldKey: "pds_kegunaan",
+      value: NON_EMPTY(lr?.kegunaan) ? lr?.kegunaan ?? null : null,
+    },
+  };
+
   return {
     addressLine1: property?.addressLine1 ?? null,
     addressLine2: NON_EMPTY(property?.addressLine2)
@@ -653,6 +764,7 @@ function mapBahagianC(
         ? property.premisesAreaSqm
         : null,
     premisesAreaIsZeroFallback,
+    landRegistry: landRegistryPayload,
   };
 }
 

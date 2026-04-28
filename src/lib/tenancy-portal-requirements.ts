@@ -43,9 +43,22 @@ import type {
   TenancyPortalFurnishedStatus,
   TenancyPortalInstrumentName,
   TenancyPortalInstrumentNameCode,
+  TenancyPortalLandAreaUnit,
+  TenancyPortalLandRegistry,
   TenancyPortalParty,
   TenancyPortalPropertyType,
 } from "./stamping-types";
+import { TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES } from "./stamping-types";
+
+/**
+ * Allowed values for the Bahagian C land-area unit (`pds_luasunit`).
+ * Re-exported as a Set so the validator and the readiness evaluator
+ * agree on the same value space without duplicating the keys.
+ */
+export const ALLOWED_LAND_AREA_UNITS: ReadonlySet<TenancyPortalLandAreaUnit> =
+  new Set(
+    Object.keys(TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES) as TenancyPortalLandAreaUnit[]
+  );
 
 /**
  * Pds_suratcara option table — the authoritative list of accepted
@@ -623,6 +636,115 @@ export function evaluateTenancyPortalReadiness(
           : undefined,
   });
 
+  // ── Bahagian C · Land-registry sub-block ─────────────────────
+  // Added in Milestone A1 (2026-04-29) after the ε-3 field-mapping
+  // run proved these portal fields are required at Hantar gate. We
+  // only mark the per-field rows as `missing` when the operator has
+  // started capturing a property block — a brand-new empty job is
+  // already blocked at the property-type / address rows above, so
+  // doubling up the readiness rows for an empty property would only
+  // add noise.
+  const landRegistry = property?.landRegistry;
+  const lrPresent = property !== undefined;
+  const lrField = (
+    fieldKey: string,
+    label: string,
+    state: TenancyPortalReadinessState,
+    currentValue: string | null,
+    portalMeaning: string,
+    notes?: string
+  ): void => {
+    fields.push({
+      fieldKey,
+      label,
+      section: "bahagian_c",
+      state,
+      currentValue,
+      portalMeaning,
+      notes,
+    });
+  };
+  if (lrPresent) {
+    // pds_mp / Milik Penuh
+    lrField(
+      "property.landRegistry.milikPenuh",
+      "Milik Penuh (Bahagian C · pds_mp)",
+      NON_EMPTY(landRegistry?.milikPenuh) ? "ready" : "missing",
+      NON_EMPTY(landRegistry?.milikPenuh) ? landRegistry?.milikPenuh ?? null : null,
+      "pds_mp · Milik Penuh"
+    );
+    // pds_lot
+    lrField(
+      "property.landRegistry.lot",
+      "Lot number (Bahagian C · pds_lot)",
+      NON_EMPTY(landRegistry?.lot) ? "ready" : "missing",
+      NON_EMPTY(landRegistry?.lot) ? landRegistry?.lot ?? null : null,
+      "pds_lot · No. Lot"
+    );
+    // pds_mukim
+    lrField(
+      "property.landRegistry.mukim",
+      "Mukim (Bahagian C · pds_mukim)",
+      NON_EMPTY(landRegistry?.mukim) ? "ready" : "missing",
+      NON_EMPTY(landRegistry?.mukim) ? landRegistry?.mukim ?? null : null,
+      "pds_mukim · Mukim"
+    );
+    // pds_daerah
+    lrField(
+      "property.landRegistry.daerah",
+      "Daerah (Bahagian C · pds_daerah)",
+      NON_EMPTY(landRegistry?.daerah) ? "ready" : "missing",
+      NON_EMPTY(landRegistry?.daerah) ? landRegistry?.daerah ?? null : null,
+      "pds_daerah · Daerah"
+    );
+    // pds_luas — must be a positive finite number; distinct from
+    // premisesAreaSqm above.
+    const luasValid =
+      typeof landRegistry?.luas === "number" &&
+      Number.isFinite(landRegistry.luas) &&
+      landRegistry.luas > 0;
+    lrField(
+      "property.landRegistry.luas",
+      "Land area (Bahagian C · pds_luas)",
+      luasValid ? "ready" : "missing",
+      typeof landRegistry?.luas === "number" ? String(landRegistry.luas) : null,
+      "pds_luas · Luas Tanah",
+      luasValid
+        ? "Distinct from Premises area (Luas Premis). Land-title value, not built-up area."
+        : "Required. Positive numeric value of land area on the title. Distinct from premises area."
+    );
+    // pds_luasunit — must be one of the four observed portal codes
+    const luasUnitValid =
+      typeof landRegistry?.luasUnit === "string" &&
+      ALLOWED_LAND_AREA_UNITS.has(landRegistry.luasUnit);
+    lrField(
+      "property.landRegistry.luasUnit",
+      "Land-area unit (Bahagian C · pds_luasunit)",
+      luasUnitValid ? "ready" : "missing",
+      typeof landRegistry?.luasUnit === "string" ? landRegistry.luasUnit : null,
+      "pds_luasunit · Unit Luas",
+      luasUnitValid
+        ? undefined
+        : "Required. Pick one of: Ekar / Hektar / Kps / Mps."
+    );
+    // pds_kegunaan — optional. Surfaced as informational so the
+    // operator can see whether they captured a value, but does NOT
+    // contribute to overall readiness.
+    fields.push({
+      fieldKey: "property.landRegistry.kegunaan",
+      label: "Property usage (Bahagian C · pds_kegunaan, optional)",
+      section: "bahagian_c",
+      state: "ready",
+      currentValue: NON_EMPTY(landRegistry?.kegunaan)
+        ? landRegistry?.kegunaan ?? null
+        : null,
+      portalMeaning: "pds_kegunaan · Kegunaan",
+      notes: NON_EMPTY(landRegistry?.kegunaan)
+        ? undefined
+        : "Optional in this milestone. Capture if the title document specifies a usage.",
+    });
+  }
+
   // ── Lampiran — source PDF presence ────────────────────────────
   fields.push({
     fieldKey: "lampiran.sourcePdf",
@@ -1001,6 +1123,97 @@ export function validateTenancyPortalDetailsInput(
     if (rp.premisesAreaIsZeroFallback === true) {
       value.property.premisesAreaIsZeroFallback = true;
     }
+
+    // Optional Bahagian C land-registry sub-block.
+    //
+    // Partial-save semantics (post-A1-review patch): each field is
+    // accepted independently. Missing or blank values are silently
+    // omitted from the persisted shape; *malformed* values (wrong
+    // type, negative number, unknown enum code) are rejected with a
+    // specific error so the operator can fix them. The completeness
+    // check belongs to the readiness gate, not the validator —
+    // partial captures must persist so they survive page reload.
+    if (rp.landRegistry !== undefined && rp.landRegistry !== null) {
+      if (typeof rp.landRegistry !== "object") {
+        return {
+          ok: false,
+          error: "property.landRegistry must be an object.",
+        };
+      }
+      const rlr = rp.landRegistry as Record<string, unknown>;
+      const lr: TenancyPortalLandRegistry = {};
+
+      // Text fields — each independently optional. Reject only when
+      // a value is supplied as a non-string (programmer / API misuse).
+      for (const k of [
+        "milikPenuh",
+        "lot",
+        "mukim",
+        "daerah",
+      ] as const) {
+        const v = rlr[k];
+        if (v === undefined || v === null) continue;
+        if (typeof v !== "string") {
+          return {
+            ok: false,
+            error: `property.landRegistry.${k} must be a string when supplied.`,
+          };
+        }
+        const trimmed = v.trim();
+        if (trimmed !== "") lr[k] = trimmed;
+      }
+
+      // luas — optional. When present must be a positive finite
+      // number. We reject negatives / NaN / Infinity so the operator
+      // sees a clear error instead of silent value drift.
+      if (rlr.luas !== undefined && rlr.luas !== null) {
+        if (
+          typeof rlr.luas !== "number" ||
+          !Number.isFinite(rlr.luas) ||
+          rlr.luas <= 0
+        ) {
+          return {
+            ok: false,
+            error:
+              "property.landRegistry.luas must be a positive finite number when supplied.",
+          };
+        }
+        lr.luas = rlr.luas;
+      }
+
+      // luasUnit — optional. When present must be one of the four
+      // observed portal codes.
+      if (rlr.luasUnit !== undefined && rlr.luasUnit !== null) {
+        if (
+          typeof rlr.luasUnit !== "string" ||
+          !ALLOWED_LAND_AREA_UNITS.has(
+            rlr.luasUnit as TenancyPortalLandAreaUnit
+          )
+        ) {
+          return {
+            ok: false,
+            error:
+              "property.landRegistry.luasUnit must be one of: " +
+              Array.from(ALLOWED_LAND_AREA_UNITS).join(", ") +
+              " when supplied.",
+          };
+        }
+        lr.luasUnit = rlr.luasUnit as TenancyPortalLandAreaUnit;
+      }
+
+      // kegunaan — always optional. Trim and only persist when a real
+      // value is supplied.
+      if (typeof rlr.kegunaan === "string" && rlr.kegunaan.trim()) {
+        lr.kegunaan = rlr.kegunaan.trim();
+      }
+
+      // Persist only when at least one field was successfully
+      // captured. An empty sub-block adds noise without value.
+      if (Object.keys(lr).length > 0) {
+        value.property.landRegistry = lr;
+      }
+    }
+
     if (typeof rp.operatorNote === "string" && rp.operatorNote.trim()) {
       value.property.operatorNote = rp.operatorNote.trim();
     }

@@ -36,6 +36,7 @@ import type {
   TenancyPortalParty,
   TenancyPortalProperty,
 } from "./stamping-types";
+import { ALLOWED_LAND_AREA_UNITS } from "./tenancy-portal-requirements";
 import { evaluateTenancyPortalReadiness } from "./tenancy-portal-requirements";
 import {
   compileTenancyPortalPayload,
@@ -513,51 +514,85 @@ export function evaluateTenancyPortalFieldMappingGaps(
     });
   }
 
-  // ── B) Bahagian C land-registry fields not modelled ─────────
-  // The WeStamp `TenancyPortalProperty` shape has no slot for any of
-  // pds_mp / pds_lot / pds_mukim / pds_daerah / pds_luas / pds_luasunit.
-  // Until those are added to the data model these are universal
-  // safety blockers. We surface them only when the operator has
-  // started capturing property data (so a brand-new empty job is not
-  // flooded with land-registry blockers before the operator has
-  // entered an address).
+  // ── B) Bahagian C land-registry fields ──────────────────────
+  // Milestone A1 (2026-04-29) added the land-registry sub-block to
+  // the data model and operator UI. The Category B blockers are now
+  // per-field: each fires only when the corresponding field is
+  // missing or invalid, and is lifted as soon as the operator
+  // captures a valid value. `pds_kegunaan` is optional per scope and
+  // never blocks readiness.
+  //
+  // The blockers still fire whenever a `property` block has been
+  // started but `landRegistry` (or specific sub-fields) is missing —
+  // a brand-new empty job is already blocked at the property-type /
+  // address rows, so doubling up the land-registry blockers on an
+  // empty property would only add noise.
   if (tpd?.property) {
-    gaps.push({
-      category: "land_registry_not_modelled",
-      code: "pds_mp_milik_penuh_not_modelled",
-      reason:
-        'Bahagian C field pds_mp ("Milik Penuh") is required by the portal and is not modelled by WeStamp. The data model has no field for it yet.',
-    });
-    gaps.push({
-      category: "land_registry_not_modelled",
-      code: "pds_lot_not_modelled",
-      reason:
-        'Bahagian C field pds_lot ("No. Lot") is required by the portal and is not modelled by WeStamp.',
-    });
-    gaps.push({
-      category: "land_registry_not_modelled",
-      code: "pds_mukim_not_modelled",
-      reason:
-        'Bahagian C field pds_mukim ("Mukim") is required by the portal and is not modelled by WeStamp.',
-    });
-    gaps.push({
-      category: "land_registry_not_modelled",
-      code: "pds_daerah_not_modelled",
-      reason:
-        'Bahagian C field pds_daerah ("Daerah") is required by the portal and is not modelled by WeStamp.',
-    });
-    gaps.push({
-      category: "land_registry_not_modelled",
-      code: "pds_luas_not_modelled",
-      reason:
-        'Bahagian C field pds_luas ("Luas Tanah") is required by the portal and is not modelled by WeStamp. WeStamp\'s premisesAreaSqm represents built-up area, not land area, so it cannot be substituted.',
-    });
-    gaps.push({
-      category: "land_registry_not_modelled",
-      code: "pds_luasunit_not_modelled",
-      reason:
-        'Bahagian C field pds_luasunit ("Unit Luas") — a 5-option dropdown (Ekar / Hektar / Kps / Mps / placeholder) — is not modelled by WeStamp and has no default safe to assume.',
-    });
+    const lr = tpd.property.landRegistry;
+    const isBlankString = (v: string | undefined): boolean =>
+      typeof v !== "string" || v.trim().length === 0;
+    const milikPenuhMissing = !lr || isBlankString(lr.milikPenuh);
+    const lotMissing = !lr || isBlankString(lr.lot);
+    const mukimMissing = !lr || isBlankString(lr.mukim);
+    const daerahMissing = !lr || isBlankString(lr.daerah);
+    const luasMissing =
+      !lr ||
+      typeof lr.luas !== "number" ||
+      !Number.isFinite(lr.luas) ||
+      lr.luas <= 0;
+    const luasUnitMissing =
+      !lr ||
+      typeof lr.luasUnit !== "string" ||
+      !ALLOWED_LAND_AREA_UNITS.has(lr.luasUnit);
+
+    if (milikPenuhMissing) {
+      gaps.push({
+        category: "land_registry_not_modelled",
+        code: "pds_mp_milik_penuh_not_modelled",
+        reason:
+          'Bahagian C field pds_mp ("Milik Penuh") is required by the portal and not yet captured on this job.',
+      });
+    }
+    if (lotMissing) {
+      gaps.push({
+        category: "land_registry_not_modelled",
+        code: "pds_lot_not_modelled",
+        reason:
+          'Bahagian C field pds_lot ("No. Lot") is required by the portal and not yet captured on this job.',
+      });
+    }
+    if (mukimMissing) {
+      gaps.push({
+        category: "land_registry_not_modelled",
+        code: "pds_mukim_not_modelled",
+        reason:
+          'Bahagian C field pds_mukim ("Mukim") is required by the portal and not yet captured on this job.',
+      });
+    }
+    if (daerahMissing) {
+      gaps.push({
+        category: "land_registry_not_modelled",
+        code: "pds_daerah_not_modelled",
+        reason:
+          'Bahagian C field pds_daerah ("Daerah") is required by the portal and not yet captured on this job.',
+      });
+    }
+    if (luasMissing) {
+      gaps.push({
+        category: "land_registry_not_modelled",
+        code: "pds_luas_not_modelled",
+        reason:
+          'Bahagian C field pds_luas ("Luas Tanah") is required by the portal and not yet captured (must be a positive numeric land-title area). Distinct from premisesAreaSqm (built-up area).',
+      });
+    }
+    if (luasUnitMissing) {
+      gaps.push({
+        category: "land_registry_not_modelled",
+        code: "pds_luasunit_not_modelled",
+        reason:
+          'Bahagian C field pds_luasunit ("Unit Luas") is required by the portal and not yet captured. Must be one of: ekar, hektar, kps, mps.',
+      });
+    }
   }
 
   // ── C) Portal enum mismatch risks ───────────────────────────

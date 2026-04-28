@@ -859,6 +859,157 @@ export type TenancyPortalFurnishedStatus =
   | "unfurnished";
 
 /**
+ * Bahagian C · land-area unit (`pds_luasunit`).
+ *
+ * Observed during the 2026-04-28 ε-3 supervised field-mapping run
+ * (see `docs/2026-04-28-tenancy-portal-field-mapping.md` §4.3). The
+ * portal exposes a 5-option `<select>` with values 1–4 (option 0 is
+ * the placeholder). Each WeStamp enum value is a stable internal
+ * code; the portal numeric code lives in
+ * `TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES` so future automation
+ * can map to the portal value without re-deriving from labels.
+ *
+ *   - "ekar"   → portal code "1" — Ekar
+ *   - "hektar" → portal code "2" — Hektar
+ *   - "kps"    → portal code "3" — Kaki Persegi (square feet)
+ *   - "mps"    → portal code "4" — Meter Persegi (square metres)
+ */
+export type TenancyPortalLandAreaUnit = "ekar" | "hektar" | "kps" | "mps";
+
+/**
+ * Mapping from WeStamp's stable enum to the portal `<option value>`
+ * code observed for `pds_luasunit`. Kept here so the data-model file
+ * is the single source of truth for portal value codes — the payload
+ * compiler reads from this table; it does not redeclare its own.
+ */
+export const TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES: Record<
+  TenancyPortalLandAreaUnit,
+  "1" | "2" | "3" | "4"
+> = {
+  ekar: "1",
+  hektar: "2",
+  kps: "3",
+  mps: "4",
+};
+
+/**
+ * Operator-facing labels for `pds_luasunit`. These mirror the portal
+ * labels observed during the field-mapping run — not translations
+ * invented by WeStamp. Surfaced in the operator UI dropdown.
+ */
+export const TENANCY_PORTAL_LAND_AREA_UNIT_LABELS: Record<
+  TenancyPortalLandAreaUnit,
+  string
+> = {
+  ekar: "Ekar",
+  hektar: "Hektar",
+  kps: "Kaki Persegi (Kps)",
+  mps: "Meter Persegi (Mps)",
+};
+
+/**
+ * Bahagian C · land-registry sub-block (`pds_mp` / `pds_lot` /
+ * `pds_mukim` / `pds_daerah` / `pds_luas` / `pds_luasunit` /
+ * `pds_kegunaan`).
+ *
+ * These are the seven Bahagian C land-registry portal fields the
+ * 2026-04-28 ε-3 field-mapping run proved required (six are
+ * structurally required; `pds_kegunaan` is optional). They are
+ * grouped under their own sub-object to:
+ *
+ *   1. Make it clear that they describe the *land registry* — these
+ *      are facts pulled from the title / suratcara / land-office
+ *      record, NOT facts about the physical premises (which are the
+ *      address-level / built-up-area fields above).
+ *   2. Keep `luas` (land area on title) physically separate from
+ *      `premisesAreaSqm` (built-up / interior area on the surat
+ *      cara). The two values are usually different and must NEVER be
+ *      auto-substituted; the portal treats them as different fields.
+ *
+ * Portal-field-name mapping is documented inline so the future
+ * payload compiler / automation step has a single source of truth.
+ */
+/**
+ * Persisted shape for the Bahagian C land-registry sub-block.
+ *
+ * **Partial-save semantics (Milestone A1, post-review patch):** every
+ * field is optional in *storage* even though six of the seven are
+ * required by the portal. This is deliberate. The operator panel must
+ * be able to persist whatever the operator has typed so far without
+ * rejecting the entire save just because one required portal field
+ * is still blank. Otherwise typed values would be lost on page reload
+ * — silent data loss that the field-mapping safety-correction
+ * milestone explicitly forbids.
+ *
+ * The completeness check (which portal fields are missing / invalid)
+ * lives in the readiness gate, NOT in this type. Readiness blockers
+ * keep firing until every required field is captured and valid; the
+ * payload compiler reports `captured: false` until then. So a partial
+ * save is safe: it persists, it shows up on reload, and the run
+ * remains "Not ready for supervised portal run" until the operator
+ * fills the remaining fields.
+ *
+ * The validator rejects MALFORMED values (e.g. `luas: -5`,
+ * `luasUnit: "square_miles"`) but accepts MISSING values (omits them
+ * from the persisted shape). This way the operator's mistakes are
+ * surfaced, but their absence-of-input is not.
+ */
+export interface TenancyPortalLandRegistry {
+  /**
+   * Portal field: `pds_mp` ("Milik Penuh"). Free string captured
+   * from the land-title document. The label `Milik Penuh` is the
+   * exact portal label observed during the field-mapping run; we
+   * deliberately do NOT reinterpret its legal meaning beyond that.
+   *
+   * Required by the portal. Optional in storage — see partial-save
+   * note on the interface.
+   */
+  milikPenuh?: string;
+  /**
+   * Portal field: `pds_lot` (lot number / lot reference). Free text.
+   * Required by the portal; optional in storage.
+   */
+  lot?: string;
+  /**
+   * Portal field: `pds_mukim` (mukim). Free text. Required by the
+   * portal; optional in storage.
+   */
+  mukim?: string;
+  /**
+   * Portal field: `pds_daerah` (district / daerah). Free text.
+   * Required by the portal; optional in storage.
+   */
+  daerah?: string;
+  /**
+   * Portal field: `pds_luas` (land area as recorded on the title).
+   *
+   * **IMPORTANT:** distinct from `TenancyPortalProperty.premisesAreaSqm`.
+   * `premisesAreaSqm` is the built-up / interior area; `luas` is the
+   * land-title area. WeStamp NEVER auto-fills one from the other.
+   *
+   * When present, must be a positive finite `number`. The unit is
+   * captured separately in `luasUnit`. The validator rejects 0,
+   * negative, or non-finite values; absence is allowed.
+   */
+  luas?: number;
+  /**
+   * Portal field: `pds_luasunit` (unit selector for `luas`).
+   * Maps to portal codes 1–4 — see
+   * `TENANCY_PORTAL_LAND_AREA_UNIT_PORTAL_CODES`. Required by the
+   * portal; optional in storage.
+   */
+  luasUnit?: TenancyPortalLandAreaUnit;
+  /**
+   * Portal field: `pds_kegunaan` (property usage description).
+   *
+   * Always optional. Field-mapping run did NOT prove this is required
+   * at Hantar gate; treat as optional unless future portal evidence
+   * proves otherwise.
+   */
+  kegunaan?: string;
+}
+
+/**
  * Bahagian C — Property details. Captures the address-level fields
  * proven necessary by the Apr 2026 gate-chain walk plus the property-
  * type / building-type / furnishing fields needed for sewa_pajakan.
@@ -885,10 +1036,22 @@ export interface TenancyPortalProperty {
    * value. If the tenancy agreement does not specify one, the operator
    * may enter `0` AND set `premisesAreaIsZeroFallback = true` to mark
    * this as an explicit fallback rather than a real zero.
+   *
+   * NOTE: This is the *built-up / interior* area. The land-title area
+   * lives in `landRegistry.luas` and is a strictly separate field.
    */
   premisesAreaSqm: number;
   /** Explicit operator/user-confirmed fallback flag — see field above. */
   premisesAreaIsZeroFallback?: boolean;
+  /**
+   * Bahagian C land-registry sub-block (`pds_mp` / `pds_lot` /
+   * `pds_mukim` / `pds_daerah` / `pds_luas` / `pds_luasunit` /
+   * `pds_kegunaan`). Optional at the persisted-shape level so legacy
+   * jobs remain valid; required by the readiness gate before the
+   * land-registry blockers can be lifted. See
+   * `TenancyPortalLandRegistry` for the per-field contract.
+   */
+  landRegistry?: TenancyPortalLandRegistry;
   /** Optional operator note about the property. */
   operatorNote?: string;
 }
