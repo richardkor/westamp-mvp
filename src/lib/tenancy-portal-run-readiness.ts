@@ -31,7 +31,11 @@
  *   supervised execution time.
  */
 
-import type { StampingJob } from "./stamping-types";
+import type {
+  StampingJob,
+  TenancyPortalParty,
+  TenancyPortalProperty,
+} from "./stamping-types";
 import { evaluateTenancyPortalReadiness } from "./tenancy-portal-requirements";
 import {
   compileTenancyPortalPayload,
@@ -44,6 +48,41 @@ import {
 } from "./tenancy-browser-instructions";
 
 // ─── Output types ───────────────────────────────────────────────────
+
+/**
+ * Field-mapping safety-blocker categories. Surfaced in the operator
+ * UI under a "Portal field mapping gaps discovered" heading so it is
+ * obvious that the verdict is `blocked` because of newly-discovered
+ * portal requirements that WeStamp's model / compiler does not yet
+ * support — distinct from the existing blocker categories (missing
+ * required-details, payload section blocked, instruction-draft
+ * section blocked).
+ *
+ * The categories mirror the four groups documented in
+ * `docs/2026-04-28-tenancy-portal-field-mapping.md` §4 and §7.
+ */
+export type TenancyPortalFieldMappingGapCategory =
+  /** pds_jenis values / rent-schedule shapes that need a multi-pass compiler. */
+  | "multi_pass_unsupported"
+  /** Bahagian C land-registry fields the WeStamp model has no slot for. */
+  | "land_registry_not_modelled"
+  /** Portal value-set mismatch (enum / dropdown) requiring explicit handling. */
+  | "portal_enum_mismatch"
+  /** Per-party gaps (citizenship-3way / NRIC sub-type / gender / SSM rep id). */
+  | "party_model_not_modelled";
+
+/** One safety-blocker entry. Always blocking in this milestone. */
+export interface TenancyPortalFieldMappingGap {
+  /** Stable category for grouping in the UI. */
+  category: TenancyPortalFieldMappingGapCategory;
+  /**
+   * Stable, machine-readable code (e.g. `pds_jenis_1104_unsupported`).
+   * Useful for tests and for telemetry; never localized.
+   */
+  code: string;
+  /** Operator-facing reason — concrete and actionable. */
+  reason: string;
+}
 
 /**
  * Two values. `ready_for_supervised_run` is the only verdict that
@@ -104,6 +143,19 @@ export interface TenancyPortalRunReadinessReport {
   finalSubmissionRequiresApproval: true;
   /** Standing authorization markers (always all `false`). */
   doesNotAuthorize: TenancyPortalRunReadinessAuthorization;
+  /**
+   * Field-mapping safety blockers (added by the 2026-04-28 supervised
+   * field-mapping correction milestone). Each entry is one specific
+   * portal requirement that WeStamp's current model / compiler does
+   * not yet handle correctly — see `docs/2026-04-28-tenancy-portal-
+   * field-mapping.md`. These reasons are also included in the
+   * top-level `blockingReasons` so existing UI rendering still picks
+   * them up.
+   *
+   * When this list is non-empty the verdict is ALWAYS `blocked`,
+   * regardless of any other layer being ready.
+   */
+  portalFieldMappingGaps: TenancyPortalFieldMappingGap[];
   /**
    * One-line operator-facing recommended next step. Examples:
    *   - "Capture Bahagian A landlord and tenant details."
@@ -224,6 +276,16 @@ export function evaluateTenancyPortalRunReadiness(
     );
   }
 
+  // ── Field-mapping safety blockers (2026-04-28 correction) ───
+  // Evaluated after the existing layers so the operator sees their
+  // already-familiar reason set first; gaps are appended below those
+  // and additionally surfaced via `portalFieldMappingGaps` for the
+  // operator UI's dedicated heading.
+  const portalFieldMappingGaps = evaluateTenancyPortalFieldMappingGaps(job);
+  for (const g of portalFieldMappingGaps) {
+    push(g.reason);
+  }
+
   // ── Decide the strict verdict ──────────────────────────────
   const everySectionReady = draft.sections.every(
     (s) => s.state === "ready" && s.automationSupport === "supported"
@@ -235,6 +297,7 @@ export function evaluateTenancyPortalRunReadiness(
     payload.unsupportedAutomationReasons.length === 0 &&
     everySectionReady &&
     sourcePdfReady &&
+    portalFieldMappingGaps.length === 0 &&
     blockingReasons.length === 0
       ? "ready_for_supervised_run"
       : "blocked";
@@ -266,7 +329,8 @@ export function evaluateTenancyPortalRunReadiness(
     payloadStatus,
     instructionDraftStatus,
     sourcePdfReady,
-    payload
+    payload,
+    portalFieldMappingGaps
   );
 
   return {
@@ -286,6 +350,7 @@ export function evaluateTenancyPortalRunReadiness(
       payment: false,
       certificateRetrieval: false,
     },
+    portalFieldMappingGaps,
     nextRecommendedAction,
   };
 }
@@ -302,10 +367,26 @@ function deriveNextRecommendedAction(
   payloadStatus: TenancyPortalRunReadinessLayerStatus,
   instructionDraftStatus: TenancyPortalRunReadinessLayerStatus,
   sourcePdfReady: boolean,
-  payload: TenancyPortalPayload
+  payload: TenancyPortalPayload,
+  portalFieldMappingGaps: TenancyPortalFieldMappingGap[]
 ): string {
   if (verdict === "ready_for_supervised_run") {
     return "Job is portal-data-ready. Schedule a supervised portal run. Final Hantar still requires explicit operator approval.";
+  }
+
+  // Field-mapping safety gaps take priority once the per-layer
+  // blockers have been resolved — they are structural model gaps
+  // that the operator cannot fix from this job alone; the data model
+  // and / or compiler need to be extended in a separate milestone.
+  // Mention them explicitly so the operator knows the recommended
+  // action is "do not run; escalate to engineering", not "capture
+  // more data".
+  if (portalFieldMappingGaps.length > 0) {
+    const cats = new Set(portalFieldMappingGaps.map((g) => g.category));
+    if (cats.has("multi_pass_unsupported")) {
+      return "This job's pds_jenis / rent-schedule shape needs a multi-pass compiler. Do not run live until the multi-pass milestone lands.";
+    }
+    return "Portal field-mapping gaps discovered. Do not run live until the data model and compiler are updated to cover the missing portal fields listed below.";
   }
 
   // Source PDF missing — without the instrument, no Lampiran upload
@@ -363,3 +444,312 @@ function deriveNextRecommendedAction(
   }
   return "Resolve the blockers listed below.";
 }
+
+// ─── Field-mapping safety blockers (2026-04-28 correction) ─────────
+
+/**
+ * Stable explanation suffix used at the head of every gap reason.
+ * Centralised so the operator UI shows a single, consistent narrative
+ * across all four gap categories.
+ */
+const FIELD_MAPPING_GAP_HEADER =
+  "Portal field-mapping run found additional e-Duti Setem fields not yet captured by WeStamp.";
+
+/**
+ * Evaluate the four safety-blocker categories against a job. Pure;
+ * called by `evaluateTenancyPortalRunReadiness`. Each returned entry
+ * is treated as a hard blocker — there are no warnings in this
+ * milestone (matches the strict scope of the 2026-04-28 correction).
+ *
+ * The function deliberately does NOT inspect WeStamp's existing
+ * required-details readiness — those are surfaced through the
+ * pre-existing layers. Its only job is to surface gaps the
+ * field-mapping run proved exist regardless of whether WeStamp's
+ * older model thinks the data is "ready".
+ *
+ * The function reads only from `job.tenancyPortalDetails`. We don't
+ * take the compiled payload as an input because the gap categories
+ * are about model shape (presence / absence of fields, value-set
+ * compatibility) and a payload re-derivation would not add
+ * information.
+ */
+export function evaluateTenancyPortalFieldMappingGaps(
+  job: TenancyPortalRunReadinessJobInput
+): TenancyPortalFieldMappingGap[] {
+  const gaps: TenancyPortalFieldMappingGap[] = [];
+  const tpd = job.tenancyPortalDetails;
+
+  // ── A) Multi-pass unsupported conditions ────────────────────
+  // Variable-rent (1104) and amendment (1105) require server
+  // round-trips that reveal additional conditional fields. The
+  // committed instruction-draft compiler is single-pass and cannot
+  // safely drive either path. Multiple rent periods imply the same
+  // multi-pass requirement even when the operator has not picked
+  // pds_jenis = 1104 explicitly (e.g. someone selected fixed-rent
+  // but entered two periods).
+  const descType = tpd?.instrument?.portalDescriptionType ?? null;
+  if (descType === "variable_rent_during_tenancy") {
+    gaps.push({
+      category: "multi_pass_unsupported",
+      code: "pds_jenis_1104_unsupported",
+      reason:
+        'pds_jenis = "Bayaran Sewa Berbeza Dalam Tempoh Penyewaan" (1104, variable rent) requires a multi-pass compiler. The portal does not reveal per-period fields client-side; reveal happens only after a server-side Simpan round-trip.',
+    });
+  }
+  if (descType === "amendment_to_original_tenancy") {
+    gaps.push({
+      category: "multi_pass_unsupported",
+      code: "pds_jenis_1105_unsupported",
+      reason:
+        'pds_jenis = "Terdapat Pindaan Ke Atas Perjanjian Sewa/Pajakan Yang Asal" (1105, amendment) requires a multi-pass compiler. The portal\'s par_id ("No Adjudikasi Surat Cara Sewa/Pajakan Asal") field stays hidden after dropdown change and only reveals server-side.',
+    });
+  }
+  const scheduleLength = tpd?.instrument?.rentSchedule?.length ?? 0;
+  if (scheduleLength > 1) {
+    gaps.push({
+      category: "multi_pass_unsupported",
+      code: "rent_schedule_multiple_periods",
+      reason: `Rent schedule has ${scheduleLength} periods. Multiple-period rent shapes require a multi-pass compiler that can re-inspect the portal for the per-period fields revealed only after Simpan Bahagian B.`,
+    });
+  }
+
+  // ── B) Bahagian C land-registry fields not modelled ─────────
+  // The WeStamp `TenancyPortalProperty` shape has no slot for any of
+  // pds_mp / pds_lot / pds_mukim / pds_daerah / pds_luas / pds_luasunit.
+  // Until those are added to the data model these are universal
+  // safety blockers. We surface them only when the operator has
+  // started capturing property data (so a brand-new empty job is not
+  // flooded with land-registry blockers before the operator has
+  // entered an address).
+  if (tpd?.property) {
+    gaps.push({
+      category: "land_registry_not_modelled",
+      code: "pds_mp_milik_penuh_not_modelled",
+      reason:
+        'Bahagian C field pds_mp ("Milik Penuh") is required by the portal and is not modelled by WeStamp. The data model has no field for it yet.',
+    });
+    gaps.push({
+      category: "land_registry_not_modelled",
+      code: "pds_lot_not_modelled",
+      reason:
+        'Bahagian C field pds_lot ("No. Lot") is required by the portal and is not modelled by WeStamp.',
+    });
+    gaps.push({
+      category: "land_registry_not_modelled",
+      code: "pds_mukim_not_modelled",
+      reason:
+        'Bahagian C field pds_mukim ("Mukim") is required by the portal and is not modelled by WeStamp.',
+    });
+    gaps.push({
+      category: "land_registry_not_modelled",
+      code: "pds_daerah_not_modelled",
+      reason:
+        'Bahagian C field pds_daerah ("Daerah") is required by the portal and is not modelled by WeStamp.',
+    });
+    gaps.push({
+      category: "land_registry_not_modelled",
+      code: "pds_luas_not_modelled",
+      reason:
+        'Bahagian C field pds_luas ("Luas Tanah") is required by the portal and is not modelled by WeStamp. WeStamp\'s premisesAreaSqm represents built-up area, not land area, so it cannot be substituted.',
+    });
+    gaps.push({
+      category: "land_registry_not_modelled",
+      code: "pds_luasunit_not_modelled",
+      reason:
+        'Bahagian C field pds_luasunit ("Unit Luas") — a 5-option dropdown (Ekar / Hektar / Kps / Mps / placeholder) — is not modelled by WeStamp and has no default safe to assume.',
+    });
+  }
+
+  // ── C) Portal enum mismatch risks ───────────────────────────
+  const property: TenancyPortalProperty | undefined = tpd?.property;
+
+  // pds_salinan: portal is a 21-option dropdown. WeStamp's
+  // duplicateCopies is a free non-negative integer. Block universally
+  // when an instrument is captured because WeStamp has no canonical
+  // mapping table to the portal's option set yet. Even values that
+  // happen to be in 0..20 still need the operator's explicit pick;
+  // the field-mapping run did not record the literal option labels.
+  if (tpd?.instrument) {
+    gaps.push({
+      category: "portal_enum_mismatch",
+      code: "pds_salinan_no_canonical_mapping",
+      reason:
+        'pds_salinan ("Salinan Pendua") is a 21-option portal dropdown, not a free integer. WeStamp\'s duplicateCopies is currently treated as an arbitrary integer — no canonical option-mapping table exists yet, so the operator-entered value cannot be safely cast to a portal selection.',
+    });
+  }
+
+  // pds_harta_state / pds_harta_country: free-string in WeStamp,
+  // dropdowns in the portal (17 / 279 options). Block when the
+  // property block exists.
+  if (property) {
+    if (property.state && property.state.trim().length > 0) {
+      gaps.push({
+        category: "portal_enum_mismatch",
+        code: "pds_harta_state_no_canonical_mapping",
+        reason: `pds_harta_state is a 17-option portal dropdown. WeStamp stores property state as the free string "${property.state}" — no canonical mapping table to portal codes exists yet.`,
+      });
+    }
+    if (property.country && property.country.trim().length > 0) {
+      gaps.push({
+        category: "portal_enum_mismatch",
+        code: "pds_harta_country_no_canonical_mapping",
+        reason: `pds_harta_country is a 279-option portal dropdown. WeStamp stores property country as the free string "${property.country}" — no canonical mapping table to portal codes exists yet.`,
+      });
+    }
+
+    // pds_harta_cat is per-property-type in the portal:
+    //   - kediaman      → 8 options
+    //   - perdagangan   → 4 options (rumah_kedai / ruang_perniagaan / ruang_pejabat / kedai_pejabat)
+    //   - perindustrian → 5 options (sesebuah / kembar / teres / bertingkat / banglo)
+    // WeStamp's TenancyPortalBuildingType enum is kediaman-style only
+    // and has no mapping for perdagangan / perindustrian categories.
+    if (
+      property.propertyType === "perdagangan" ||
+      property.propertyType === "perindustrian"
+    ) {
+      gaps.push({
+        category: "portal_enum_mismatch",
+        code: "pds_harta_cat_propertyType_unsupported",
+        reason: `Property type "${property.propertyType}" requires a per-property-type pds_harta_cat selection (e.g. Rumah Kedai / Ruang Perniagaan for Perdagangan; Sesebuah / Kembar / Teres / Bertingkat / Banglo for Perindustrian). WeStamp's TenancyPortalBuildingType enum is kediaman-only — no model coverage for these categories.`,
+      });
+    }
+
+    // Even on kediaman, certain WeStamp building-type values have no
+    // direct portal equivalent.
+    if (property.propertyType === "kediaman") {
+      const noPortalEquivalent: ReadonlyArray<{
+        value: string;
+        why: string;
+      }> = [
+        {
+          value: "studio",
+          why: 'Portal Kediaman dropdown has no "Studio" option. The closest portal options (Pangsapuri / Rumah Pangsa / Kondominium) all imply distinct unit types and cannot be auto-substituted.',
+        },
+        {
+          value: "lain_lain",
+          why: 'Portal Kediaman dropdown has no "Lain-lain" / "Other" option. Operator must pick one of the 8 fixed kediaman options; "lain_lain" cannot be mapped.',
+        },
+        {
+          value: "apartment",
+          why: 'Portal Kediaman dropdown has no "Apartment" option. The closest match is "Pangsapuri" but the mapping is ambiguous — selecting it without operator confirmation risks an incorrect portal value.',
+        },
+      ];
+      for (const { value, why } of noPortalEquivalent) {
+        if (property.buildingType === value) {
+          gaps.push({
+            category: "portal_enum_mismatch",
+            code: `building_type_${value}_no_portal_equivalent`,
+            reason: `Building type "${value}" is not supported by the portal Kediaman pds_harta_cat dropdown. ${why}`,
+          });
+        }
+      }
+    }
+
+    // Furnished status: portal exposes only fully_furnished /
+    // unfurnished. partially_furnished has no portal equivalent.
+    if (property.furnishedStatus === "partially_furnished") {
+      gaps.push({
+        category: "portal_enum_mismatch",
+        code: "furnished_status_partially_furnished_unsupported",
+        reason:
+          'Furnished status "partially_furnished" is not supported by the portal — pds_harta_perabot exposes only "Dengan Perabot" (fully_furnished) and "Tanpa Perabot" (unfurnished). There is no half-way option to map to.',
+      });
+    }
+  }
+
+  // ── D) Per-party model gaps ─────────────────────────────────
+  // The portal requires gender, 3-way citizenship (citizen / non-
+  // citizen / PR), NRIC sub-type, and — for SSM-registered companies
+  // — full representative-person identity capture. WeStamp's data
+  // model has none of these fields. Surface as per-party blockers so
+  // the operator can see exactly which party rows are unsupported.
+  const parties: TenancyPortalParty[] = tpd?.parties ?? [];
+  parties.forEach((p, idx) => {
+    const partyLabel = `${p.role === "landlord" ? "Landlord" : "Tenant"} #${idx + 1}${
+      p.nameAsPerInstrument ? ` (${p.nameAsPerInstrument})` : ""
+    }`;
+
+    // Gender is required by every party row in the portal.
+    gaps.push({
+      category: "party_model_not_modelled",
+      code: `party_${idx}_gender_not_modelled`,
+      reason: `${partyLabel}: portal field USER_SEX (gender) is required and not modelled by WeStamp.`,
+    });
+
+    // 3-way citizenship (PR is the missing third value).
+    gaps.push({
+      category: "party_model_not_modelled",
+      code: `party_${idx}_citizenship_3way_not_modelled`,
+      reason: `${partyLabel}: portal warga is a 3-option enum (Citizen / Non-citizen / PR). WeStamp's nationality is 2-way — Permanent Resident is unmodelled.`,
+    });
+
+    // NRIC sub-type (4-way) — only meaningful for individuals using
+    // an NRIC; passport and company_registration paths do not need
+    // this field. Still surface as not-modelled since the portal
+    // requires it for the NRIC path.
+    if (p.type === "individual" && p.identityType === "nric") {
+      gaps.push({
+        category: "party_model_not_modelled",
+        code: `party_${idx}_nric_subtype_not_modelled`,
+        reason: `${partyLabel}: portal EPD_NOKP_TYPE is a 4-option NRIC sub-type (IC_BARU / IC_LAMA / IC_POLIS / IC_ARMY). WeStamp captures a single NRIC string with no sub-type.`,
+      });
+    }
+
+    // SSM company representative-person identity capture is required
+    // by the portal SSM modal. WeStamp does not model an owner /
+    // representative on company parties at all.
+    if (p.type === "company_ssm") {
+      gaps.push({
+        category: "party_model_not_modelled",
+        code: `party_${idx}_ssm_rep_identity_not_modelled`,
+        reason: `${partyLabel}: SSM-registered company. Portal SSM Tambah modal requires full representative-person identity (owner_name, citizenship, IC type, IC/passport, gender). WeStamp has no representative-identity capture for company parties.`,
+      });
+    }
+  });
+
+  return gaps;
+}
+
+/**
+ * Group an array of field-mapping gaps by category. Convenience
+ * helper for the operator UI; the order of categories is stable so
+ * the panel renders the same section ordering every time.
+ */
+export function groupTenancyPortalFieldMappingGaps(
+  gaps: TenancyPortalFieldMappingGap[]
+): { category: TenancyPortalFieldMappingGapCategory; gaps: TenancyPortalFieldMappingGap[] }[] {
+  const order: TenancyPortalFieldMappingGapCategory[] = [
+    "multi_pass_unsupported",
+    "land_registry_not_modelled",
+    "portal_enum_mismatch",
+    "party_model_not_modelled",
+  ];
+  return order
+    .map((category) => ({
+      category,
+      gaps: gaps.filter((g) => g.category === category),
+    }))
+    .filter((g) => g.gaps.length > 0);
+}
+
+/**
+ * Stable header text the operator UI uses verbatim. Exported so the
+ * panel does not duplicate the wording.
+ */
+export const TENANCY_PORTAL_FIELD_MAPPING_GAPS_HEADER =
+  "Portal field mapping gaps discovered";
+
+/**
+ * Stable explanation paragraph the operator UI shows under the
+ * gaps-discovered heading. Approved wording from the 2026-04-28
+ * safety-correction milestone.
+ */
+export const TENANCY_PORTAL_FIELD_MAPPING_GAPS_EXPLANATION =
+  "The tenancy portal field-mapping run found additional e-Duti Setem fields that are not yet captured by WeStamp. This job must not proceed to live portal execution until the model and compiler are updated.";
+
+/**
+ * Stable header-narrative line. Exported for telemetry / tests so a
+ * change to the text is easy to grep.
+ */
+export const TENANCY_PORTAL_FIELD_MAPPING_GAP_HEADER =
+  FIELD_MAPPING_GAP_HEADER;

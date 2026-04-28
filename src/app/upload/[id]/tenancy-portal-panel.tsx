@@ -41,6 +41,10 @@ import {
 } from "../../../lib/tenancy-browser-instructions";
 import {
   evaluateTenancyPortalRunReadiness,
+  groupTenancyPortalFieldMappingGaps,
+  TENANCY_PORTAL_FIELD_MAPPING_GAPS_EXPLANATION,
+  TENANCY_PORTAL_FIELD_MAPPING_GAPS_HEADER,
+  type TenancyPortalFieldMappingGapCategory,
   type TenancyPortalRunReadinessReport,
 } from "../../../lib/tenancy-portal-run-readiness";
 import type {
@@ -519,13 +523,17 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
     >
       <header className="tpr-panel-header">
         <h2>Tenancy Portal Required Details</h2>
+        {/* Narrower badge: reflects only the legacy required-details
+            layer (parties / instrument / property fields). It does
+            NOT speak to the field-mapping safety gaps surfaced by
+            the consolidated Portal Run Readiness section above. */}
         <span
           className={`tpr-overall tpr-overall-${liveReport.overall}`}
           title={`evaluated ${liveReport.evaluatedAt}`}
         >
           {liveReport.overall === "ready"
-            ? "Portal data ready"
-            : "Portal data blocked"}
+            ? "Required-details captured"
+            : "Required-details blocked"}
         </span>
       </header>
       <p className="tpr-intro">
@@ -1314,12 +1322,17 @@ function PayloadPreview({ payload }: { payload: TenancyPortalPayload }) {
     >
       <header className="tpr-payload-header">
         <h3>Portal Payload Preview</h3>
+        {/* Narrower badge: speaks only to the structural shape of
+            the compiled payload — does NOT mean the run is safe to
+            execute. The consolidated Portal Run Readiness section
+            above is the only place a true "ready for supervised
+            portal run" verdict appears. */}
         <span
           className={`tpr-overall tpr-overall-${payload.overall}`}
           title={`generated ${payload.generatedAt}`}
         >
           {payload.overall === "ready"
-            ? "Payload ready for portal"
+            ? "Payload structurally ready"
             : "Payload blocked"}
         </span>
       </header>
@@ -1853,12 +1866,35 @@ function InstructionDraftPreview({
 
 // ─── Consolidated Portal Run Readiness summary ─────────────────────
 
+/**
+ * Operator-facing labels for the four field-mapping gap categories
+ * surfaced under "Portal field mapping gaps discovered". Stable
+ * labels — the codes themselves come from the readiness lib.
+ */
+const GAP_CATEGORY_LABELS: Record<
+  TenancyPortalFieldMappingGapCategory,
+  string
+> = {
+  multi_pass_unsupported: "Multi-pass not supported",
+  land_registry_not_modelled: "Bahagian C land-registry fields not modelled",
+  portal_enum_mismatch: "Portal enum / dropdown mismatch",
+  party_model_not_modelled: "Party model gaps (gender / PR / NRIC sub-type / SSM rep)",
+};
+
 function RunReadinessSummary({
   report,
 }: {
   report: TenancyPortalRunReadinessReport;
 }) {
   const isReady = report.verdict === "ready_for_supervised_run";
+  // Group the field-mapping gaps for the dedicated heading. When
+  // present, this list is the operator's primary triage surface —
+  // these are structural gaps that cannot be resolved by capturing
+  // more data on the current job; the data model / compiler must be
+  // extended in a separate milestone.
+  const groupedGaps = groupTenancyPortalFieldMappingGaps(
+    report.portalFieldMappingGaps
+  );
   return (
     <section
       className={`tpr-run-readiness tpr-run-readiness-${report.verdict}`}
@@ -1870,7 +1906,9 @@ function RunReadinessSummary({
           className={`tpr-overall tpr-overall-${isReady ? "ready" : "blocked"}`}
           title={`generated ${report.generatedAt}`}
         >
-          {isReady ? "Ready for supervised portal run" : "Blocked"}
+          {isReady
+            ? "Ready for supervised portal run"
+            : "Not ready for supervised portal run"}
         </span>
       </header>
 
@@ -1913,6 +1951,44 @@ function RunReadinessSummary({
           Irreversible steps: <strong>{report.irreversibleStepsCount}</strong>
         </span>
       </div>
+
+      {/* ── Portal field mapping gaps (2026-04-28 safety) ──────
+          These are STRUCTURAL gaps the operator cannot fix from the
+          job alone — they reflect newly discovered portal fields the
+          WeStamp model / compiler does not yet handle. Surfaced
+          ABOVE the legacy "Top blocking reasons" list so operators
+          read the structural blocker first. */}
+      {groupedGaps.length > 0 && (
+        <div className="tpr-run-readiness-gaps" role="alert">
+          <p className="tpr-run-readiness-gaps-title">
+            <strong>{TENANCY_PORTAL_FIELD_MAPPING_GAPS_HEADER}</strong>
+          </p>
+          <p className="tpr-run-readiness-gaps-explanation">
+            {TENANCY_PORTAL_FIELD_MAPPING_GAPS_EXPLANATION}
+          </p>
+          {groupedGaps.map((g) => (
+            <div key={g.category} className="tpr-run-readiness-gap-group">
+              <p className="tpr-run-readiness-gap-group-title">
+                {GAP_CATEGORY_LABELS[g.category]}
+                {" · "}
+                <span className="tpr-run-readiness-gap-group-count">
+                  {g.gaps.length} blocker{g.gaps.length === 1 ? "" : "s"}
+                </span>
+              </p>
+              <ul className="tpr-run-readiness-gap-group-list">
+                {g.gaps.map((gap) => (
+                  <li key={gap.code}>
+                    <code className="tpr-run-readiness-gap-code">
+                      {gap.code}
+                    </code>{" "}
+                    — {gap.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!isReady && report.blockingReasons.length > 0 && (
         <div className="tpr-run-readiness-blockers">
