@@ -2122,6 +2122,47 @@ function PayloadPreview({ payload }: { payload: TenancyPortalPayload }) {
               </li>
             </ul>
           </div>
+
+          {/* ── Portal Enum Mapping (Milestone A3) ────────────
+              Surfaces the canonical-mapping status for the five
+              Sewa/Pajakan portal enum / canonical fields. Each row
+              shows: portal field name, WeStamp value, portal label
+              (when known), portal code (when known), status, and
+              reason. Renders status counts only — no raw href, no
+              numeric IDs. */}
+          <div className="tpr-payload-portal-enum-mapping">
+            <p className="tpr-payload-line">
+              <strong>Portal Enum Mapping</strong>
+            </p>
+            <p className="tpr-payload-portal-enum-mapping-helper">
+              These mappings translate WeStamp values into the exact
+              e-Duti Setem dropdown values observed for the
+              Sewa/Pajakan portal. Unknown or ambiguous mappings
+              remain blocked.
+            </p>
+            <ul className="tpr-payload-portal-enum-mapping-list">
+              <PortalEnumMappingRow
+                label="Duplicate copies"
+                mapping={b.duplicateCopiesMapping}
+              />
+              <PortalEnumMappingRow
+                label="Property state"
+                mapping={c.stateMapping}
+              />
+              <PortalEnumMappingRow
+                label="Property country"
+                mapping={c.countryMapping}
+              />
+              <PortalEnumMappingRow
+                label="Property category / building type"
+                mapping={c.propertyCategoryMapping}
+              />
+              <PortalEnumMappingRow
+                label="Furnishing"
+                mapping={c.furnishedMapping}
+              />
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -2235,6 +2276,56 @@ function PayloadSectionHeader({
         {state === "ready" ? "Ready" : "Blocked"}
       </span>
     </div>
+  );
+}
+
+// ─── Portal Enum Mapping row (Milestone A3) ────────────────────────
+//
+// Renders one canonical-mapping status row in the operator preview.
+// Surfaces the portal field key, status, portal label (when known),
+// portal code (when known), and reason. Never logs or stores the
+// underlying value beyond what the operator already sees in the
+// Bahagian B/C blocks above.
+function PortalEnumMappingRow({
+  label,
+  mapping,
+}: {
+  label: string;
+  mapping: TenancyPortalPayload["bahagianB"]["duplicateCopiesMapping"];
+}) {
+  const statusLabel =
+    mapping.status === "mapped"
+      ? "Mapped"
+      : mapping.status === "unknown_code"
+        ? "Label known · code not yet captured"
+        : mapping.status === "unsupported"
+          ? "Unsupported"
+          : "Ambiguous";
+  return (
+    <li className="tpr-payload-portal-enum-mapping-row">
+      <strong>{label}</strong>{" "}
+      (<code>{mapping.portalFieldKey}</code>):{" "}
+      <span
+        className={`tpr-payload-mapping-status tpr-payload-mapping-status-${mapping.status}`}
+      >
+        {statusLabel}
+      </span>
+      {mapping.portalLabel ? (
+        <>
+          {" · portal label: "}
+          <strong>{mapping.portalLabel}</strong>
+        </>
+      ) : null}
+      {mapping.portalCode ? (
+        <>
+          {" · portal code: "}
+          <code>{mapping.portalCode}</code>
+        </>
+      ) : null}
+      {mapping.reason ? (
+        <p className="tpr-payload-mapping-reason">{mapping.reason}</p>
+      ) : null}
+    </li>
   );
 }
 

@@ -1470,3 +1470,277 @@ describe("Milestone A2 · Maklumat Am · validator partial-save", () => {
     });
   });
 });
+
+// ─── Milestone A3 · Portal enum / canonical mapping integration ────
+//
+// These tests prove the readiness gate + payload compiler use the
+// new canonical-mapping helpers (`tenancy-portal-canonical-maps.ts`)
+// correctly:
+//   - readiness blockers continue to fire while codes remain unknown
+//   - kediaman + studio / lain_lain / apartment still emit their
+//     legacy per-value blocker codes
+//   - perdagangan/perindustrian + any WeStamp value still emits
+//     pds_harta_cat_propertyType_unsupported
+//   - kediaman + a mappable WeStamp value emits the new
+//     pds_harta_cat_unknown_code blocker (label known, code unknown)
+//   - partially_furnished still emits its legacy blocker code
+//   - payload compiler emits per-field mapping summaries
+
+describe("Milestone A3 · readiness · canonical-mapping integration", () => {
+  test("pds_salinan blocker still fires for any duplicateCopies (codes not captured)", () => {
+    const job = makeJob({
+      instrument: {
+        instrumentDate: "2026-01-01",
+        duplicateCopies: 1,
+        portalDescriptionType:
+          "fixed_rent_during_tenancy" as TenancyPortalDescriptionType,
+        rentSchedule: [
+          { startDate: "2026-01-01", endDate: "2027-01-01", monthlyRent: 1000 },
+        ],
+      },
+    });
+    expect(gapCodes(job)).toContain("pds_salinan_no_canonical_mapping");
+  });
+
+  test("pds_salinan blocker fires for negative or non-integer duplicateCopies (unsupported)", () => {
+    const job = makeJob({
+      instrument: {
+        instrumentDate: "2026-01-01",
+        duplicateCopies: -3 as unknown as number,
+        portalDescriptionType:
+          "fixed_rent_during_tenancy" as TenancyPortalDescriptionType,
+        rentSchedule: [
+          { startDate: "2026-01-01", endDate: "2027-01-01", monthlyRent: 1000 },
+        ],
+      },
+    });
+    expect(gapCodes(job)).toContain("pds_salinan_no_canonical_mapping");
+  });
+
+  test("pds_harta_state blocker fires for seeded states (codes unknown)", () => {
+    const job = makeJob({
+      property: propertyWithLandRegistry({}),
+    });
+    // Seeded state Kuala Lumpur — label known, code unknown → blocker fires.
+    expect(gapCodes(job)).toContain("pds_harta_state_no_canonical_mapping");
+  });
+
+  test("pds_harta_state blocker fires for unseeded states (unsupported)", () => {
+    // The propertyWithLandRegistry helper uses Kuala Lumpur, which IS
+    // seeded. To test unseeded we override.
+    const property = propertyWithLandRegistry({});
+    property.state = "Atlantis";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain("pds_harta_state_no_canonical_mapping");
+  });
+
+  test("pds_harta_country blocker fires for Malaysia (label seeded, code unknown)", () => {
+    const job = makeJob({ property: propertyWithLandRegistry({}) });
+    expect(gapCodes(job)).toContain("pds_harta_country_no_canonical_mapping");
+  });
+
+  test("pds_harta_country blocker fires for unseeded country (unsupported)", () => {
+    const property = propertyWithLandRegistry({});
+    property.country = "Singapore";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain("pds_harta_country_no_canonical_mapping");
+  });
+
+  test("Kediaman + mappable building (kondominium) emits the new pds_harta_cat_unknown_code blocker", () => {
+    // Default propertyWithLandRegistry uses kediaman + kondominium.
+    const job = makeJob({ property: propertyWithLandRegistry({}) });
+    expect(gapCodes(job)).toContain("pds_harta_cat_unknown_code");
+  });
+
+  test("Kediaman + studio still emits the legacy building_type_studio_no_portal_equivalent blocker", () => {
+    const property = propertyWithLandRegistry({});
+    property.buildingType = "studio";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain(
+      "building_type_studio_no_portal_equivalent"
+    );
+  });
+
+  test("Kediaman + lain_lain still emits the legacy blocker", () => {
+    const property = propertyWithLandRegistry({});
+    property.buildingType = "lain_lain";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain(
+      "building_type_lain_lain_no_portal_equivalent"
+    );
+  });
+
+  test("Kediaman + apartment still emits the legacy blocker (ambiguous → block)", () => {
+    const property = propertyWithLandRegistry({});
+    property.buildingType = "apartment";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain(
+      "building_type_apartment_no_portal_equivalent"
+    );
+  });
+
+  test("Perdagangan + any WeStamp building emits pds_harta_cat_propertyType_unsupported", () => {
+    const property = propertyWithLandRegistry({});
+    property.propertyType = "perdagangan";
+    const job = makeJob({ property });
+    const codes = gapCodes(job);
+    expect(codes).toContain("pds_harta_cat_propertyType_unsupported");
+    // Cross-map prevention: NO Kediaman per-value blockers fire.
+    expect(codes).not.toContain("pds_harta_cat_unknown_code");
+  });
+
+  test("Perindustrian + any WeStamp building emits pds_harta_cat_propertyType_unsupported", () => {
+    const property = propertyWithLandRegistry({});
+    property.propertyType = "perindustrian";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain("pds_harta_cat_propertyType_unsupported");
+  });
+
+  test("Tanah Kosong + no buildingType is mapped — no harta_cat blocker", () => {
+    const property = propertyWithLandRegistry({});
+    property.propertyType = "tanah_kosong";
+    delete property.buildingType;
+    const job = makeJob({ property });
+    const codes = gapCodes(job);
+    expect(codes).not.toContain("pds_harta_cat_unknown_code");
+    expect(codes).not.toContain("pds_harta_cat_propertyType_unsupported");
+  });
+
+  test("furnished_status partially_furnished still emits the legacy blocker", () => {
+    const property = propertyWithLandRegistry({});
+    property.furnishedStatus = "partially_furnished";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain(
+      "furnished_status_partially_furnished_unsupported"
+    );
+  });
+
+  test("furnished_status fully_furnished emits pds_harta_perabot_unknown_code (label known, code unknown)", () => {
+    const property = propertyWithLandRegistry({});
+    property.furnishedStatus = "fully_furnished";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain("pds_harta_perabot_unknown_code");
+  });
+
+  test("furnished_status unfurnished emits pds_harta_perabot_unknown_code", () => {
+    const property = propertyWithLandRegistry({});
+    property.furnishedStatus = "unfurnished";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain("pds_harta_perabot_unknown_code");
+  });
+
+  test("Unrelated blockers remain untouched when canonical mappings are exercised", () => {
+    // Multi-pass and party-model blockers must still fire.
+    const job = makeJob({
+      instrument: {
+        instrumentDate: "2026-01-01",
+        duplicateCopies: 1,
+        portalDescriptionType:
+          "amendment_to_original_tenancy" as TenancyPortalDescriptionType,
+        rentSchedule: [
+          { startDate: "2026-01-01", endDate: "2027-01-01", monthlyRent: 1000 },
+        ],
+      },
+      property: propertyWithLandRegistry({}),
+    });
+    const codes = gapCodes(job);
+    expect(codes).toContain("pds_jenis_1105_unsupported");
+    expect(codes).toContain("party_0_gender_not_modelled");
+  });
+});
+
+describe("Milestone A3 · payload compiler · canonical mapping summaries", () => {
+  test("Payload BahagianB exposes duplicateCopiesMapping with portal field key", () => {
+    const job = makeJob({
+      instrument: {
+        instrumentDate: "2026-01-01",
+        duplicateCopies: 1,
+        portalDescriptionType:
+          "fixed_rent_during_tenancy" as TenancyPortalDescriptionType,
+        rentSchedule: [
+          { startDate: "2026-01-01", endDate: "2027-01-01", monthlyRent: 1000 },
+        ],
+      },
+    });
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.bahagianB.duplicateCopiesMapping.portalFieldKey).toBe(
+      "pds_salinan"
+    );
+    expect(payload.bahagianB.duplicateCopiesMapping.status).toBe(
+      "unknown_code"
+    );
+    expect(payload.bahagianB.duplicateCopiesMapping.portalCode).toBe(null);
+  });
+
+  test("Payload BahagianC exposes state / country / category / furnished mappings", () => {
+    const property = propertyWithLandRegistry({});
+    property.furnishedStatus = "fully_furnished";
+    const job = makeJob({ property });
+    const payload = compileTenancyPortalPayload(job);
+
+    expect(payload.bahagianC.stateMapping.portalFieldKey).toBe(
+      "pds_harta_state"
+    );
+    expect(payload.bahagianC.stateMapping.portalLabel).toBe("Kuala Lumpur");
+    expect(payload.bahagianC.stateMapping.status).toBe("unknown_code");
+
+    expect(payload.bahagianC.countryMapping.portalFieldKey).toBe(
+      "pds_harta_country"
+    );
+    expect(payload.bahagianC.countryMapping.portalLabel).toBe("Malaysia");
+
+    expect(payload.bahagianC.propertyCategoryMapping.portalFieldKey).toBe(
+      "pds_harta_cat"
+    );
+    expect(payload.bahagianC.propertyCategoryMapping.portalLabel).toBe(
+      "Kondominium"
+    );
+    expect(payload.bahagianC.propertyCategoryMapping.status).toBe(
+      "unknown_code"
+    );
+
+    expect(payload.bahagianC.furnishedMapping.portalFieldKey).toBe(
+      "pds_harta_perabot"
+    );
+    expect(payload.bahagianC.furnishedMapping.portalLabel).toBe(
+      "Dengan Perabot"
+    );
+    expect(payload.bahagianC.furnishedMapping.status).toBe("unknown_code");
+  });
+
+  test("Payload reports propertyCategoryMapping=unsupported when Perdagangan is selected", () => {
+    const property = propertyWithLandRegistry({});
+    property.propertyType = "perdagangan";
+    const job = makeJob({ property });
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.bahagianC.propertyCategoryMapping.status).toBe(
+      "unsupported"
+    );
+    expect(payload.bahagianC.propertyCategoryMapping.portalLabel).toBe(null);
+  });
+
+  test("Payload reports propertyCategoryMapping=ambiguous when Kediaman + apartment", () => {
+    const property = propertyWithLandRegistry({});
+    property.buildingType = "apartment";
+    const job = makeJob({ property });
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.bahagianC.propertyCategoryMapping.status).toBe("ambiguous");
+  });
+
+  test("Payload reports furnishedMapping=unsupported for partially_furnished", () => {
+    const property = propertyWithLandRegistry({});
+    property.furnishedStatus = "partially_furnished";
+    const job = makeJob({ property });
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.bahagianC.furnishedMapping.status).toBe("unsupported");
+    expect(payload.bahagianC.furnishedMapping.portalLabel).toBe(null);
+  });
+
+  test("Payload duplicateCopiesMapping=unsupported when no instrument captured", () => {
+    const job = makeJob({});
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.bahagianB.duplicateCopiesMapping.status).toBe(
+      "unsupported"
+    );
+  });
+});

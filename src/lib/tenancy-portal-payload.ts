@@ -67,6 +67,15 @@ import {
   evaluateTenancyPortalReadiness,
   PDS_JENIS_REQUIRING_BALASAN,
 } from "./tenancy-portal-requirements";
+import {
+  mapDuplicateCopies,
+  mapFurnishedStatus,
+  mapPropertyCategory,
+  mapPropertyCountry,
+  mapPropertyState,
+  type CanonicalMappingResult,
+  type CanonicalMappingStatus,
+} from "./tenancy-portal-canonical-maps";
 
 // ─── Output types ───────────────────────────────────────────────────
 
@@ -248,6 +257,45 @@ export interface TenancyPortalPayloadBahagianB {
    * model is extended".
    */
   descriptionTypeAutomationUnsupportedReason: string | null;
+  /**
+   * Canonical-mapping result for `pds_salinan` (number-of-copies).
+   * Always present so the operator preview renders a status row even
+   * when no instrument is captured (in which case status is
+   * "unsupported" with a clear reason). Added in Milestone A3.
+   */
+  duplicateCopiesMapping: TenancyPortalPayloadCanonicalMapping;
+}
+
+/**
+ * Per-field canonical-mapping summary surfaced in the payload preview
+ * (Milestone A3). Mirrors the shape of `CanonicalMappingResult` from
+ * `tenancy-portal-canonical-maps.ts` but trimmed to the payload-shape
+ * fields the operator UI renders. `weStampValue` is omitted here
+ * because the payload preview already shows the WeStamp value
+ * separately in each section.
+ */
+export interface TenancyPortalPayloadCanonicalMapping {
+  portalFieldKey: string;
+  portalLabel: string | null;
+  portalCode: string | null;
+  status: CanonicalMappingStatus;
+  reason: string | null;
+}
+
+/**
+ * Helper: trim a `CanonicalMappingResult` down to the payload shape.
+ * Pure transformation — never logs or persists the input.
+ */
+function toPayloadMapping(
+  result: CanonicalMappingResult<unknown>
+): TenancyPortalPayloadCanonicalMapping {
+  return {
+    portalFieldKey: result.portalFieldKey,
+    portalLabel: result.portalLabel,
+    portalCode: result.portalCode,
+    status: result.status,
+    reason: result.reason,
+  };
 }
 
 /**
@@ -391,6 +439,16 @@ export interface TenancyPortalPayloadBahagianC {
    * `captured` is true only when every required field is valid.
    */
   landRegistry: TenancyPortalPayloadLandRegistry;
+  /**
+   * Canonical-mapping results for the four Bahagian C enum/canonical
+   * fields. Always present so the operator preview renders a status
+   * row even when the underlying value is not captured. Added in
+   * Milestone A3.
+   */
+  stateMapping: TenancyPortalPayloadCanonicalMapping;
+  countryMapping: TenancyPortalPayloadCanonicalMapping;
+  propertyCategoryMapping: TenancyPortalPayloadCanonicalMapping;
+  furnishedMapping: TenancyPortalPayloadCanonicalMapping;
 }
 
 /** Rumusan Pengiraan · placeholder block. */
@@ -741,6 +799,21 @@ function mapBahagianB(
         typeof r.durationMonths === "number" ? r.durationMonths : null,
     })) ?? [];
 
+  // pds_salinan canonical-mapping result. Derived from the captured
+  // duplicateCopies value when present; otherwise `unsupported` with
+  // a clear reason. Added in Milestone A3.
+  const duplicateCopiesMapping: TenancyPortalPayloadCanonicalMapping =
+    instrument && typeof instrument.duplicateCopies === "number"
+      ? toPayloadMapping(mapDuplicateCopies(instrument.duplicateCopies))
+      : {
+          portalFieldKey: "pds_salinan",
+          portalLabel: null,
+          portalCode: null,
+          status: "unsupported",
+          reason:
+            "Duplicate copies count is not captured. Capture the instrument before pds_salinan can be mapped.",
+        };
+
   return {
     instrumentDate: instrument?.instrumentDate ?? null,
     duplicateCopies:
@@ -755,6 +828,7 @@ function mapBahagianB(
     automationSupportStatus,
     automationSupportReason,
     descriptionTypeAutomationUnsupportedReason,
+    duplicateCopiesMapping,
   };
 }
 
@@ -927,6 +1001,23 @@ function mapBahagianC(
     },
   };
 
+  // ── Canonical-mapping results (Milestone A3) ──────────────
+  // Always present so the operator preview renders a status row even
+  // when the underlying value isn't captured. The mappers themselves
+  // return `unsupported` with a clear reason for blank inputs.
+  const stateMapping = toPayloadMapping(
+    mapPropertyState(property?.state ?? "")
+  );
+  const countryMapping = toPayloadMapping(
+    mapPropertyCountry(property?.country ?? "")
+  );
+  const propertyCategoryMapping = toPayloadMapping(
+    mapPropertyCategory(propertyType, buildingType)
+  );
+  const furnishedMapping = toPayloadMapping(
+    mapFurnishedStatus(property?.furnishedStatus ?? null)
+  );
+
   return {
     addressLine1: property?.addressLine1 ?? null,
     addressLine2: NON_EMPTY(property?.addressLine2)
@@ -952,6 +1043,10 @@ function mapBahagianC(
         : null,
     premisesAreaIsZeroFallback,
     landRegistry: landRegistryPayload,
+    stateMapping,
+    countryMapping,
+    propertyCategoryMapping,
+    furnishedMapping,
   };
 }
 

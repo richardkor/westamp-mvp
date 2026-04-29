@@ -1,0 +1,407 @@
+/**
+ * WeStamp — Tenancy Portal Canonical Maps · Tests (Milestone A3)
+ *
+ * Pure-helper tests proving:
+ *   - duplicateCopies in 0..20 returns `unknown_code` (range
+ *     accepted for tracking, but portal option code unknown — NOT
+ *     safe for supervised portal preparation);
+ *   - duplicateCopies outside 0..20 returns `unsupported`;
+ *   - state/country mapping returns `unknown_code` for recognized
+ *     labels and `unsupported` for unrecognized ones;
+ *   - per-property-type pds_harta_cat mapping does NOT cross-map
+ *     between Kediaman / Perdagangan / Perindustrian;
+ *   - studio / lain_lain / apartment / rumah_banglo on Kediaman are
+ *     blocked with the right status;
+ *   - furnished / unfurnished return `unknown_code` (portal labels
+ *     known but option codes not yet captured — readiness-blocking
+ *     until codes are observed);
+ *   - partially_furnished is `unsupported`;
+ *   - mapping result shape carries portal field key, status, and
+ *     reason;
+ *   - `isMappingSafe` returns `true` ONLY for `mapped`. Every other
+ *     status (including `unknown_code`) remains readiness-blocking.
+ */
+
+import {
+  isMappingSafe,
+  mapDuplicateCopies,
+  mapFurnishedStatus,
+  mapPropertyCategory,
+  mapPropertyCountry,
+  mapPropertyState,
+} from "./tenancy-portal-canonical-maps";
+import type {
+  TenancyPortalBuildingType,
+  TenancyPortalFurnishedStatus,
+  TenancyPortalPropertyType,
+} from "./stamping-types";
+
+// ─── pds_salinan ──────────────────────────────────────────────────
+
+describe("mapDuplicateCopies (pds_salinan)", () => {
+  test("returns unsupported for non-integer / negative / non-finite", () => {
+    expect(mapDuplicateCopies(-1).status).toBe("unsupported");
+    expect(mapDuplicateCopies(1.5).status).toBe("unsupported");
+    expect(mapDuplicateCopies(Number.NaN).status).toBe("unsupported");
+    expect(mapDuplicateCopies("3" as unknown as number).status).toBe(
+      "unsupported"
+    );
+  });
+
+  test("returns unsupported for counts > 20 (outside safely-modelled range)", () => {
+    const r = mapDuplicateCopies(21);
+    expect(r.status).toBe("unsupported");
+    expect(r.reason).toMatch(/exceeds the safely modelled range/i);
+  });
+
+  test("returns unknown_code for any 0..20 (no codes captured yet)", () => {
+    for (const n of [0, 1, 2, 5, 10, 20]) {
+      const r = mapDuplicateCopies(n);
+      expect(r.status).toBe("unknown_code");
+      expect(r.portalFieldKey).toBe("pds_salinan");
+      expect(r.portalLabel).toBe(null);
+      expect(r.portalCode).toBe(null);
+      expect(isMappingSafe(r)).toBe(false);
+    }
+  });
+
+  test("never returns a guessed portal code", () => {
+    for (const n of [0, 1, 2, 5, 10, 20]) {
+      expect(mapDuplicateCopies(n).portalCode).toBe(null);
+    }
+  });
+});
+
+// ─── pds_harta_state ─────────────────────────────────────────────
+
+describe("mapPropertyState (pds_harta_state)", () => {
+  test("returns unsupported for blank input", () => {
+    expect(mapPropertyState("").status).toBe("unsupported");
+    expect(mapPropertyState("   ").status).toBe("unsupported");
+    expect(mapPropertyState(null).status).toBe("unsupported");
+    expect(mapPropertyState(undefined).status).toBe("unsupported");
+  });
+
+  test("returns unknown_code for seeded states (Kuala Lumpur / Selangor / Sarawak)", () => {
+    for (const state of ["Kuala Lumpur", "Selangor", "Sarawak"]) {
+      const r = mapPropertyState(state);
+      expect(r.status).toBe("unknown_code");
+      expect(r.portalLabel).toBe(state);
+      expect(r.portalCode).toBe(null);
+      expect(r.portalFieldKey).toBe("pds_harta_state");
+    }
+  });
+
+  test("normalization tolerates whitespace and case", () => {
+    const r = mapPropertyState("  KUALA   LUMPUR  ");
+    expect(r.status).toBe("unknown_code");
+    expect(r.portalLabel).toBe("Kuala Lumpur");
+  });
+
+  test("returns unsupported for states not in the seed table", () => {
+    const r = mapPropertyState("Atlantis");
+    expect(r.status).toBe("unsupported");
+    expect(r.portalLabel).toBe(null);
+    expect(r.portalCode).toBe(null);
+  });
+
+  test("never returns a guessed portal code", () => {
+    expect(mapPropertyState("Selangor").portalCode).toBe(null);
+  });
+});
+
+// ─── pds_harta_country ───────────────────────────────────────────
+
+describe("mapPropertyCountry (pds_harta_country)", () => {
+  test("returns unsupported for blank input", () => {
+    expect(mapPropertyCountry("").status).toBe("unsupported");
+  });
+
+  test("returns unknown_code for Malaysia (label seeded, code unknown)", () => {
+    const r = mapPropertyCountry("Malaysia");
+    expect(r.status).toBe("unknown_code");
+    expect(r.portalLabel).toBe("Malaysia");
+    expect(r.portalCode).toBe(null);
+  });
+
+  test("returns unsupported for unseeded countries", () => {
+    expect(mapPropertyCountry("Singapore").status).toBe("unsupported");
+    expect(mapPropertyCountry("Indonesia").status).toBe("unsupported");
+  });
+});
+
+// ─── pds_harta_cat (per-property-type) ───────────────────────────
+
+describe("mapPropertyCategory (pds_harta_cat) · property-type-specific", () => {
+  test("returns unsupported when propertyType is missing or unknown", () => {
+    const r = mapPropertyCategory(
+      undefined,
+      "rumah_teres" as TenancyPortalBuildingType
+    );
+    expect(r.status).toBe("unsupported");
+    expect(r.reason).toMatch(/property type/i);
+  });
+
+  test("Tanah Kosong is mapped (no category dropdown)", () => {
+    const r = mapPropertyCategory(
+      "tanah_kosong" as TenancyPortalPropertyType,
+      null
+    );
+    expect(r.status).toBe("mapped");
+    expect(r.portalLabel).toBe(null);
+    expect(r.portalCode).toBe(null);
+  });
+
+  test("Kediaman + rumah_teres → unknown_code (label known, code unknown)", () => {
+    const r = mapPropertyCategory(
+      "kediaman" as TenancyPortalPropertyType,
+      "rumah_teres" as TenancyPortalBuildingType
+    );
+    expect(r.status).toBe("unknown_code");
+    expect(r.portalLabel).toBe("Teres");
+    expect(r.portalCode).toBe(null);
+    expect(r.portalFieldKey).toBe("pds_harta_cat");
+  });
+
+  test.each([
+    ["rumah_teres", "Teres"],
+    ["rumah_berkembar", "Kembar"],
+    ["rumah_kluster", "Kluster"],
+    ["townhouse", "Townhouse"],
+    ["kondominium", "Kondominium"],
+  ] as const)(
+    "Kediaman + %s → portal label %s (code unknown)",
+    (wsVal, expectedLabel) => {
+      const r = mapPropertyCategory(
+        "kediaman" as TenancyPortalPropertyType,
+        wsVal as TenancyPortalBuildingType
+      );
+      expect(r.status).toBe("unknown_code");
+      expect(r.portalLabel).toBe(expectedLabel);
+      expect(r.portalCode).toBe(null);
+    }
+  );
+
+  test("Kediaman + apartment → ambiguous", () => {
+    const r = mapPropertyCategory(
+      "kediaman" as TenancyPortalPropertyType,
+      "apartment" as TenancyPortalBuildingType
+    );
+    expect(r.status).toBe("ambiguous");
+    expect(r.reason).toMatch(/Pangsapuri|ambiguous/i);
+  });
+
+  test("Kediaman + studio → unsupported", () => {
+    const r = mapPropertyCategory(
+      "kediaman" as TenancyPortalPropertyType,
+      "studio" as TenancyPortalBuildingType
+    );
+    expect(r.status).toBe("unsupported");
+    expect(r.reason).toMatch(/Studio/i);
+  });
+
+  test("Kediaman + lain_lain → unsupported", () => {
+    const r = mapPropertyCategory(
+      "kediaman" as TenancyPortalPropertyType,
+      "lain_lain" as TenancyPortalBuildingType
+    );
+    expect(r.status).toBe("unsupported");
+  });
+
+  test("Kediaman + rumah_banglo → unsupported (Banglo only exists under Perindustrian)", () => {
+    const r = mapPropertyCategory(
+      "kediaman" as TenancyPortalPropertyType,
+      "rumah_banglo" as TenancyPortalBuildingType
+    );
+    expect(r.status).toBe("unsupported");
+    expect(r.reason).toMatch(/Perindustrian/i);
+  });
+
+  test("Kediaman with no buildingType → unsupported", () => {
+    const r = mapPropertyCategory(
+      "kediaman" as TenancyPortalPropertyType,
+      null
+    );
+    expect(r.status).toBe("unsupported");
+    expect(r.reason).toMatch(/required/i);
+  });
+
+  test("Perdagangan + ANY WeStamp building type → unsupported (no cross-map)", () => {
+    // WeStamp's enum is kediaman-style; applying it on Perdagangan must NOT
+    // silently pick a Perdagangan portal option.
+    for (const wsVal of [
+      "rumah_teres",
+      "rumah_berkembar",
+      "rumah_kluster",
+      "townhouse",
+      "kondominium",
+      "apartment",
+      "studio",
+      "lain_lain",
+      "rumah_banglo",
+    ] as const) {
+      const r = mapPropertyCategory(
+        "perdagangan" as TenancyPortalPropertyType,
+        wsVal as TenancyPortalBuildingType
+      );
+      expect(r.status).toBe("unsupported");
+      expect(r.portalLabel).toBe(null);
+      expect(r.portalCode).toBe(null);
+    }
+  });
+
+  test("Perindustrian + ANY WeStamp building type → unsupported (no cross-map)", () => {
+    for (const wsVal of [
+      "rumah_teres",
+      "rumah_berkembar",
+      "rumah_kluster",
+      "townhouse",
+      "kondominium",
+      "apartment",
+      "studio",
+      "lain_lain",
+      "rumah_banglo",
+    ] as const) {
+      const r = mapPropertyCategory(
+        "perindustrian" as TenancyPortalPropertyType,
+        wsVal as TenancyPortalBuildingType
+      );
+      expect(r.status).toBe("unsupported");
+    }
+  });
+
+  test("never returns a guessed portal code for Kediaman", () => {
+    for (const wsVal of [
+      "rumah_teres",
+      "rumah_berkembar",
+      "rumah_kluster",
+      "townhouse",
+      "kondominium",
+    ] as const) {
+      expect(
+        mapPropertyCategory(
+          "kediaman" as TenancyPortalPropertyType,
+          wsVal as TenancyPortalBuildingType
+        ).portalCode
+      ).toBe(null);
+    }
+  });
+});
+
+// ─── pds_harta_perabot (furnishing) ──────────────────────────────
+
+describe("mapFurnishedStatus (pds_harta_perabot)", () => {
+  test("fully_furnished → unknown_code with portal label 'Dengan Perabot'", () => {
+    const r = mapFurnishedStatus(
+      "fully_furnished" as TenancyPortalFurnishedStatus
+    );
+    expect(r.status).toBe("unknown_code");
+    expect(r.portalLabel).toBe("Dengan Perabot");
+    expect(r.portalCode).toBe(null);
+    expect(r.portalFieldKey).toBe("pds_harta_perabot");
+  });
+
+  test("unfurnished → unknown_code with portal label 'Tanpa Perabot'", () => {
+    const r = mapFurnishedStatus(
+      "unfurnished" as TenancyPortalFurnishedStatus
+    );
+    expect(r.status).toBe("unknown_code");
+    expect(r.portalLabel).toBe("Tanpa Perabot");
+    expect(r.portalCode).toBe(null);
+  });
+
+  test("partially_furnished → unsupported", () => {
+    const r = mapFurnishedStatus(
+      "partially_furnished" as TenancyPortalFurnishedStatus
+    );
+    expect(r.status).toBe("unsupported");
+    expect(r.reason).toMatch(/no half-way option/i);
+  });
+
+  test("null / undefined → unsupported", () => {
+    expect(mapFurnishedStatus(null).status).toBe("unsupported");
+    expect(mapFurnishedStatus(undefined).status).toBe("unsupported");
+  });
+});
+
+// ─── isMappingSafe ───────────────────────────────────────────────
+
+describe("isMappingSafe", () => {
+  test("returns true only for status='mapped'", () => {
+    expect(
+      isMappingSafe({
+        portalFieldKey: "test",
+        weStampValue: null,
+        portalLabel: null,
+        portalCode: null,
+        status: "mapped",
+        reason: null,
+      })
+    ).toBe(true);
+    for (const status of [
+      "unknown_code",
+      "unsupported",
+      "ambiguous",
+    ] as const) {
+      expect(
+        isMappingSafe({
+          portalFieldKey: "test",
+          weStampValue: null,
+          portalLabel: null,
+          portalCode: null,
+          status,
+          reason: "x",
+        })
+      ).toBe(false);
+    }
+  });
+});
+
+// ─── Result-shape invariants ─────────────────────────────────────
+
+describe("CanonicalMappingResult shape invariants", () => {
+  test("every result carries portalFieldKey, status, and a reason when not mapped", () => {
+    const all = [
+      mapDuplicateCopies(5),
+      mapPropertyState("Selangor"),
+      mapPropertyCountry("Malaysia"),
+      mapPropertyCategory(
+        "kediaman" as TenancyPortalPropertyType,
+        "rumah_teres" as TenancyPortalBuildingType
+      ),
+      mapFurnishedStatus(
+        "fully_furnished" as TenancyPortalFurnishedStatus
+      ),
+    ];
+    for (const r of all) {
+      expect(typeof r.portalFieldKey).toBe("string");
+      expect(r.portalFieldKey.length).toBeGreaterThan(0);
+      expect([
+        "mapped",
+        "unknown_code",
+        "unsupported",
+        "ambiguous",
+      ]).toContain(r.status);
+      if (r.status !== "mapped") {
+        expect(typeof r.reason).toBe("string");
+        expect((r.reason as string).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  test("no result accidentally invents a portal code", () => {
+    const all = [
+      mapDuplicateCopies(1),
+      mapPropertyState("Kuala Lumpur"),
+      mapPropertyCountry("Malaysia"),
+      mapPropertyCategory(
+        "kediaman" as TenancyPortalPropertyType,
+        "kondominium" as TenancyPortalBuildingType
+      ),
+      mapFurnishedStatus("unfurnished" as TenancyPortalFurnishedStatus),
+    ];
+    for (const r of all) {
+      expect(r.portalCode).toBe(null);
+    }
+  });
+});

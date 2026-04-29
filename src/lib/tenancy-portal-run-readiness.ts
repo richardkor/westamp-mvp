@@ -41,6 +41,14 @@ import {
   ALLOWED_LAND_AREA_UNITS,
   PDS_JENIS_REQUIRING_BALASAN,
 } from "./tenancy-portal-requirements";
+import {
+  isMappingSafe,
+  mapDuplicateCopies,
+  mapFurnishedStatus,
+  mapPropertyCategory,
+  mapPropertyCountry,
+  mapPropertyState,
+} from "./tenancy-portal-canonical-maps";
 import { evaluateTenancyPortalReadiness } from "./tenancy-portal-requirements";
 import {
   compileTenancyPortalPayload,
@@ -686,99 +694,128 @@ export function evaluateTenancyPortalFieldMappingGaps(
   // intentionally do NOT emit blockers (per A2 scope).
 
   // ── C) Portal enum mismatch risks ───────────────────────────
+  // After Milestone A3 the per-field decisions are delegated to the
+  // pure canonical-mapping helpers in `tenancy-portal-canonical-maps.ts`.
+  // Each helper returns a `CanonicalMappingResult` whose `status`
+  // dictates whether a blocker fires:
+  //
+  //   - status="mapped"        → no blocker
+  //   - status="unknown_code"  → blocker fires (label known, code not yet observed)
+  //   - status="unsupported"   → blocker fires (no portal equivalent)
+  //   - status="ambiguous"     → blocker fires (operator confirmation needed)
+  //
+  // The blocker codes below are preserved from earlier milestones for
+  // backward compatibility with operator UI and tests; one new code
+  // (`pds_harta_cat_unknown_code`) was added for the case where a
+  // mappable Kediaman value has no portal `<option value>` captured
+  // yet — that case used to be silently no-blocker, which was unsafe.
   const property: TenancyPortalProperty | undefined = tpd?.property;
 
-  // pds_salinan: portal is a 21-option dropdown. WeStamp's
-  // duplicateCopies is a free non-negative integer. Block universally
-  // when an instrument is captured because WeStamp has no canonical
-  // mapping table to the portal's option set yet. Even values that
-  // happen to be in 0..20 still need the operator's explicit pick;
-  // the field-mapping run did not record the literal option labels.
+  // pds_salinan — driven by the duplicateCopies value on the captured
+  // instrument. We only check when an instrument is captured, since
+  // the field has no meaning without one.
   if (tpd?.instrument) {
-    gaps.push({
-      category: "portal_enum_mismatch",
-      code: "pds_salinan_no_canonical_mapping",
-      reason:
-        'pds_salinan ("Salinan Pendua") is a 21-option portal dropdown, not a free integer. WeStamp\'s duplicateCopies is currently treated as an arbitrary integer — no canonical option-mapping table exists yet, so the operator-entered value cannot be safely cast to a portal selection.',
-    });
+    const salinan = mapDuplicateCopies(tpd.instrument.duplicateCopies);
+    if (!isMappingSafe(salinan)) {
+      gaps.push({
+        category: "portal_enum_mismatch",
+        code: "pds_salinan_no_canonical_mapping",
+        reason: salinan.reason ?? "pds_salinan mapping is not yet safe.",
+      });
+    }
   }
 
-  // pds_harta_state / pds_harta_country: free-string in WeStamp,
-  // dropdowns in the portal (17 / 279 options). Block when the
-  // property block exists.
   if (property) {
+    // pds_harta_state — only fires when the operator has typed
+    // something. A blank state is gated by the existing required-
+    // details readiness layer above.
     if (property.state && property.state.trim().length > 0) {
-      gaps.push({
-        category: "portal_enum_mismatch",
-        code: "pds_harta_state_no_canonical_mapping",
-        reason: `pds_harta_state is a 17-option portal dropdown. WeStamp stores property state as the free string "${property.state}" — no canonical mapping table to portal codes exists yet.`,
-      });
-    }
-    if (property.country && property.country.trim().length > 0) {
-      gaps.push({
-        category: "portal_enum_mismatch",
-        code: "pds_harta_country_no_canonical_mapping",
-        reason: `pds_harta_country is a 279-option portal dropdown. WeStamp stores property country as the free string "${property.country}" — no canonical mapping table to portal codes exists yet.`,
-      });
-    }
-
-    // pds_harta_cat is per-property-type in the portal:
-    //   - kediaman      → 8 options
-    //   - perdagangan   → 4 options (rumah_kedai / ruang_perniagaan / ruang_pejabat / kedai_pejabat)
-    //   - perindustrian → 5 options (sesebuah / kembar / teres / bertingkat / banglo)
-    // WeStamp's TenancyPortalBuildingType enum is kediaman-style only
-    // and has no mapping for perdagangan / perindustrian categories.
-    if (
-      property.propertyType === "perdagangan" ||
-      property.propertyType === "perindustrian"
-    ) {
-      gaps.push({
-        category: "portal_enum_mismatch",
-        code: "pds_harta_cat_propertyType_unsupported",
-        reason: `Property type "${property.propertyType}" requires a per-property-type pds_harta_cat selection (e.g. Rumah Kedai / Ruang Perniagaan for Perdagangan; Sesebuah / Kembar / Teres / Bertingkat / Banglo for Perindustrian). WeStamp's TenancyPortalBuildingType enum is kediaman-only — no model coverage for these categories.`,
-      });
-    }
-
-    // Even on kediaman, certain WeStamp building-type values have no
-    // direct portal equivalent.
-    if (property.propertyType === "kediaman") {
-      const noPortalEquivalent: ReadonlyArray<{
-        value: string;
-        why: string;
-      }> = [
-        {
-          value: "studio",
-          why: 'Portal Kediaman dropdown has no "Studio" option. The closest portal options (Pangsapuri / Rumah Pangsa / Kondominium) all imply distinct unit types and cannot be auto-substituted.',
-        },
-        {
-          value: "lain_lain",
-          why: 'Portal Kediaman dropdown has no "Lain-lain" / "Other" option. Operator must pick one of the 8 fixed kediaman options; "lain_lain" cannot be mapped.',
-        },
-        {
-          value: "apartment",
-          why: 'Portal Kediaman dropdown has no "Apartment" option. The closest match is "Pangsapuri" but the mapping is ambiguous — selecting it without operator confirmation risks an incorrect portal value.',
-        },
-      ];
-      for (const { value, why } of noPortalEquivalent) {
-        if (property.buildingType === value) {
-          gaps.push({
-            category: "portal_enum_mismatch",
-            code: `building_type_${value}_no_portal_equivalent`,
-            reason: `Building type "${value}" is not supported by the portal Kediaman pds_harta_cat dropdown. ${why}`,
-          });
-        }
+      const stateMap = mapPropertyState(property.state);
+      if (!isMappingSafe(stateMap)) {
+        gaps.push({
+          category: "portal_enum_mismatch",
+          code: "pds_harta_state_no_canonical_mapping",
+          reason: stateMap.reason ?? "pds_harta_state mapping is not yet safe.",
+        });
       }
     }
 
-    // Furnished status: portal exposes only fully_furnished /
-    // unfurnished. partially_furnished has no portal equivalent.
-    if (property.furnishedStatus === "partially_furnished") {
+    // pds_harta_country — same shape as state.
+    if (property.country && property.country.trim().length > 0) {
+      const countryMap = mapPropertyCountry(property.country);
+      if (!isMappingSafe(countryMap)) {
+        gaps.push({
+          category: "portal_enum_mismatch",
+          code: "pds_harta_country_no_canonical_mapping",
+          reason:
+            countryMap.reason ?? "pds_harta_country mapping is not yet safe.",
+        });
+      }
+    }
+
+    // pds_harta_cat — property-type-specific. Translate the
+    // canonical-mapping status into one of the existing blocker
+    // codes (preserved for backward compatibility) plus a new
+    // `pds_harta_cat_unknown_code` blocker for the "label known,
+    // code unknown" case.
+    const catMap = mapPropertyCategory(
+      property.propertyType,
+      property.buildingType
+    );
+    if (!isMappingSafe(catMap)) {
+      // Decide which legacy blocker code to emit based on the
+      // specific WeStamp value + property type combo.
+      let blockerCode: string;
+      if (
+        property.propertyType === "perdagangan" ||
+        property.propertyType === "perindustrian"
+      ) {
+        blockerCode = "pds_harta_cat_propertyType_unsupported";
+      } else if (
+        property.propertyType === "kediaman" &&
+        (property.buildingType === "studio" ||
+          property.buildingType === "lain_lain" ||
+          property.buildingType === "apartment")
+      ) {
+        blockerCode = `building_type_${property.buildingType}_no_portal_equivalent`;
+      } else if (catMap.status === "unknown_code") {
+        // Mappable Kediaman value (label known) — code not yet
+        // captured. Surface as a distinct blocker so operators know
+        // the difference between "no portal equivalent" and "we
+        // know the label but need the code".
+        blockerCode = "pds_harta_cat_unknown_code";
+      } else {
+        // Defensive fallback — covers e.g. Kediaman + rumah_banglo
+        // and any future TenancyPortalBuildingType values not in
+        // the seeded Kediaman label table.
+        blockerCode = "pds_harta_cat_propertyType_unsupported";
+      }
       gaps.push({
         category: "portal_enum_mismatch",
-        code: "furnished_status_partially_furnished_unsupported",
-        reason:
-          'Furnished status "partially_furnished" is not supported by the portal — pds_harta_perabot exposes only "Dengan Perabot" (fully_furnished) and "Tanpa Perabot" (unfurnished). There is no half-way option to map to.',
+        code: blockerCode,
+        reason: catMap.reason ?? "pds_harta_cat mapping is not yet safe.",
       });
+    }
+
+    // pds_harta_perabot — driven by furnishedStatus when supplied.
+    // Blank furnishedStatus is captured-but-optional at the
+    // required-details layer; we only fire enum-mismatch blockers
+    // when the operator has chosen a value.
+    if (property.furnishedStatus !== undefined) {
+      const furnMap = mapFurnishedStatus(property.furnishedStatus);
+      if (!isMappingSafe(furnMap)) {
+        // Preserve the existing partially_furnished blocker code
+        // for backward compatibility.
+        const blockerCode =
+          property.furnishedStatus === "partially_furnished"
+            ? "furnished_status_partially_furnished_unsupported"
+            : "pds_harta_perabot_unknown_code";
+        gaps.push({
+          category: "portal_enum_mismatch",
+          code: blockerCode,
+          reason: furnMap.reason ?? "pds_harta_perabot mapping is not yet safe.",
+        });
+      }
     }
   }
 
