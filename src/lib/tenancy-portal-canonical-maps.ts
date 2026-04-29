@@ -133,28 +133,85 @@ const KEDIAMAN_LABEL_BY_WESTAMP_VALUE: Partial<
 };
 
 /**
- * Per-property-type label tables (`pds_harta_cat` is property-type
- * specific in the portal). For now, only Kediaman has WeStamp values
- * that can map; Perdagangan and Perindustrian have observed labels
- * but no WeStamp enum values that map cleanly, so any WeStamp value
- * applied to those property types yields `unsupported` until WeStamp
- * adds property-type-specific enums.
+ * Kediaman portal `<option value>` codes for the mappable WeStamp
+ * values, recovered by the ε-4 audit (2026-04-29) from the original
+ * ε-3 supervised field-mapping run output. See
+ * `docs/2026-04-28-tenancy-portal-field-mapping.md` §8.1.
  *
- * Tables here record portal-side labels only; codes await evidence.
+ * Only the WeStamp values that have a direct Kediaman portal
+ * equivalent are recorded here. `apartment` is intentionally NOT
+ * mapped to `Pangsapuri` (1115) — the field-mapping run did not
+ * confirm the semantic mapping, so it remains `ambiguous` until
+ * operator confirmation. `studio` / `lain_lain` / `rumah_banglo`
+ * remain `unsupported`.
  */
-const PERDAGANGAN_PORTAL_LABELS: ReadonlyArray<string> = [
-  "Rumah Kedai",
-  "Ruang Perniagaan",
-  "Ruang Pejabat",
-  "Kedai Pejabat",
+const KEDIAMAN_PORTAL_CODE_BY_WESTAMP_VALUE: Partial<
+  Record<TenancyPortalBuildingType, string>
+> = {
+  rumah_berkembar: "1112",
+  rumah_teres: "1113",
+  kondominium: "1114",
+  rumah_kluster: "1118",
+  townhouse: "1119",
+};
+
+/**
+ * Per-property-type code tables (`pds_harta_cat` is property-type
+ * specific in the portal). Recovered by the ε-4 audit from the ε-3
+ * field-mapping run output (`docs/2026-04-28-tenancy-portal-field-
+ * mapping.md` §8.1–§8.3).
+ *
+ * **Important:** integer codes are scoped per `<select>` element and
+ * are NOT globally unique. `1119` is `Townhouse` under Kediaman but
+ * `Kedai Pejabat` under Perdagangan and `Sesebuah` under
+ * Perindustrian. The mapper dispatches by `propertyType` before
+ * resolving codes; never reuse codes across property types.
+ *
+ * Perdagangan / Perindustrian tables are recorded for future
+ * reference. WeStamp's `TenancyPortalBuildingType` enum has no value
+ * that maps cleanly into either, so applying any WeStamp value with
+ * `propertyType ∈ {perdagangan, perindustrian}` still returns
+ * `unsupported` until property-type-specific enums are added.
+ */
+const PERDAGANGAN_PORTAL_LABEL_BY_CODE: ReadonlyArray<{
+  code: string;
+  label: string;
+}> = [
+  { code: "1116", label: "Rumah Kedai" },
+  { code: "1117", label: "Ruang Perniagaan" },
+  { code: "1118", label: "Ruang Pejabat" },
+  { code: "1119", label: "Kedai Pejabat" },
 ];
-const PERINDUSTRIAN_PORTAL_LABELS: ReadonlyArray<string> = [
-  "Sesebuah",
-  "Kembar",
-  "Teres",
-  "Bertingkat",
-  "Banglo",
+const PERDAGANGAN_PORTAL_LABELS: ReadonlyArray<string> =
+  PERDAGANGAN_PORTAL_LABEL_BY_CODE.map((e) => e.label);
+
+const PERINDUSTRIAN_PORTAL_LABEL_BY_CODE: ReadonlyArray<{
+  code: string;
+  label: string;
+}> = [
+  { code: "1119", label: "Sesebuah" },
+  { code: "1120", label: "Kembar" },
+  { code: "1121", label: "Teres" },
+  { code: "1122", label: "Bertingkat (Flatted)" },
+  { code: "1123", label: "Banglo" },
 ];
+const PERINDUSTRIAN_PORTAL_LABELS: ReadonlyArray<string> =
+  PERINDUSTRIAN_PORTAL_LABEL_BY_CODE.map((e) => e.label);
+
+/**
+ * `pds_harta_perabot` portal `<option value>` codes recovered by the
+ * ε-4 audit from the ε-3 field-mapping run output
+ * (`docs/2026-04-28-tenancy-portal-field-mapping.md` §8.4).
+ *
+ * The portal exposes only two real options; `partially_furnished`
+ * has no portal equivalent and remains `unsupported`.
+ */
+const FURNISHED_PORTAL_CODE_BY_WESTAMP_VALUE: Partial<
+  Record<TenancyPortalFurnishedStatus, string>
+> = {
+  fully_furnished: "1122",
+  unfurnished: "1123",
+};
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -493,14 +550,28 @@ export function mapPropertyCategory(
       reason: `Building type "${wsValue}" has no observed portal Kediaman mapping. Add it to the seeded mapping table once evidence is captured.`,
     };
   }
-  // Mappable WeStamp value, label known, code unknown.
+  // Look up the portal `<option value>` code recovered by ε-4. If
+  // the code is seeded for this WeStamp value, status is `mapped`;
+  // otherwise (a future label-only entry without code yet), status
+  // remains `unknown_code`.
+  const portalCode = KEDIAMAN_PORTAL_CODE_BY_WESTAMP_VALUE[wsValue] ?? null;
+  if (portalCode === null) {
+    return {
+      portalFieldKey,
+      weStampValue: wsValue,
+      portalLabel,
+      portalCode: null,
+      status: "unknown_code",
+      reason: `pds_harta_cat portal option-code for Kediaman label "${portalLabel}" has not been captured. WeStamp recognizes the label but cannot emit a portal <option value> until the code is observed.`,
+    };
+  }
   return {
     portalFieldKey,
     weStampValue: wsValue,
     portalLabel,
-    portalCode: null,
-    status: "unknown_code",
-    reason: `pds_harta_cat portal option-code list for Kediaman has not been captured. WeStamp recognizes the label "${portalLabel}" but cannot emit a portal <option value> until codes are observed.`,
+    portalCode,
+    status: "mapped",
+    reason: null,
   };
 }
 
@@ -548,10 +619,9 @@ export function mapFurnishedStatus(
       portalFieldKey,
       weStampValue: wsValue,
       portalLabel: "Dengan Perabot",
-      portalCode: null,
-      status: "unknown_code",
-      reason:
-        'pds_harta_perabot portal option-code for "Dengan Perabot" has not been captured. WeStamp can name the value but cannot emit a portal <option value> until the code is observed.',
+      portalCode: FURNISHED_PORTAL_CODE_BY_WESTAMP_VALUE.fully_furnished ?? null,
+      status: "mapped",
+      reason: null,
     };
   }
   if (wsValue === "unfurnished") {
@@ -559,10 +629,9 @@ export function mapFurnishedStatus(
       portalFieldKey,
       weStampValue: wsValue,
       portalLabel: "Tanpa Perabot",
-      portalCode: null,
-      status: "unknown_code",
-      reason:
-        'pds_harta_perabot portal option-code for "Tanpa Perabot" has not been captured. WeStamp can name the value but cannot emit a portal <option value> until the code is observed.',
+      portalCode: FURNISHED_PORTAL_CODE_BY_WESTAMP_VALUE.unfurnished ?? null,
+      status: "mapped",
+      reason: null,
     };
   }
   // Defensive fallback — never reached in current type space.

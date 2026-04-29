@@ -152,33 +152,33 @@ describe("mapPropertyCategory (pds_harta_cat) · property-type-specific", () => 
     expect(r.portalCode).toBe(null);
   });
 
-  test("Kediaman + rumah_teres → unknown_code (label known, code unknown)", () => {
+  test("Kediaman + rumah_teres → mapped (ε-4 captured code 1113)", () => {
     const r = mapPropertyCategory(
       "kediaman" as TenancyPortalPropertyType,
       "rumah_teres" as TenancyPortalBuildingType
     );
-    expect(r.status).toBe("unknown_code");
+    expect(r.status).toBe("mapped");
     expect(r.portalLabel).toBe("Teres");
-    expect(r.portalCode).toBe(null);
+    expect(r.portalCode).toBe("1113");
     expect(r.portalFieldKey).toBe("pds_harta_cat");
   });
 
   test.each([
-    ["rumah_teres", "Teres"],
-    ["rumah_berkembar", "Kembar"],
-    ["rumah_kluster", "Kluster"],
-    ["townhouse", "Townhouse"],
-    ["kondominium", "Kondominium"],
+    ["rumah_teres", "Teres", "1113"],
+    ["rumah_berkembar", "Kembar", "1112"],
+    ["rumah_kluster", "Kluster", "1118"],
+    ["townhouse", "Townhouse", "1119"],
+    ["kondominium", "Kondominium", "1114"],
   ] as const)(
-    "Kediaman + %s → portal label %s (code unknown)",
-    (wsVal, expectedLabel) => {
+    "Kediaman + %s → mapped, portal label %s, portal code %s",
+    (wsVal, expectedLabel, expectedCode) => {
       const r = mapPropertyCategory(
         "kediaman" as TenancyPortalPropertyType,
         wsVal as TenancyPortalBuildingType
       );
-      expect(r.status).toBe("unknown_code");
+      expect(r.status).toBe("mapped");
       expect(r.portalLabel).toBe(expectedLabel);
-      expect(r.portalCode).toBe(null);
+      expect(r.portalCode).toBe(expectedCode);
     }
   );
 
@@ -270,20 +270,45 @@ describe("mapPropertyCategory (pds_harta_cat) · property-type-specific", () => 
     }
   });
 
-  test("never returns a guessed portal code for Kediaman", () => {
+  test("returned Kediaman codes are exactly the ε-4 captured values (no guessed codes)", () => {
+    // After the ε-4 evidence patch, the five mappable Kediaman
+    // values return their exact captured `<option value>` codes
+    // (1112/1113/1114/1118/1119). Any other code value would mean
+    // someone has guessed; this test pins that down.
+    const expected: Record<string, string> = {
+      rumah_teres: "1113",
+      rumah_berkembar: "1112",
+      rumah_kluster: "1118",
+      townhouse: "1119",
+      kondominium: "1114",
+    };
+    for (const [wsVal, code] of Object.entries(expected)) {
+      const r = mapPropertyCategory(
+        "kediaman" as TenancyPortalPropertyType,
+        wsVal as TenancyPortalBuildingType
+      );
+      expect(r.portalCode).toBe(code);
+      expect(r.status).toBe("mapped");
+    }
+  });
+
+  test("Kediaman ambiguous and unsupported values still have NO portal code", () => {
+    // apartment (ambiguous), studio + lain_lain + rumah_banglo
+    // (unsupported) must continue to return portalCode = null even
+    // after the ε-4 evidence patch — codes only flip for evidenced
+    // mappings.
     for (const wsVal of [
-      "rumah_teres",
-      "rumah_berkembar",
-      "rumah_kluster",
-      "townhouse",
-      "kondominium",
+      "apartment",
+      "studio",
+      "lain_lain",
+      "rumah_banglo",
     ] as const) {
-      expect(
-        mapPropertyCategory(
-          "kediaman" as TenancyPortalPropertyType,
-          wsVal as TenancyPortalBuildingType
-        ).portalCode
-      ).toBe(null);
+      const r = mapPropertyCategory(
+        "kediaman" as TenancyPortalPropertyType,
+        wsVal as TenancyPortalBuildingType
+      );
+      expect(r.portalCode).toBe(null);
+      expect(r.status).not.toBe("mapped");
     }
   });
 });
@@ -291,23 +316,23 @@ describe("mapPropertyCategory (pds_harta_cat) · property-type-specific", () => 
 // ─── pds_harta_perabot (furnishing) ──────────────────────────────
 
 describe("mapFurnishedStatus (pds_harta_perabot)", () => {
-  test("fully_furnished → unknown_code with portal label 'Dengan Perabot'", () => {
+  test("fully_furnished → mapped (ε-4 captured: 'Dengan Perabot' = 1122)", () => {
     const r = mapFurnishedStatus(
       "fully_furnished" as TenancyPortalFurnishedStatus
     );
-    expect(r.status).toBe("unknown_code");
+    expect(r.status).toBe("mapped");
     expect(r.portalLabel).toBe("Dengan Perabot");
-    expect(r.portalCode).toBe(null);
+    expect(r.portalCode).toBe("1122");
     expect(r.portalFieldKey).toBe("pds_harta_perabot");
   });
 
-  test("unfurnished → unknown_code with portal label 'Tanpa Perabot'", () => {
+  test("unfurnished → mapped (ε-4 captured: 'Tanpa Perabot' = 1123)", () => {
     const r = mapFurnishedStatus(
       "unfurnished" as TenancyPortalFurnishedStatus
     );
-    expect(r.status).toBe("unknown_code");
+    expect(r.status).toBe("mapped");
     expect(r.portalLabel).toBe("Tanpa Perabot");
-    expect(r.portalCode).toBe(null);
+    expect(r.portalCode).toBe("1123");
   });
 
   test("partially_furnished → unsupported", () => {
@@ -389,19 +414,32 @@ describe("CanonicalMappingResult shape invariants", () => {
     }
   });
 
-  test("no result accidentally invents a portal code", () => {
-    const all = [
+  test("portal codes are returned ONLY when status is 'mapped'", () => {
+    // After the ε-4 partial evidence patch, two field types now
+    // return real portal codes (Kediaman building + furnishing) and
+    // three remain code-less (salinan / state / country). The
+    // invariant is: a non-null portalCode REQUIRES status='mapped'.
+    // Conversely, a null portalCode is correct for anything that's
+    // not yet evidenced. This test pins both halves down.
+    const stillUnevidenced = [
       mapDuplicateCopies(1),
       mapPropertyState("Kuala Lumpur"),
       mapPropertyCountry("Malaysia"),
+    ];
+    for (const r of stillUnevidenced) {
+      expect(r.portalCode).toBe(null);
+      expect(r.status).not.toBe("mapped");
+    }
+    const nowEvidenced = [
       mapPropertyCategory(
         "kediaman" as TenancyPortalPropertyType,
         "kondominium" as TenancyPortalBuildingType
       ),
       mapFurnishedStatus("unfurnished" as TenancyPortalFurnishedStatus),
     ];
-    for (const r of all) {
-      expect(r.portalCode).toBe(null);
+    for (const r of nowEvidenced) {
+      expect(r.portalCode).not.toBe(null);
+      expect(r.status).toBe("mapped");
     }
   });
 });

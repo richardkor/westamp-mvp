@@ -209,3 +209,91 @@ Until Milestones A and B are complete:
 - The run-readiness gate has been patched (in the same milestone that added this report) to hard-block on every gap listed above whose evaluation does not require data we cannot derive locally.
 - The operator UI now surfaces a "Portal field mapping gaps discovered" banner explaining why submission is unsafe.
 - Live portal automation, multi-pass execution, payment, certificate retrieval, OCR, and the end-user review/confirmation page remain explicitly out of scope until the model and compiler catch up.
+
+## 8. ε-4 Recovered Option-Code Evidence (2026-04-29)
+
+The post-A1–A4 readiness audit identified that Category C (portal enum
+mismatch) blockers remained unavoidable until exact portal
+`<option value>` codes were captured. The ε-4 audit recovered direct
+read-only evidence — sourced verbatim from the original ε-3 supervised
+field-mapping run's snap output (the `_field-mapping-cdp-output.log`
+file has been deleted per the original ε-3 cleanup policy, but the
+relevant `<option value> = <label>` pairs were read into context
+during the Bahagian C / Perakuan / `bahagian_b_after_pds_jenis_1105`
+/ `bahagian_b_after_pds_jenis_1104` snaps and are reproduced below).
+
+**No new portal interaction occurred in the ε-4 session.** No CDP
+attach was performed; no live capture was run. The evidence below is
+historical recovery only.
+
+### 8.1. `pds_harta_cat` — Kediaman (`#harta_cat_kediaman`, 9 options)
+
+| Portal `<option value>` | Portal label |
+|---|---|
+| `""` | Sila pilih... (placeholder) |
+| `1112` | Kembar |
+| `1113` | Teres |
+| `1114` | Kondominium |
+| `1115` | Pangsapuri |
+| `1116` | Sesebuah |
+| `1117` | Rumah Pangsa |
+| `1118` | Kluster |
+| `1119` | Townhouse |
+
+### 8.2. `pds_harta_cat` — Perdagangan (`#harta_cat_perdagangan`, 5 options)
+
+| Portal `<option value>` | Portal label |
+|---|---|
+| `""` | Sila pilih... (placeholder) |
+| `1116` | Rumah Kedai |
+| `1117` | Ruang Perniagaan |
+| `1118` | Ruang Pejabat |
+| `1119` | Kedai Pejabat |
+
+### 8.3. `pds_harta_cat` — Perindustrian (`#harta_cat_perindustrian`, 6 options)
+
+| Portal `<option value>` | Portal label |
+|---|---|
+| `""` | Sila pilih... (placeholder) |
+| `1119` | Sesebuah |
+| `1120` | Kembar |
+| `1121` | Teres |
+| `1122` | Bertingkat (Flatted) |
+| `1123` | Banglo |
+
+### 8.4. `pds_harta_perabot` (`#pds_harta_perabot`, 3 options)
+
+| Portal `<option value>` | Portal label |
+|---|---|
+| `""` | Sila pilih... (placeholder) |
+| `1122` | Dengan Perabot |
+| `1123` | Tanpa Perabot |
+
+### 8.5. Notes on Code Reuse Across `<select>` Elements
+
+The integer `<option value>` codes are scoped per `<select>` element
+and are NOT globally unique. For example, `1119` means *Townhouse* in
+the Kediaman dropdown but *Kedai Pejabat* in the Perdagangan dropdown
+and *Sesebuah* in the Perindustrian dropdown. This means the
+canonical-mapping helper must continue to dispatch by `pds_harta_type`
+before resolving the per-property-type code — never assume codes are
+interchangeable across property types.
+
+### 8.6. Fields Still Uncaptured (Live Capture Required)
+
+The ε-3 snap output reported the size of the following dropdowns but
+did **not** enumerate their `<option value> = label` pairs:
+
+- `pds_salinan` — observed as 21 options; option list NOT captured.
+- `pds_harta_state` — observed as 17 options; option list NOT captured.
+- `pds_harta_country` — observed as 279 options; option list NOT captured.
+
+These three Category C blockers therefore remain unavoidable until a
+future read-only capture session enumerates the option lists. Patching
+WeStamp's seeded-code tables for the recovered four fields above will
+flip three of the five Category C blockers from `unknown_code` to
+`mapped` for the pilot path, but the remaining three blockers
+(`pds_salinan_no_canonical_mapping`,
+`pds_harta_state_no_canonical_mapping`,
+`pds_harta_country_no_canonical_mapping`) continue to fire — by
+design, because portal codes were never captured.

@@ -1546,10 +1546,15 @@ describe("Milestone A3 · readiness · canonical-mapping integration", () => {
     expect(gapCodes(job)).toContain("pds_harta_country_no_canonical_mapping");
   });
 
-  test("Kediaman + mappable building (kondominium) emits the new pds_harta_cat_unknown_code blocker", () => {
+  test("Kediaman + mappable building (kondominium) is now MAPPED — pds_harta_cat blocker lifted (post ε-4)", () => {
     // Default propertyWithLandRegistry uses kediaman + kondominium.
+    // After ε-4, kondominium has its captured portal code (1114), so
+    // the canonical mapping returns `mapped` and no harta_cat
+    // blocker fires for this combo.
     const job = makeJob({ property: propertyWithLandRegistry({}) });
-    expect(gapCodes(job)).toContain("pds_harta_cat_unknown_code");
+    const codes = gapCodes(job);
+    expect(codes).not.toContain("pds_harta_cat_unknown_code");
+    expect(codes).not.toContain("pds_harta_cat_propertyType_unsupported");
   });
 
   test("Kediaman + studio still emits the legacy building_type_studio_no_portal_equivalent blocker", () => {
@@ -1615,18 +1620,27 @@ describe("Milestone A3 · readiness · canonical-mapping integration", () => {
     );
   });
 
-  test("furnished_status fully_furnished emits pds_harta_perabot_unknown_code (label known, code unknown)", () => {
+  test("furnished_status fully_furnished is now MAPPED — pds_harta_perabot blocker lifted (post ε-4, code 1122)", () => {
     const property = propertyWithLandRegistry({});
     property.furnishedStatus = "fully_furnished";
     const job = makeJob({ property });
-    expect(gapCodes(job)).toContain("pds_harta_perabot_unknown_code");
+    expect(gapCodes(job)).not.toContain("pds_harta_perabot_unknown_code");
   });
 
-  test("furnished_status unfurnished emits pds_harta_perabot_unknown_code", () => {
+  test("furnished_status unfurnished is now MAPPED (post ε-4, code 1123)", () => {
     const property = propertyWithLandRegistry({});
     property.furnishedStatus = "unfurnished";
     const job = makeJob({ property });
-    expect(gapCodes(job)).toContain("pds_harta_perabot_unknown_code");
+    expect(gapCodes(job)).not.toContain("pds_harta_perabot_unknown_code");
+  });
+
+  test("furnished_status partially_furnished STILL blocks (no portal equivalent)", () => {
+    const property = propertyWithLandRegistry({});
+    property.furnishedStatus = "partially_furnished";
+    const job = makeJob({ property });
+    expect(gapCodes(job)).toContain(
+      "furnished_status_partially_furnished_unsupported"
+    );
   });
 
   test("Unrelated blockers remain untouched when canonical mappings are exercised", () => {
@@ -1678,6 +1692,8 @@ describe("Milestone A3 · payload compiler · canonical mapping summaries", () =
     const job = makeJob({ property });
     const payload = compileTenancyPortalPayload(job);
 
+    // state and country remain unknown_code post-ε-4 — codes were
+    // not captured for these dropdowns in either ε-3 or ε-4.
     expect(payload.bahagianC.stateMapping.portalFieldKey).toBe(
       "pds_harta_state"
     );
@@ -1688,24 +1704,29 @@ describe("Milestone A3 · payload compiler · canonical mapping summaries", () =
       "pds_harta_country"
     );
     expect(payload.bahagianC.countryMapping.portalLabel).toBe("Malaysia");
+    expect(payload.bahagianC.countryMapping.status).toBe("unknown_code");
 
+    // pds_harta_cat (Kediaman + kondominium) is now MAPPED with
+    // captured code 1114 (post-ε-4 evidence patch).
     expect(payload.bahagianC.propertyCategoryMapping.portalFieldKey).toBe(
       "pds_harta_cat"
     );
     expect(payload.bahagianC.propertyCategoryMapping.portalLabel).toBe(
       "Kondominium"
     );
-    expect(payload.bahagianC.propertyCategoryMapping.status).toBe(
-      "unknown_code"
-    );
+    expect(payload.bahagianC.propertyCategoryMapping.portalCode).toBe("1114");
+    expect(payload.bahagianC.propertyCategoryMapping.status).toBe("mapped");
 
+    // pds_harta_perabot is now MAPPED with captured code 1122
+    // (Dengan Perabot, post-ε-4 evidence patch).
     expect(payload.bahagianC.furnishedMapping.portalFieldKey).toBe(
       "pds_harta_perabot"
     );
     expect(payload.bahagianC.furnishedMapping.portalLabel).toBe(
       "Dengan Perabot"
     );
-    expect(payload.bahagianC.furnishedMapping.status).toBe("unknown_code");
+    expect(payload.bahagianC.furnishedMapping.portalCode).toBe("1122");
+    expect(payload.bahagianC.furnishedMapping.status).toBe("mapped");
   });
 
   test("Payload reports propertyCategoryMapping=unsupported when Perdagangan is selected", () => {
@@ -2249,5 +2270,81 @@ describe("Milestone A4 · unrelated blockers untouched", () => {
     expect(codes).not.toContain("party_0_gender_not_modelled");
     expect(codes).not.toContain("party_0_citizenship_3way_not_modelled");
     expect(codes).not.toContain("party_0_nric_subtype_not_modelled");
+  });
+});
+
+// ─── ε-4a partial-evidence patch · readiness invariants ─────────────
+//
+// These tests pin down what the ε-4a evidence patch DOES change and
+// what it explicitly DOES NOT change. The remaining three Category C
+// blockers (pds_salinan, pds_harta_state, pds_harta_country) MUST
+// continue to fire because their `<option value>` codes were not
+// captured. The verdict therefore must remain `blocked` even when
+// every operator-fillable field is captured.
+
+describe("ε-4a partial-evidence patch · invariants", () => {
+  test("Three Category C blockers still fire even with everything operator-fillable captured", () => {
+    // Build the most complete tenancy job we can construct from the
+    // operator side: complete parties, complete instrument, complete
+    // property + landRegistry, complete maklumatAm. The verdict
+    // should still be blocked because pds_salinan / pds_harta_state /
+    // pds_harta_country have no captured codes.
+    const property = propertyWithLandRegistry({});
+    property.furnishedStatus = "fully_furnished";
+    const job: TenancyPortalRunReadinessJobInput = {
+      ...makeJob({}),
+      tenancyPortalDetails: {
+        updatedAt: new Date().toISOString(),
+        parties: [makeIndividualLandlord(), makeIndividualTenant()],
+        instrument: {
+          instrumentDate: "2026-01-01",
+          duplicateCopies: 1,
+          portalDescriptionType: "fixed_rent_during_tenancy",
+          rentSchedule: [
+            {
+              startDate: "2026-01-01",
+              endDate: "2027-01-01",
+              monthlyRent: 1000,
+            },
+          ],
+          portalInstrumentName: { code: "1101", label: "Perjanjian Sewa" },
+        },
+        property,
+        maklumatAm: {
+          dutyStampType: { code: "1101" },
+          instrumentRelationship: "principal",
+        },
+      },
+    };
+    const codes = gapCodes(job);
+    expect(codes).toContain("pds_salinan_no_canonical_mapping");
+    expect(codes).toContain("pds_harta_state_no_canonical_mapping");
+    expect(codes).toContain("pds_harta_country_no_canonical_mapping");
+    // But the two ε-4-evidenced blockers are gone.
+    expect(codes).not.toContain("pds_harta_cat_unknown_code");
+    expect(codes).not.toContain("pds_harta_perabot_unknown_code");
+  });
+
+  test("apartment / studio / lain_lain remain blocked after ε-4 (no exact mapping)", () => {
+    for (const buildingType of ["apartment", "studio", "lain_lain"] as const) {
+      const property = propertyWithLandRegistry({});
+      property.buildingType = buildingType;
+      const job = makeJob({ property });
+      const codes = gapCodes(job);
+      expect(codes).toContain(
+        `building_type_${buildingType}_no_portal_equivalent`
+      );
+    }
+  });
+
+  test("Perdagangan and Perindustrian remain blocked after ε-4 (no WeStamp enum mapping)", () => {
+    for (const propertyType of ["perdagangan", "perindustrian"] as const) {
+      const property = propertyWithLandRegistry({});
+      property.propertyType = propertyType;
+      const job = makeJob({ property });
+      expect(gapCodes(job)).toContain(
+        "pds_harta_cat_propertyType_unsupported"
+      );
+    }
   });
 });
