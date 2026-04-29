@@ -203,7 +203,7 @@ describe("Field-mapping gaps · B · land registry", () => {
 // ─── Category C: portal enum mismatch ───────────────────────────
 
 describe("Field-mapping gaps · C · portal enum mismatch", () => {
-  test("pds_salinan canonical-mapping blocker fires when instrument is captured", () => {
+  test("pds_salinan blocker LIFTED for any 0..20 (post ε-4c)", () => {
     const job = makeJob({
       instrument: {
         instrumentDate: "2026-01-01",
@@ -215,10 +215,25 @@ describe("Field-mapping gaps · C · portal enum mismatch", () => {
         ],
       },
     });
+    expect(gapCodes(job)).not.toContain("pds_salinan_no_canonical_mapping");
+  });
+
+  test("pds_salinan blocker still fires for counts > 20 (out of dropdown range)", () => {
+    const job = makeJob({
+      instrument: {
+        instrumentDate: "2026-01-01",
+        duplicateCopies: 25,
+        portalDescriptionType:
+          "fixed_rent_during_tenancy" as TenancyPortalDescriptionType,
+        rentSchedule: [
+          { startDate: "2026-01-01", endDate: "2027-01-01", monthlyRent: 1000 },
+        ],
+      },
+    });
     expect(gapCodes(job)).toContain("pds_salinan_no_canonical_mapping");
   });
 
-  test("pds_harta_state and pds_harta_country blockers fire when property is captured", () => {
+  test("pds_harta_state and pds_harta_country blockers LIFTED for seeded values (post ε-4c)", () => {
     const job = makeJob({
       property: {
         addressLine1: "Unit 1, Test Street",
@@ -232,8 +247,40 @@ describe("Field-mapping gaps · C · portal enum mismatch", () => {
       },
     });
     const codes = gapCodes(job);
-    expect(codes).toContain("pds_harta_state_no_canonical_mapping");
-    expect(codes).toContain("pds_harta_country_no_canonical_mapping");
+    expect(codes).not.toContain("pds_harta_state_no_canonical_mapping");
+    expect(codes).not.toContain("pds_harta_country_no_canonical_mapping");
+  });
+
+  test("pds_harta_state blocker still fires for unseeded states (post ε-4c)", () => {
+    const job = makeJob({
+      property: {
+        addressLine1: "Unit 1, Test Street",
+        postcode: "50000",
+        city: "Kuala Lumpur",
+        state: "Atlantis",
+        country: "Malaysia",
+        propertyType: "kediaman" as TenancyPortalPropertyType,
+        buildingType: "kondominium" as TenancyPortalBuildingType,
+        premisesAreaSqm: 100,
+      },
+    });
+    expect(gapCodes(job)).toContain("pds_harta_state_no_canonical_mapping");
+  });
+
+  test("pds_harta_country blocker still fires for non-Malaysia countries (post ε-4c)", () => {
+    const job = makeJob({
+      property: {
+        addressLine1: "Unit 1, Test Street",
+        postcode: "50000",
+        city: "Singapore",
+        state: "Singapore",
+        country: "Singapore",
+        propertyType: "kediaman" as TenancyPortalPropertyType,
+        buildingType: "kondominium" as TenancyPortalBuildingType,
+        premisesAreaSqm: 100,
+      },
+    });
+    expect(gapCodes(job)).toContain("pds_harta_country_no_canonical_mapping");
   });
 
   test("perdagangan / perindustrian property types are flagged as unsupported", () => {
@@ -662,12 +709,14 @@ describe("Milestone A1 · Bahagian C land-registry · readiness blockers", () =>
     expect(codes).toContain("pds_jenis_1105_unsupported");
     // SSM rep-identity still there
     expect(codes).toContain("party_0_ssm_rep_identity_not_modelled");
-    // Enum-mismatch (state/country canonical) still there
-    expect(codes).toContain("pds_harta_state_no_canonical_mapping");
-    expect(codes).toContain("pds_harta_country_no_canonical_mapping");
-    // pds_salinan also still there
-    expect(codes).toContain("pds_salinan_no_canonical_mapping");
-    // But land-registry blockers are gone
+    // Enum-mismatch state/country/salinan blockers are LIFTED
+    // post-ε-4c (the property fixture uses Kuala Lumpur / Malaysia
+    // and the instrument has duplicateCopies=1, all of which are
+    // now mapped). Multi-pass + SSM rep-identity remain.
+    expect(codes).not.toContain("pds_harta_state_no_canonical_mapping");
+    expect(codes).not.toContain("pds_harta_country_no_canonical_mapping");
+    expect(codes).not.toContain("pds_salinan_no_canonical_mapping");
+    // And land-registry blockers are still gone (LR is complete).
     expect(codes).not.toContain("pds_mp_milik_penuh_not_modelled");
     expect(codes).not.toContain("pds_luas_not_modelled");
   });
@@ -1487,7 +1536,7 @@ describe("Milestone A2 · Maklumat Am · validator partial-save", () => {
 //   - payload compiler emits per-field mapping summaries
 
 describe("Milestone A3 · readiness · canonical-mapping integration", () => {
-  test("pds_salinan blocker still fires for any duplicateCopies (codes not captured)", () => {
+  test("pds_salinan blocker LIFTED for duplicateCopies in 0..20 (post ε-4c)", () => {
     const job = makeJob({
       instrument: {
         instrumentDate: "2026-01-01",
@@ -1499,7 +1548,7 @@ describe("Milestone A3 · readiness · canonical-mapping integration", () => {
         ],
       },
     });
-    expect(gapCodes(job)).toContain("pds_salinan_no_canonical_mapping");
+    expect(gapCodes(job)).not.toContain("pds_salinan_no_canonical_mapping");
   });
 
   test("pds_salinan blocker fires for negative or non-integer duplicateCopies (unsupported)", () => {
@@ -1517,12 +1566,12 @@ describe("Milestone A3 · readiness · canonical-mapping integration", () => {
     expect(gapCodes(job)).toContain("pds_salinan_no_canonical_mapping");
   });
 
-  test("pds_harta_state blocker fires for seeded states (codes unknown)", () => {
+  test("pds_harta_state blocker LIFTED for seeded states (post ε-4c)", () => {
     const job = makeJob({
       property: propertyWithLandRegistry({}),
     });
-    // Seeded state Kuala Lumpur — label known, code unknown → blocker fires.
-    expect(gapCodes(job)).toContain("pds_harta_state_no_canonical_mapping");
+    // Seeded state Kuala Lumpur — code 14 captured.
+    expect(gapCodes(job)).not.toContain("pds_harta_state_no_canonical_mapping");
   });
 
   test("pds_harta_state blocker fires for unseeded states (unsupported)", () => {
@@ -1534,9 +1583,9 @@ describe("Milestone A3 · readiness · canonical-mapping integration", () => {
     expect(gapCodes(job)).toContain("pds_harta_state_no_canonical_mapping");
   });
 
-  test("pds_harta_country blocker fires for Malaysia (label seeded, code unknown)", () => {
+  test("pds_harta_country blocker LIFTED for Malaysia (post ε-4c, code 146)", () => {
     const job = makeJob({ property: propertyWithLandRegistry({}) });
-    expect(gapCodes(job)).toContain("pds_harta_country_no_canonical_mapping");
+    expect(gapCodes(job)).not.toContain("pds_harta_country_no_canonical_mapping");
   });
 
   test("pds_harta_country blocker fires for unseeded country (unsupported)", () => {
@@ -1664,7 +1713,7 @@ describe("Milestone A3 · readiness · canonical-mapping integration", () => {
 });
 
 describe("Milestone A3 · payload compiler · canonical mapping summaries", () => {
-  test("Payload BahagianB exposes duplicateCopiesMapping with portal field key", () => {
+  test("Payload BahagianB exposes duplicateCopiesMapping mapped to portal code (post ε-4c)", () => {
     const job = makeJob({
       instrument: {
         instrumentDate: "2026-01-01",
@@ -1680,10 +1729,9 @@ describe("Milestone A3 · payload compiler · canonical mapping summaries", () =
     expect(payload.bahagianB.duplicateCopiesMapping.portalFieldKey).toBe(
       "pds_salinan"
     );
-    expect(payload.bahagianB.duplicateCopiesMapping.status).toBe(
-      "unknown_code"
-    );
-    expect(payload.bahagianB.duplicateCopiesMapping.portalCode).toBe(null);
+    expect(payload.bahagianB.duplicateCopiesMapping.status).toBe("mapped");
+    expect(payload.bahagianB.duplicateCopiesMapping.portalLabel).toBe("1");
+    expect(payload.bahagianB.duplicateCopiesMapping.portalCode).toBe("1");
   });
 
   test("Payload BahagianC exposes state / country / category / furnished mappings", () => {
@@ -1692,19 +1740,24 @@ describe("Milestone A3 · payload compiler · canonical mapping summaries", () =
     const job = makeJob({ property });
     const payload = compileTenancyPortalPayload(job);
 
-    // state and country remain unknown_code post-ε-4 — codes were
-    // not captured for these dropdowns in either ε-3 or ε-4.
+    // state and country are NOW MAPPED post-ε-4c with captured codes.
+    // Operator input "Kuala Lumpur" resolves to the long portal label
+    // "Wilayah Persekutuan Kuala Lumpur" with code 14.
     expect(payload.bahagianC.stateMapping.portalFieldKey).toBe(
       "pds_harta_state"
     );
-    expect(payload.bahagianC.stateMapping.portalLabel).toBe("Kuala Lumpur");
-    expect(payload.bahagianC.stateMapping.status).toBe("unknown_code");
+    expect(payload.bahagianC.stateMapping.portalLabel).toBe(
+      "Wilayah Persekutuan Kuala Lumpur"
+    );
+    expect(payload.bahagianC.stateMapping.portalCode).toBe("14");
+    expect(payload.bahagianC.stateMapping.status).toBe("mapped");
 
     expect(payload.bahagianC.countryMapping.portalFieldKey).toBe(
       "pds_harta_country"
     );
-    expect(payload.bahagianC.countryMapping.portalLabel).toBe("Malaysia");
-    expect(payload.bahagianC.countryMapping.status).toBe("unknown_code");
+    expect(payload.bahagianC.countryMapping.portalLabel).toBe("MALAYSIA");
+    expect(payload.bahagianC.countryMapping.portalCode).toBe("146");
+    expect(payload.bahagianC.countryMapping.status).toBe("mapped");
 
     // pds_harta_cat (Kediaman + kondominium) is now MAPPED with
     // captured code 1114 (post-ε-4 evidence patch).
@@ -2247,7 +2300,11 @@ describe("Milestone A4 · validator partial-save", () => {
 });
 
 describe("Milestone A4 · unrelated blockers untouched", () => {
-  test("multi-pass and enum-mismatch blockers still fire when party model is complete", () => {
+  test("multi-pass blocker still fires when party model is complete (post ε-4c)", () => {
+    // After ε-4c, the enum-mismatch blockers for state/country/salinan
+    // are LIFTED for seeded values. The non-regression check for
+    // multi-pass survival uses `pds_jenis = 1105` which still triggers
+    // a multi-pass blocker independently.
     const job = makeJob({
       parties: [makeReadyIndividual(), makeReadyIndividual({ role: "tenant" })],
       instrument: {
@@ -2262,33 +2319,31 @@ describe("Milestone A4 · unrelated blockers untouched", () => {
       property: propertyWithLandRegistry({}),
     });
     const codes = gapCodes(job);
-    // Multi-pass + enum-mismatch survive
+    // Multi-pass survives — pds_jenis = 1105 is structurally
+    // unsupported by the single-pass compiler regardless of data.
     expect(codes).toContain("pds_jenis_1105_unsupported");
-    expect(codes).toContain("pds_salinan_no_canonical_mapping");
-    expect(codes).toContain("pds_harta_state_no_canonical_mapping");
-    // But individual party blockers are gone
+    // Post-ε-4c: enum-mismatch blockers are gone for seeded values.
+    expect(codes).not.toContain("pds_salinan_no_canonical_mapping");
+    expect(codes).not.toContain("pds_harta_state_no_canonical_mapping");
+    // Individual party blockers are gone (party model complete).
     expect(codes).not.toContain("party_0_gender_not_modelled");
     expect(codes).not.toContain("party_0_citizenship_3way_not_modelled");
     expect(codes).not.toContain("party_0_nric_subtype_not_modelled");
   });
 });
 
-// ─── ε-4a partial-evidence patch · readiness invariants ─────────────
+// ─── ε-4c full-evidence patch · readiness invariants ─────────────
 //
-// These tests pin down what the ε-4a evidence patch DOES change and
-// what it explicitly DOES NOT change. The remaining three Category C
-// blockers (pds_salinan, pds_harta_state, pds_harta_country) MUST
-// continue to fire because their `<option value>` codes were not
-// captured. The verdict therefore must remain `blocked` even when
-// every operator-fillable field is captured.
+// After ε-4c, all five Category C `<select>` fields have first-hand
+// portal codes seeded. These tests pin down the new invariant: a
+// fully-captured fixed-rent residential tenancy with seeded values
+// has ZERO portal_enum_mismatch blockers. Semantic blockers (apartment
+// ambiguity, studio/lain_lain unsupported, perdagangan/perindustrian
+// without WeStamp enum coverage) still fire — those are model gaps,
+// not evidence gaps.
 
-describe("ε-4a partial-evidence patch · invariants", () => {
-  test("Three Category C blockers still fire even with everything operator-fillable captured", () => {
-    // Build the most complete tenancy job we can construct from the
-    // operator side: complete parties, complete instrument, complete
-    // property + landRegistry, complete maklumatAm. The verdict
-    // should still be blocked because pds_salinan / pds_harta_state /
-    // pds_harta_country have no captured codes.
+describe("ε-4c full-evidence patch · invariants", () => {
+  test("Zero Category C blockers fire when every operator-fillable field is captured with seeded values", () => {
     const property = propertyWithLandRegistry({});
     property.furnishedStatus = "fully_furnished";
     const job: TenancyPortalRunReadinessJobInput = {
@@ -2317,15 +2372,15 @@ describe("ε-4a partial-evidence patch · invariants", () => {
       },
     };
     const codes = gapCodes(job);
-    expect(codes).toContain("pds_salinan_no_canonical_mapping");
-    expect(codes).toContain("pds_harta_state_no_canonical_mapping");
-    expect(codes).toContain("pds_harta_country_no_canonical_mapping");
-    // But the two ε-4-evidenced blockers are gone.
+    // All five Category C blockers LIFTED post-ε-4c.
+    expect(codes).not.toContain("pds_salinan_no_canonical_mapping");
+    expect(codes).not.toContain("pds_harta_state_no_canonical_mapping");
+    expect(codes).not.toContain("pds_harta_country_no_canonical_mapping");
     expect(codes).not.toContain("pds_harta_cat_unknown_code");
     expect(codes).not.toContain("pds_harta_perabot_unknown_code");
   });
 
-  test("apartment / studio / lain_lain remain blocked after ε-4 (no exact mapping)", () => {
+  test("apartment / studio / lain_lain remain blocked after ε-4c (semantic gaps, not evidence gaps)", () => {
     for (const buildingType of ["apartment", "studio", "lain_lain"] as const) {
       const property = propertyWithLandRegistry({});
       property.buildingType = buildingType;
@@ -2346,5 +2401,184 @@ describe("ε-4a partial-evidence patch · invariants", () => {
         "pds_harta_cat_propertyType_unsupported"
       );
     }
+  });
+});
+
+// ─── ε-4c · End-to-end ready_for_supervised_run ──────────────────
+//
+// The big test: a fully-captured fixed-rent residential tenancy with
+// every operator-fillable field populated using post-ε-4c-seeded
+// values must reach `ready_for_supervised_run`. This is the first
+// build moment where the readiness verdict can pass — historically
+// the gate was unsatisfiable. Future failures of this test mean
+// either an unrelated regression or a new model/data requirement
+// has been added.
+
+describe("ε-4c · End-to-end ready_for_supervised_run", () => {
+  /**
+   * Build a fully-captured fixed-rent residential tenancy. Every
+   * field below is the minimum needed to pass the readiness gate.
+   * Values are chosen for the post-ε-4c seeded happy path:
+   *   - Kuala Lumpur (state code 14)
+   *   - Malaysia (country code 146)
+   *   - Kediaman + kondominium (harta_cat code 1114)
+   *   - fully_furnished (harta_perabot code 1122)
+   *   - fixed_rent_during_tenancy (single rent period, no multi-pass)
+   *   - duplicateCopies = 1 (salinan code "1")
+   * Both parties are individuals with full A4 identity capture.
+   */
+  function buildFullyCapturedFixedRentJob(): TenancyPortalRunReadinessJobInput {
+    const landlord: TenancyPortalParty = {
+      role: "landlord",
+      type: "individual",
+      nameAsPerInstrument: "Test Landlord",
+      nationality: "malaysian",
+      identityType: "nric",
+      identityNumber: "900101015555",
+      addressLine1: "1 Test Lane",
+      postcode: "50000",
+      city: "Kuala Lumpur",
+      state: "Kuala Lumpur",
+      country: "Malaysia",
+      mobile: "0123456789",
+      tinAutoGenerationExpected: true,
+      citizenshipCategory: "citizen",
+      gender: "male",
+      nricSubType: "ic_baru",
+    };
+    const tenant: TenancyPortalParty = {
+      ...landlord,
+      role: "tenant",
+      nameAsPerInstrument: "Test Tenant",
+      identityNumber: "950505055555",
+      addressLine1: "2 Test Lane",
+      mobile: "0129876543",
+      gender: "female",
+    };
+    return {
+      tenancyPortalDetails: {
+        updatedAt: new Date().toISOString(),
+        parties: [landlord, tenant],
+        instrument: {
+          instrumentDate: "2026-01-01",
+          duplicateCopies: 1,
+          portalDescriptionType: "fixed_rent_during_tenancy",
+          rentSchedule: [
+            {
+              startDate: "2026-01-01",
+              endDate: "2027-01-01",
+              monthlyRent: 1000,
+              durationMonths: 12,
+            },
+          ],
+          portalInstrumentName: { code: "1101", label: "Perjanjian Sewa" },
+        },
+        property: {
+          addressLine1: "Unit 1, Test Building",
+          postcode: "50000",
+          city: "Kuala Lumpur",
+          state: "Kuala Lumpur",
+          country: "Malaysia",
+          propertyType: "kediaman",
+          buildingType: "kondominium",
+          furnishedStatus: "fully_furnished",
+          premisesAreaSqm: 100,
+          landRegistry: {
+            milikPenuh: "Hak Milik Penuh",
+            lot: "12345",
+            mukim: "Petaling",
+            daerah: "Kuala Lumpur",
+            luas: 250,
+            luasUnit: "mps",
+          },
+        },
+        maklumatAm: {
+          dutyStampType: { code: "1101", label: "Sewa / Pajakan" },
+          instrumentRelationship: "principal",
+        },
+      },
+      storagePath: "uploads/test/sample.pdf",
+      originalFileName: "sample.pdf",
+      mimeType: "application/pdf",
+      documentCategory: "tenancy_agreement",
+      stampingDetails: undefined,
+    };
+  }
+
+  test("Verdict reaches ready_for_supervised_run when every operator-fillable field is captured (post ε-4c)", () => {
+    const job = buildFullyCapturedFixedRentJob();
+    const report = evaluateTenancyPortalRunReadiness(job);
+    // If this fails, surface the actual blockers so the test failure
+    // message is a real diagnosis rather than a bare boolean miss.
+    if (report.verdict !== "ready_for_supervised_run") {
+      throw new Error(
+        "Expected ready_for_supervised_run but got blocked. " +
+          `portalFieldMappingGaps=${JSON.stringify(
+            report.portalFieldMappingGaps.map((g) => g.code)
+          )}; ` +
+          `requiredDetailsStatus=${report.requiredDetailsStatus}, ` +
+          `payloadStatus=${report.payloadStatus}, ` +
+          `instructionDraftStatus=${report.instructionDraftStatus}, ` +
+          `sourcePdfReady=${report.sourcePdfReady}; ` +
+          `top blockingReasons (first 3)=${JSON.stringify(
+            report.blockingReasons.slice(0, 3)
+          )}`
+      );
+    }
+    expect(report.verdict).toBe("ready_for_supervised_run");
+    expect(report.portalFieldMappingGaps).toHaveLength(0);
+    expect(report.blockingReasons).toHaveLength(0);
+    expect(report.requiredDetailsStatus).toBe("ready");
+    expect(report.payloadStatus).toBe("ready");
+    expect(report.instructionDraftStatus).toBe("ready");
+    expect(report.sourcePdfReady).toBe(true);
+  });
+
+  test("Removing any one operator-required field breaks the ready verdict (regression guard)", () => {
+    const baseline = buildFullyCapturedFixedRentJob();
+
+    // 1. Remove citizenshipCategory from landlord → individual blocker fires.
+    const noCitizenship = JSON.parse(
+      JSON.stringify(baseline)
+    ) as typeof baseline;
+    delete noCitizenship.tenancyPortalDetails!.parties[0]
+      .citizenshipCategory;
+    expect(
+      evaluateTenancyPortalRunReadiness(noCitizenship).verdict
+    ).toBe("blocked");
+
+    // 2. Remove storagePath → sourcePdfReady false.
+    const noPdf = JSON.parse(JSON.stringify(baseline)) as typeof baseline;
+    noPdf.storagePath = "";
+    expect(evaluateTenancyPortalRunReadiness(noPdf).verdict).toBe("blocked");
+
+    // 3. Switch state to an unseeded one → state blocker fires.
+    const badState = JSON.parse(
+      JSON.stringify(baseline)
+    ) as typeof baseline;
+    badState.tenancyPortalDetails!.property!.state = "Atlantis";
+    expect(
+      evaluateTenancyPortalRunReadiness(badState).verdict
+    ).toBe("blocked");
+
+    // 4. Switch propertyType to perdagangan (no WeStamp enum coverage).
+    const perdagangan = JSON.parse(
+      JSON.stringify(baseline)
+    ) as typeof baseline;
+    perdagangan.tenancyPortalDetails!.property!.propertyType = "perdagangan";
+    expect(
+      evaluateTenancyPortalRunReadiness(perdagangan).verdict
+    ).toBe("blocked");
+  });
+
+  test("Switching pds_jenis to amendment keeps the verdict blocked even with full operator capture (multi-pass gate)", () => {
+    const job = buildFullyCapturedFixedRentJob();
+    job.tenancyPortalDetails!.instrument!.portalDescriptionType =
+      "amendment_to_original_tenancy";
+    const report = evaluateTenancyPortalRunReadiness(job);
+    expect(report.verdict).toBe("blocked");
+    expect(
+      report.portalFieldMappingGaps.map((g) => g.code)
+    ).toContain("pds_jenis_1105_unsupported");
   });
 });

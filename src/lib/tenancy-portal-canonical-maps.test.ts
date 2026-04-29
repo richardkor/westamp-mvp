@@ -48,26 +48,28 @@ describe("mapDuplicateCopies (pds_salinan)", () => {
     );
   });
 
-  test("returns unsupported for counts > 20 (outside safely-modelled range)", () => {
+  test("returns unsupported for counts > 20 (outside captured range)", () => {
     const r = mapDuplicateCopies(21);
     expect(r.status).toBe("unsupported");
-    expect(r.reason).toMatch(/exceeds the safely modelled range/i);
+    expect(r.reason).toMatch(/exceeds the dropdown's range/i);
   });
 
-  test("returns unknown_code for any 0..20 (no codes captured yet)", () => {
+  test("returns mapped for any 0..20 with portal code = String(N) (post ε-4b)", () => {
     for (const n of [0, 1, 2, 5, 10, 20]) {
       const r = mapDuplicateCopies(n);
-      expect(r.status).toBe("unknown_code");
+      expect(r.status).toBe("mapped");
       expect(r.portalFieldKey).toBe("pds_salinan");
-      expect(r.portalLabel).toBe(null);
-      expect(r.portalCode).toBe(null);
-      expect(isMappingSafe(r)).toBe(false);
+      expect(r.portalLabel).toBe(String(n));
+      expect(r.portalCode).toBe(String(n));
+      expect(isMappingSafe(r)).toBe(true);
     }
   });
 
-  test("never returns a guessed portal code", () => {
-    for (const n of [0, 1, 2, 5, 10, 20]) {
-      expect(mapDuplicateCopies(n).portalCode).toBe(null);
+  test("captured codes are exactly String(N) for the full 0..20 range (no guesses)", () => {
+    for (let n = 0; n <= 20; n++) {
+      const r = mapDuplicateCopies(n);
+      expect(r.portalCode).toBe(String(n));
+      expect(r.status).toBe("mapped");
     }
   });
 });
@@ -82,20 +84,71 @@ describe("mapPropertyState (pds_harta_state)", () => {
     expect(mapPropertyState(undefined).status).toBe("unsupported");
   });
 
-  test("returns unknown_code for seeded states (Kuala Lumpur / Selangor / Sarawak)", () => {
-    for (const state of ["Kuala Lumpur", "Selangor", "Sarawak"]) {
-      const r = mapPropertyState(state);
-      expect(r.status).toBe("unknown_code");
-      expect(r.portalLabel).toBe(state);
-      expect(r.portalCode).toBe(null);
+  test.each([
+    ["Johor", "Johor", "1"],
+    ["Kedah", "Kedah", "2"],
+    ["Kelantan", "Kelantan", "3"],
+    ["Melaka", "Melaka", "4"],
+    ["Negeri Sembilan", "Negeri Sembilan", "5"],
+    ["Pahang", "Pahang", "6"],
+    ["Perak", "Perak", "7"],
+    ["Perlis", "Perlis", "8"],
+    ["Pulau Pinang", "Pulau Pinang", "9"],
+    ["Sabah", "Sabah", "10"],
+    ["Sarawak", "Sarawak", "11"],
+    ["Selangor", "Selangor", "12"],
+    ["Terengganu", "Terengganu", "13"],
+  ] as const)(
+    "ordinary state %s → mapped, portal label %s, portal code %s",
+    (input, expectedLabel, expectedCode) => {
+      const r = mapPropertyState(input);
+      expect(r.status).toBe("mapped");
+      expect(r.portalLabel).toBe(expectedLabel);
+      expect(r.portalCode).toBe(expectedCode);
       expect(r.portalFieldKey).toBe("pds_harta_state");
     }
+  );
+
+  test("Penang alias resolves to Pulau Pinang (code 9)", () => {
+    const r = mapPropertyState("Penang");
+    expect(r.status).toBe("mapped");
+    expect(r.portalLabel).toBe("Pulau Pinang");
+    expect(r.portalCode).toBe("9");
   });
+
+  test.each([
+    ["Kuala Lumpur", "Wilayah Persekutuan Kuala Lumpur", "14"],
+    ["WP Kuala Lumpur", "Wilayah Persekutuan Kuala Lumpur", "14"],
+    [
+      "Wilayah Persekutuan Kuala Lumpur",
+      "Wilayah Persekutuan Kuala Lumpur",
+      "14",
+    ],
+    ["Labuan", "Wilayah Persekutuan Labuan", "15"],
+    ["WP Labuan", "Wilayah Persekutuan Labuan", "15"],
+    ["Wilayah Persekutuan Labuan", "Wilayah Persekutuan Labuan", "15"],
+    ["Putrajaya", "Wilayah Persekutuan Putrajaya", "16"],
+    ["WP Putrajaya", "Wilayah Persekutuan Putrajaya", "16"],
+    [
+      "Wilayah Persekutuan Putrajaya",
+      "Wilayah Persekutuan Putrajaya",
+      "16",
+    ],
+  ] as const)(
+    "Federal Territory alias %s → mapped, portal label %s, portal code %s",
+    (input, expectedLabel, expectedCode) => {
+      const r = mapPropertyState(input);
+      expect(r.status).toBe("mapped");
+      expect(r.portalLabel).toBe(expectedLabel);
+      expect(r.portalCode).toBe(expectedCode);
+    }
+  );
 
   test("normalization tolerates whitespace and case", () => {
     const r = mapPropertyState("  KUALA   LUMPUR  ");
-    expect(r.status).toBe("unknown_code");
-    expect(r.portalLabel).toBe("Kuala Lumpur");
+    expect(r.status).toBe("mapped");
+    expect(r.portalLabel).toBe("Wilayah Persekutuan Kuala Lumpur");
+    expect(r.portalCode).toBe("14");
   });
 
   test("returns unsupported for states not in the seed table", () => {
@@ -105,8 +158,34 @@ describe("mapPropertyState (pds_harta_state)", () => {
     expect(r.portalCode).toBe(null);
   });
 
-  test("never returns a guessed portal code", () => {
-    expect(mapPropertyState("Selangor").portalCode).toBe(null);
+  test("captured codes match ε-4b evidence verbatim", () => {
+    // All 16 portal options + Penang alias must resolve to the
+    // exact captured codes. Any drift here means someone has
+    // touched the seed table without updating tests.
+    const expected: Record<string, string> = {
+      Johor: "1",
+      Kedah: "2",
+      Kelantan: "3",
+      Melaka: "4",
+      "Negeri Sembilan": "5",
+      Pahang: "6",
+      Perak: "7",
+      Perlis: "8",
+      "Pulau Pinang": "9",
+      Penang: "9",
+      Sabah: "10",
+      Sarawak: "11",
+      Selangor: "12",
+      Terengganu: "13",
+      "Kuala Lumpur": "14",
+      Labuan: "15",
+      Putrajaya: "16",
+    };
+    for (const [input, code] of Object.entries(expected)) {
+      const r = mapPropertyState(input);
+      expect(r.portalCode).toBe(code);
+      expect(r.status).toBe("mapped");
+    }
   });
 });
 
@@ -117,11 +196,17 @@ describe("mapPropertyCountry (pds_harta_country)", () => {
     expect(mapPropertyCountry("").status).toBe("unsupported");
   });
 
-  test("returns unknown_code for Malaysia (label seeded, code unknown)", () => {
+  test("Malaysia → mapped (ε-4b: portal label MALAYSIA, code 146)", () => {
     const r = mapPropertyCountry("Malaysia");
-    expect(r.status).toBe("unknown_code");
-    expect(r.portalLabel).toBe("Malaysia");
-    expect(r.portalCode).toBe(null);
+    expect(r.status).toBe("mapped");
+    expect(r.portalLabel).toBe("MALAYSIA");
+    expect(r.portalCode).toBe("146");
+  });
+
+  test("Malaysia alias matching tolerates case (uppercase input → mapped)", () => {
+    const r = mapPropertyCountry("MALAYSIA");
+    expect(r.status).toBe("mapped");
+    expect(r.portalCode).toBe("146");
   });
 
   test("returns unsupported for unseeded countries", () => {
@@ -414,30 +499,22 @@ describe("CanonicalMappingResult shape invariants", () => {
     }
   });
 
-  test("portal codes are returned ONLY when status is 'mapped'", () => {
-    // After the ε-4 partial evidence patch, two field types now
-    // return real portal codes (Kediaman building + furnishing) and
-    // three remain code-less (salinan / state / country). The
-    // invariant is: a non-null portalCode REQUIRES status='mapped'.
-    // Conversely, a null portalCode is correct for anything that's
-    // not yet evidenced. This test pins both halves down.
-    const stillUnevidenced = [
+  test("portal codes are returned ONLY when status is 'mapped' (post ε-4c: all five Category C fields evidenced)", () => {
+    // After ε-4c, all five Category C `<select>` fields have first-
+    // hand portal codes seeded. The invariant — a non-null
+    // portalCode iff status='mapped' — is now testable across the
+    // full evidenced set.
+    const allFiveEvidenced = [
       mapDuplicateCopies(1),
       mapPropertyState("Kuala Lumpur"),
       mapPropertyCountry("Malaysia"),
-    ];
-    for (const r of stillUnevidenced) {
-      expect(r.portalCode).toBe(null);
-      expect(r.status).not.toBe("mapped");
-    }
-    const nowEvidenced = [
       mapPropertyCategory(
         "kediaman" as TenancyPortalPropertyType,
         "kondominium" as TenancyPortalBuildingType
       ),
       mapFurnishedStatus("unfurnished" as TenancyPortalFurnishedStatus),
     ];
-    for (const r of nowEvidenced) {
+    for (const r of allFiveEvidenced) {
       expect(r.portalCode).not.toBe(null);
       expect(r.status).toBe("mapped");
     }

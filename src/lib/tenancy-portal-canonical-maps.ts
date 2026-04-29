@@ -227,18 +227,18 @@ const normalize = (v: string | null | undefined): string =>
  * Map WeStamp's `duplicateCopies` (a non-negative integer) to a
  * portal `pds_salinan` `<select>` option.
  *
- * Evidence: the field-mapping run recorded `pds_salinan` as a 21-
- * option dropdown but did NOT enumerate the option codes / labels.
- * Until a future evidence pass records the option list, every
- * numeric input in 0..20 returns `unknown_code` — including
- * intuitively-familiar values like 1 or 2. Surface intuition does
- * NOT make a value safe; only the presence of an observed portal
- * `<option value>` code does, and none have been captured yet.
- * `unknown_code` remains readiness-blocking.
+ * Evidence (ε-4b live read-only capture, 2026-04-29 — see
+ * `docs/2026-04-28-tenancy-portal-field-mapping.md` §9.1): the
+ * dropdown is a direct integer ladder of 21 options — values
+ * `"0".."20"`, labels identical to values. There is no placeholder
+ * and no >20 sentinel.
  *
- * Negative or non-integer or non-finite inputs are `unsupported`.
- * Counts above 20 are also `unsupported` — the dropdown's >20
- * option (if any) has not been characterized.
+ * Therefore:
+ *   - 0..20 → `mapped`, `portalCode = String(count)`,
+ *     `portalLabel = String(count)`.
+ *   - >20 → `unsupported` (dropdown has no option above 20; portals
+ *     with >20 copies are out of the modelled range).
+ *   - Negative, non-integer, or non-finite → `unsupported`.
  */
 export function mapDuplicateCopies(
   count: unknown
@@ -260,11 +260,8 @@ export function mapDuplicateCopies(
         'pds_salinan ("Salinan Pendua") expects a non-negative integer count. The supplied value is not a non-negative integer and cannot be mapped to a portal option.',
     };
   }
-  // Known-unsupported beyond the 21-option range. The dropdown was
-  // observed to have 21 options total ("likely 1–20 plus more-than-
-  // 20" per the field-mapping report). We don't yet have the exact
-  // option labels, so we conservatively treat counts >20 as
-  // unsupported until the option list is captured.
+  // Outside the captured 0..20 range — the dropdown has no >20
+  // option (confirmed by ε-4b), so counts above 20 are unsupported.
   if (count > 20) {
     return {
       portalFieldKey,
@@ -272,42 +269,127 @@ export function mapDuplicateCopies(
       portalLabel: null,
       portalCode: null,
       status: "unsupported",
-      reason: `pds_salinan portal dropdown has 21 options (observed); WeStamp's duplicateCopies value ${count} exceeds the safely modelled range. Capture the >20 option label/code before mapping higher counts.`,
+      reason: `pds_salinan portal dropdown exposes 21 options (0..20). WeStamp's duplicateCopies value ${count} exceeds the dropdown's range — there is no >20 option to select.`,
     };
   }
-  // 0..20 — label and code both unknown until the option list is captured.
+  // 0..20 — direct integer mapping captured in ε-4b.
+  const code = String(count);
   return {
     portalFieldKey,
     weStampValue: count,
-    portalLabel: null,
-    portalCode: null,
-    status: "unknown_code",
-    reason: `pds_salinan option list (21 options) has not been captured during field mapping. WeStamp can name the duplicateCopies value (${count}) but cannot emit the matching portal <option value> until the dropdown's labels and codes are recorded.`,
+    portalLabel: code,
+    portalCode: code,
+    status: "mapped",
+    reason: null,
   };
 }
 
 // ─── pds_harta_state ──────────────────────────────────────────────
 
 /**
- * Seeded label-only entries for Malaysian states the pilot is
- * expected to encounter. Codes are NOT seeded — every entry status
- * is `unknown_code`. The list is intentionally small; it grows when
- * more states appear in real job data.
- *
- * Each entry's key is the normalized form of the state name. The
- * matcher normalizes the input identically before lookup.
+ * One captured portal-state entry: portal label + portal code.
+ * Multiple operator-input aliases can map to the same entry — the
+ * three Federal Territories accept both their colloquial short form
+ * (e.g. "Kuala Lumpur") and the full portal label form
+ * (e.g. "Wilayah Persekutuan Kuala Lumpur").
  */
-const STATE_LABELS_BY_NORMALIZED: ReadonlyMap<string, string> = new Map([
-  ["KUALA LUMPUR", "Kuala Lumpur"],
-  ["SELANGOR", "Selangor"],
-  ["SARAWAK", "Sarawak"],
-]);
+interface StateEntry {
+  portalLabel: string;
+  portalCode: string;
+}
+
+/**
+ * Seeded operator-input → portal-entry table for `pds_harta_state`.
+ *
+ * Evidence (ε-4b live read-only capture, 2026-04-29 — see
+ * `docs/2026-04-28-tenancy-portal-field-mapping.md` §9.2): the
+ * portal exposes 16 selectable options (codes "1".."16") plus a
+ * placeholder. All 16 are seeded with their captured codes.
+ *
+ * Aliases:
+ *   - "Penang" → resolves to "Pulau Pinang" (code "9").
+ *   - "Kuala Lumpur" / "WP Kuala Lumpur" → resolve to
+ *     "Wilayah Persekutuan Kuala Lumpur" (code "14").
+ *   - "Labuan" / "WP Labuan" → "Wilayah Persekutuan Labuan" ("15").
+ *   - "Putrajaya" / "WP Putrajaya" → "Wilayah Persekutuan Putrajaya"
+ *     ("16").
+ *
+ * Keys are stored in normalized form (uppercase, whitespace
+ * collapsed) so `normalizeForMatch(input)` is a direct lookup.
+ */
+const STATE_ENTRY_BY_NORMALIZED_INPUT: ReadonlyMap<string, StateEntry> =
+  new Map([
+    // Eleven ordinary Malaysian states — operator input is the
+    // portal label.
+    ["JOHOR", { portalLabel: "Johor", portalCode: "1" }],
+    ["KEDAH", { portalLabel: "Kedah", portalCode: "2" }],
+    ["KELANTAN", { portalLabel: "Kelantan", portalCode: "3" }],
+    ["MELAKA", { portalLabel: "Melaka", portalCode: "4" }],
+    ["NEGERI SEMBILAN", { portalLabel: "Negeri Sembilan", portalCode: "5" }],
+    ["PAHANG", { portalLabel: "Pahang", portalCode: "6" }],
+    ["PERAK", { portalLabel: "Perak", portalCode: "7" }],
+    ["PERLIS", { portalLabel: "Perlis", portalCode: "8" }],
+    ["PULAU PINANG", { portalLabel: "Pulau Pinang", portalCode: "9" }],
+    // Penang alias → Pulau Pinang.
+    ["PENANG", { portalLabel: "Pulau Pinang", portalCode: "9" }],
+    ["SABAH", { portalLabel: "Sabah", portalCode: "10" }],
+    ["SARAWAK", { portalLabel: "Sarawak", portalCode: "11" }],
+    ["SELANGOR", { portalLabel: "Selangor", portalCode: "12" }],
+    ["TERENGGANU", { portalLabel: "Terengganu", portalCode: "13" }],
+    // Federal Territories — accept both colloquial and full forms.
+    [
+      "KUALA LUMPUR",
+      {
+        portalLabel: "Wilayah Persekutuan Kuala Lumpur",
+        portalCode: "14",
+      },
+    ],
+    [
+      "WP KUALA LUMPUR",
+      {
+        portalLabel: "Wilayah Persekutuan Kuala Lumpur",
+        portalCode: "14",
+      },
+    ],
+    [
+      "WILAYAH PERSEKUTUAN KUALA LUMPUR",
+      {
+        portalLabel: "Wilayah Persekutuan Kuala Lumpur",
+        portalCode: "14",
+      },
+    ],
+    [
+      "LABUAN",
+      { portalLabel: "Wilayah Persekutuan Labuan", portalCode: "15" },
+    ],
+    [
+      "WP LABUAN",
+      { portalLabel: "Wilayah Persekutuan Labuan", portalCode: "15" },
+    ],
+    [
+      "WILAYAH PERSEKUTUAN LABUAN",
+      { portalLabel: "Wilayah Persekutuan Labuan", portalCode: "15" },
+    ],
+    [
+      "PUTRAJAYA",
+      { portalLabel: "Wilayah Persekutuan Putrajaya", portalCode: "16" },
+    ],
+    [
+      "WP PUTRAJAYA",
+      { portalLabel: "Wilayah Persekutuan Putrajaya", portalCode: "16" },
+    ],
+    [
+      "WILAYAH PERSEKUTUAN PUTRAJAYA",
+      { portalLabel: "Wilayah Persekutuan Putrajaya", portalCode: "16" },
+    ],
+  ]);
 
 /**
  * Map WeStamp's free-string property `state` to a portal
- * `pds_harta_state` option. Currently every recognized state returns
- * `unknown_code` because no portal codes have been captured.
- * Unrecognized states return `unsupported`.
+ * `pds_harta_state` option. After ε-4b, all 16 captured states
+ * return `mapped` with the captured portal label + code. Aliases
+ * (Penang, Kuala Lumpur, etc.) resolve to the canonical portal
+ * label. Unrecognized inputs return `unsupported`.
  */
 export function mapPropertyState(
   state: string | null | undefined
@@ -322,46 +404,63 @@ export function mapPropertyState(
       portalCode: null,
       status: "unsupported",
       reason:
-        'Property state is blank. Capture a Malaysian state before pds_harta_state can be mapped.',
+        "Property state is blank. Capture a Malaysian state before pds_harta_state can be mapped.",
     };
   }
   const norm = normalize(trimmed);
-  const portalLabel = STATE_LABELS_BY_NORMALIZED.get(norm) ?? null;
-  if (portalLabel === null) {
+  const entry = STATE_ENTRY_BY_NORMALIZED_INPUT.get(norm) ?? null;
+  if (entry === null) {
     return {
       portalFieldKey,
       weStampValue: trimmed,
       portalLabel: null,
       portalCode: null,
       status: "unsupported",
-      reason: `Property state "${trimmed}" is not in WeStamp's seeded Malaysian-state list. Add it to the mapping table once a real job uses it.`,
+      reason: `Property state "${trimmed}" is not in WeStamp's captured Malaysian-state list (16 portal options + accepted aliases). Add it to the mapping table once a real job uses it.`,
     };
   }
-  // Recognized — but we don't have the portal code yet.
   return {
     portalFieldKey,
     weStampValue: trimmed,
-    portalLabel,
-    portalCode: null,
-    status: "unknown_code",
-    reason: `pds_harta_state portal option-code list (17 options) has not been captured. WeStamp recognizes the label "${portalLabel}" but cannot emit a portal <option value> until the codes are observed.`,
+    portalLabel: entry.portalLabel,
+    portalCode: entry.portalCode,
+    status: "mapped",
+    reason: null,
   };
 }
 
 // ─── pds_harta_country ────────────────────────────────────────────
 
 /**
- * Seeded country-label dictionary. Only Malaysia is seeded for now.
- * All other countries fall through to `unsupported` until added.
+ * Captured country entry: portal label + portal code. Mirrors the
+ * `StateEntry` shape so the helper code paths stay parallel.
  */
-const COUNTRY_LABELS_BY_NORMALIZED: ReadonlyMap<string, string> = new Map([
-  ["MALAYSIA", "Malaysia"],
-]);
+interface CountryEntry {
+  portalLabel: string;
+  portalCode: string;
+}
+
+/**
+ * Seeded country dictionary keyed by normalized operator input.
+ *
+ * Evidence (ε-4b live read-only capture, 2026-04-29 — see
+ * `docs/2026-04-28-tenancy-portal-field-mapping.md` §9.3): the
+ * portal exposes 279 country options. Only Malaysia is seeded here;
+ * the portal label is uppercase as exposed by the portal (`MALAYSIA`).
+ *
+ * All other countries fall through to `unsupported` until they are
+ * specifically captured in a future evidence pass.
+ */
+const COUNTRY_ENTRY_BY_NORMALIZED_INPUT: ReadonlyMap<string, CountryEntry> =
+  new Map([
+    ["MALAYSIA", { portalLabel: "MALAYSIA", portalCode: "146" }],
+  ]);
 
 /**
  * Map WeStamp's free-string property `country` to a portal
- * `pds_harta_country` option. Malaysia is recognized as a label;
- * its portal code is unknown so the result is `unknown_code`.
+ * `pds_harta_country` option. After ε-4b, Malaysia returns
+ * `mapped` with the captured code "146". Other countries return
+ * `unsupported`.
  */
 export function mapPropertyCountry(
   country: string | null | undefined
@@ -380,24 +479,24 @@ export function mapPropertyCountry(
     };
   }
   const norm = normalize(trimmed);
-  const portalLabel = COUNTRY_LABELS_BY_NORMALIZED.get(norm) ?? null;
-  if (portalLabel === null) {
+  const entry = COUNTRY_ENTRY_BY_NORMALIZED_INPUT.get(norm) ?? null;
+  if (entry === null) {
     return {
       portalFieldKey,
       weStampValue: trimmed,
       portalLabel: null,
       portalCode: null,
       status: "unsupported",
-      reason: `Property country "${trimmed}" is not in WeStamp's seeded country list. Add it to the mapping table once a real job uses it.`,
+      reason: `Property country "${trimmed}" is not in WeStamp's seeded country list (Malaysia only at this milestone). Add it to the mapping table once a real job uses it.`,
     };
   }
   return {
     portalFieldKey,
     weStampValue: trimmed,
-    portalLabel,
-    portalCode: null,
-    status: "unknown_code",
-    reason: `pds_harta_country portal option-code list (279 options) has not been captured. WeStamp recognizes the label "${portalLabel}" but cannot emit a portal <option value> until the codes are observed.`,
+    portalLabel: entry.portalLabel,
+    portalCode: entry.portalCode,
+    status: "mapped",
+    reason: null,
   };
 }
 

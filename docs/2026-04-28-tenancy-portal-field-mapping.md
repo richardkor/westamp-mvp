@@ -279,7 +279,7 @@ canonical-mapping helper must continue to dispatch by `pds_harta_type`
 before resolving the per-property-type code — never assume codes are
 interchangeable across property types.
 
-### 8.6. Fields Still Uncaptured (Live Capture Required)
+### 8.6. Fields Still Uncaptured (Live Capture Required) — superseded by §8.7–§8.9
 
 The ε-3 snap output reported the size of the following dropdowns but
 did **not** enumerate their `<option value> = label` pairs:
@@ -288,12 +288,114 @@ did **not** enumerate their `<option value> = label` pairs:
 - `pds_harta_state` — observed as 17 options; option list NOT captured.
 - `pds_harta_country` — observed as 279 options; option list NOT captured.
 
-These three Category C blockers therefore remain unavoidable until a
-future read-only capture session enumerates the option lists. Patching
-WeStamp's seeded-code tables for the recovered four fields above will
-flip three of the five Category C blockers from `unknown_code` to
-`mapped` for the pilot path, but the remaining three blockers
-(`pds_salinan_no_canonical_mapping`,
-`pds_harta_state_no_canonical_mapping`,
-`pds_harta_country_no_canonical_mapping`) continue to fire — by
-design, because portal codes were never captured.
+These three Category C blockers were unavoidable until ε-4b. The
+ε-4b live read-only capture (2026-04-29) closed all three gaps; see
+§8.7–§8.9 below.
+
+## 9. ε-4b Live Read-Only Capture (2026-04-29)
+
+A read-only CDP-attach session against the user's Chrome (port 9222)
+inspected the three remaining Category C `<select>` elements on the
+Sewa/Pajakan p5 form. The session used `page.evaluate()` over
+`document.querySelector` + `<option>` iteration only — no clicks, no
+typing, no dropdown changes, no Simpan / Hantar / upload / payment /
+certificate. The temporary harness file and its log were deleted at
+the end of the run; no portal mutation occurred.
+
+The portal URL path was redacted before logging (numeric draft IDs
+replaced with `<redacted-id>`; query strings and hashes stripped).
+The country dump was bounded to Malaysia + total count to avoid
+logging the global 279-row list. No cookies / tokens / SSO values /
+`lhdnmsstoken` / IC numbers / TINs / firm IDs / raw HAR data were
+stored or logged.
+
+### 9.1. `pds_salinan` (21 options, no placeholder)
+
+The dropdown is a direct integer ladder `"0".."20"` with labels
+identical to values. There is no placeholder option and no >20
+sentinel. Counts above 20 remain `unsupported`; the helper's
+old comment claiming "likely 1–20 plus more-than-20" is corrected
+in this milestone.
+
+| Portal `<option value>` | Portal label |
+|---|---|
+| `"0"` | `0` |
+| `"1"` | `1` |
+| `"2"` | `2` |
+| `"3"` | `3` |
+| `"4"` | `4` |
+| `"5"` | `5` |
+| `"6"` | `6` |
+| `"7"` | `7` |
+| `"8"` | `8` |
+| `"9"` | `9` |
+| `"10"` | `10` |
+| `"11"` | `11` |
+| `"12"` | `12` |
+| `"13"` | `13` |
+| `"14"` | `14` |
+| `"15"` | `15` |
+| `"16"` | `16` |
+| `"17"` | `17` |
+| `"18"` | `18` |
+| `"19"` | `19` |
+| `"20"` | `20` |
+
+### 9.2. `pds_harta_state` (17 options total: 1 placeholder + 16 real)
+
+The portal includes the three Federal Territories as full "Wilayah
+Persekutuan ..." labels rather than the colloquial short form. The
+WeStamp seed accepts operator-friendly aliases (`Kuala Lumpur`,
+`Labuan`, `Putrajaya`, `WP …`, `Penang` for `Pulau Pinang`) and
+resolves them to the long portal label + code.
+
+| Portal `<option value>` | Portal label | Selectable? |
+|---|---|---|
+| `""` | `Sila pilih...` | placeholder — not selectable |
+| `"1"` | `Johor` | yes |
+| `"2"` | `Kedah` | yes |
+| `"3"` | `Kelantan` | yes |
+| `"4"` | `Melaka` | yes |
+| `"5"` | `Negeri Sembilan` | yes |
+| `"6"` | `Pahang` | yes |
+| `"7"` | `Perak` | yes |
+| `"8"` | `Perlis` | yes |
+| `"9"` | `Pulau Pinang` | yes |
+| `"10"` | `Sabah` | yes |
+| `"11"` | `Sarawak` | yes |
+| `"12"` | `Selangor` | yes |
+| `"13"` | `Terengganu` | yes |
+| `"14"` | `Wilayah Persekutuan Kuala Lumpur` | yes |
+| `"15"` | `Wilayah Persekutuan Labuan` | yes |
+| `"16"` | `Wilayah Persekutuan Putrajaya` | yes |
+
+### 9.3. `pds_harta_country` (279 options total; Malaysia captured)
+
+Only Malaysia was extracted. The label is uppercase as exposed by the
+portal; WeStamp normalizes inputs to upper-case before lookup so
+operator-typed `"Malaysia"` matches the seeded entry.
+
+| Portal `<option value>` | Portal label | Total option count |
+|---|---|---|
+| `"146"` | `MALAYSIA` | 279 |
+
+Other countries remain `unsupported` until specifically captured; a
+future evidence pass can extend the seed table without changing
+helper logic.
+
+### 9.4. Effect on Category C Readiness Blockers
+
+After ε-4c (the patch milestone that consumes this evidence) all five
+Category C `<select>` fields have first-hand portal codes seeded:
+
+- `pds_salinan` 0..20 → `mapped`.
+- `pds_harta_state` 16 captured states → `mapped` (with operator-input
+  aliases for the three Federal Territories).
+- `pds_harta_country` Malaysia → `mapped`.
+- `pds_harta_cat` — Kediaman 5 mappable WeStamp values → `mapped` (from ε-4a §8.1).
+- `pds_harta_perabot` — fully_furnished / unfurnished → `mapped` (from ε-4a §8.4).
+
+A fixed-rent residential tenancy with all operator-fillable fields
+captured can now reach `ready_for_supervised_run`. The next gating
+milestone is the multi-pass instruction-graph compiler — outside
+scope for ε-4c.
