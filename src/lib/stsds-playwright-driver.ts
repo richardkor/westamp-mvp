@@ -28,6 +28,13 @@ import {
   BrowserDriverAdapter,
   BrowserDriverOperationResult,
 } from "./stsds-browser-driver";
+import {
+  classifyPathKind,
+  matchFirmAnchor,
+  POST_FIRM_SELECTION_REDIRECT_PATH,
+  ROLE_CHANGE_HREF_FRAGMENT,
+  type FirmAnchorCandidate,
+} from "./stsds-firm-anchor-matcher";
 
 /**
  * Portal entry URLs.
@@ -5867,12 +5874,21 @@ export class PlaywrightStsdsDriver implements BrowserDriverAdapter {
       };
       this.page.on("dialog", dialogHandler);
 
+      // Pre-stage path classification — no raw URL, no truncated URL,
+      // no hash. Just the coarse path-shape enum so logs/markers can
+      // confirm the entry condition without leaking portal data.
       const stage7PreUrl = this.page.url();
-      const stage7PreHash = new URL(stage7PreUrl).hash;
+      const preEntryPathKind = classifyPathKind(stage7PreUrl);
+      const roleChangePageSeen = preEntryPathKind === "role_change";
       console.log(
-        `[STAGE 7] PRE: url=${stage7PreUrl.substring(0, 80)}, hash="${stage7PreHash}"`
+        `[STAGE 7] PRE: role_change_page_seen=${roleChangePageSeen}, ` +
+          `current_path_kind=${preEntryPathKind}`
       );
-      writeMarker("STAGE_7_TARGET_FIRM_ENTERED", `url=${stage7PreUrl}`);
+      writeMarker(
+        "STAGE_7_TARGET_FIRM_ENTERED",
+        `role_change_page_seen=${roleChangePageSeen}\n` +
+          `current_path_kind=${preEntryPathKind}`
+      );
 
       // Screenshot: before firm click
       try {
@@ -5884,274 +5900,218 @@ export class PlaywrightStsdsDriver implements BrowserDriverAdapter {
       } catch { /* best effort */ }
 
       try {
-        // Resolve the exact firm element via DOM-walk
-        const firmResolve = await this.page.evaluate((targetFirm: string) => {
-          const normalize = (s: string): string =>
-            s.replace(/\s+/g, " ").trim().toUpperCase();
-          const targetNorm = normalize(targetFirm);
-          const blockTags = new Set(["html", "body", "head"]);
-
-          interface FirmMatch {
-            text: string;
-            tag: string;
-            className: string;
-            id: string;
-            href: string;
-            role: string;
-            bbox: { x: number; y: number; w: number; h: number } | null;
-            isVisible: boolean;
-            isInteractive: boolean;
-            resolvedFrom: string;
-          }
-
-          const getRect = (el: Element): { x: number; y: number; w: number; h: number } | null => {
-            const r = el.getBoundingClientRect();
-            if (r.width === 0 && r.height === 0) return null;
-            return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
-          };
-
-          const isVis = (el: Element): boolean => {
-            const s = window.getComputedStyle(el);
-            if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") return false;
-            const r = el.getBoundingClientRect();
-            return r.width > 0 && r.height > 0;
-          };
-
-          const isInteractive = (el: Element): boolean => {
-            const tag = el.tagName.toLowerCase();
-            if (["a", "button", "input", "select"].includes(tag)) return true;
-            if (el.hasAttribute("tabindex") || el.hasAttribute("onclick")) return true;
-            if (["button", "menuitem", "link", "option", "tab", "radio"].includes(el.getAttribute("role") || "")) return true;
-            const s = window.getComputedStyle(el);
-            if (s.cursor === "pointer") return true;
-            return false;
-          };
-
-          const matches: FirmMatch[] = [];
-
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
-          let node: Node | null;
-          while ((node = walker.nextNode())) {
-            const txt = (node.textContent || "").trim();
-            if (txt.length < 10 || txt.length > 300) continue;
-            const txtNorm = normalize(txt);
-            // STRICT: exact normalized equality only — no containment/substring
-            if (txtNorm !== targetNorm) continue;
-
-            const parent = node.parentElement;
-            if (!parent || blockTags.has(parent.tagName.toLowerCase())) continue;
-
-            // Evaluate text parent
-            const pTag = parent.tagName.toLowerCase();
-            matches.push({
-              text: txt.substring(0, 120),
-              tag: pTag,
-              className: (parent.className || "").toString().substring(0, 60),
-              id: parent.id || "",
-              href: (parent as HTMLAnchorElement).href || parent.getAttribute("href") || "",
-              role: parent.getAttribute("role") || "",
-              bbox: getRect(parent),
-              isVisible: isVis(parent),
-              isInteractive: isInteractive(parent),
-              resolvedFrom: "text_parent",
-            });
-
-            // Walk ancestors for interactive wrappers (up to 6 levels)
-            let anc: Element | null = parent.parentElement;
-            for (let lvl = 0; lvl < 6 && anc; lvl++) {
-              const aTag = anc.tagName.toLowerCase();
-              if (blockTags.has(aTag)) break;
-              if (isInteractive(anc)) {
-                const ancBbox = getRect(anc);
-                const area = ancBbox ? ancBbox.w * ancBbox.h : 0;
-                if (area < 150_000) {
-                  matches.push({
-                    text: txt.substring(0, 120),
-                    tag: aTag,
-                    className: (anc.className || "").toString().substring(0, 60),
-                    id: anc.id || "",
-                    href: (anc as HTMLAnchorElement).href || anc.getAttribute("href") || "",
-                    role: anc.getAttribute("role") || "",
-                    bbox: ancBbox,
-                    isVisible: isVis(anc),
-                    isInteractive: true,
-                    resolvedFrom: "interactive_ancestor",
-                  });
-                }
+        // ── Anchor-href firm-selection (browser reliability milestone) ──
+        // Replaces the legacy DOM-walk-and-score approach with an
+        // anchor-href-first flow backed by the pure
+        // `matchFirmAnchor` helper (see `stsds-firm-anchor-matcher.ts`).
+        //
+        // Step 1: Collect anchors whose decoded href contains
+        //   `/stamps/main/role_change/`. Stamp each with a stable
+        //   `data-westamp-firm-cand` attribute so the driver can
+        //   click the matched anchor by selector — never by index.
+        // Step 2: Pass the candidates to `matchFirmAnchor` for
+        //   normalized-exact matching against the configured target
+        //   firm (and optional branch).
+        // Step 3: On `unique_match`, click via the stable selector.
+        //   On `no_candidates` / `no_match` / `ambiguous_match`, fail
+        //   closed with a safe diagnostic — never approve a click.
+        // Step 4: Verify the post-click URL contains
+        //   `/stamps/utama/dashboard`.
+        //
+        // Diagnostics are deliberately count-only — no raw href, no
+        // numeric role IDs, no decoded firm text in any log/marker.
+        const firmCollection = await this.page.evaluate(
+          (roleChangeFragment: string) => {
+            const anchors = Array.from(document.querySelectorAll("a"));
+            const out: Array<{
+              ordinal: number;
+              visibleText: string;
+              hrefDecoded: string;
+              isVisible: boolean;
+            }> = [];
+            let nextOrdinal = 0;
+            for (const a of anchors) {
+              const rawHref =
+                (a as HTMLAnchorElement).href ||
+                a.getAttribute("href") ||
+                "";
+              let decoded = rawHref;
+              try {
+                decoded = decodeURIComponent(rawHref);
+              } catch {
+                // Keep raw on malformed URI sequences — match still
+                // operates correctly for non-encoded inputs.
               }
-              anc = anc.parentElement;
-            }
-
-            // Check siblings for interactive wrappers
-            const gp = parent.parentElement;
-            if (gp) {
-              const siblings = gp.querySelectorAll("a, button, [role='button'], [role='link']");
-              siblings.forEach((sib: Element) => {
-                if (sib !== parent && sib.textContent && normalize(sib.textContent) === targetNorm) {
-                  matches.push({
-                    text: (sib.textContent || "").trim().substring(0, 120),
-                    tag: sib.tagName.toLowerCase(),
-                    className: (sib.className || "").toString().substring(0, 60),
-                    id: sib.id || "",
-                    href: (sib as HTMLAnchorElement).href || sib.getAttribute("href") || "",
-                    role: sib.getAttribute("role") || "",
-                    bbox: getRect(sib),
-                    isVisible: isVis(sib),
-                    isInteractive: isInteractive(sib),
-                    resolvedFrom: "sibling_interactive",
-                  });
-                }
+              if (!decoded.includes(roleChangeFragment)) continue;
+              const r = a.getBoundingClientRect();
+              const s = window.getComputedStyle(a);
+              const visible =
+                s.display !== "none" &&
+                s.visibility !== "hidden" &&
+                s.opacity !== "0" &&
+                r.width > 0 &&
+                r.height > 0;
+              const visibleText = (a.textContent || "")
+                .replace(/\s+/g, " ")
+                .trim();
+              const ordinal = nextOrdinal++;
+              // Stable attribute the driver uses to click the matched
+              // anchor without ever round-tripping the raw href back
+              // across the bridge.
+              a.setAttribute("data-westamp-firm-cand", String(ordinal));
+              out.push({
+                ordinal,
+                visibleText,
+                hrefDecoded: decoded,
+                isVisible: visible,
               });
             }
+            return out;
+          },
+          ROLE_CHANGE_HREF_FRAGMENT
+        );
+
+        const matchOutcome = matchFirmAnchor(
+          firmCollection as FirmAnchorCandidate[],
+          {
+            targetFirm: STAGE7_TARGET_FIRM,
+            // No branch is currently configured at the driver level.
+            // Future operator wiring may pass a branch from job
+            // config — the helper already supports it.
+            targetBranch: null,
           }
+        );
 
-          // Score and sort: interactive+visible best, then visible text parent
-          const scored = matches.map((m) => {
-            let score = 0;
-            if (m.isInteractive) score -= 500;
-            if (m.tag === "a") score -= 300;
-            if (m.href) score -= 200;
-            if (m.isVisible) score -= 100;
-            // Prefer the observed real element: anchor with class "confirm"
-            if (m.tag === "a" && m.className.toLowerCase().includes("confirm")) score -= 600;
-            if (!m.isVisible) score += 500;
-            if (!m.isInteractive) score += 300;
-            return { ...m, score };
-          });
-          scored.sort((a, b) => a.score - b.score);
+        const safeDiag = matchOutcome.diagnostics;
+        // Safe diagnostic logging only. No raw href, no decoded firm
+        // text, no numeric IDs.
+        console.log(
+          `[STAGE 7] anchor_match: status=${safeDiag.matchStatus}, ` +
+            `total=${safeDiag.candidateAnchorCount}, ` +
+            `role_change_filtered=${safeDiag.filteredCandidateCount}, ` +
+            `visible=${safeDiag.visibleCandidateCount}, ` +
+            `firm_matches=${safeDiag.exactFirmMatchCount}, ` +
+            `branch_provided=${safeDiag.branchProvidedInConfig}, ` +
+            `branch_used=${safeDiag.branchUsedToDisambiguate}`
+        );
+        writeMarker(
+          "STAGE_7_FIRM_ANCHOR_MATCH",
+          `match_status=${safeDiag.matchStatus}\n` +
+            `role_change_page_seen=${safeDiag.roleChangePageSeen}\n` +
+            `candidate_anchor_count=${safeDiag.candidateAnchorCount}\n` +
+            `filtered_candidate_count=${safeDiag.filteredCandidateCount}\n` +
+            `visible_candidate_count=${safeDiag.visibleCandidateCount}\n` +
+            `exact_firm_match_count=${safeDiag.exactFirmMatchCount}\n` +
+            `exact_firm_and_branch_match_count=${safeDiag.exactFirmAndBranchMatchCount}\n` +
+            `branch_provided_in_config=${safeDiag.branchProvidedInConfig}\n` +
+            `branch_used_to_disambiguate=${safeDiag.branchUsedToDisambiguate}`
+        );
 
-          return { matches: scored };
-        }, STAGE7_TARGET_FIRM);
-
-        console.log(`[STAGE 7] Resolved ${firmResolve.matches.length} firm target matches:`);
-        for (const m of firmResolve.matches) {
+        if (matchOutcome.kind !== "unique_match") {
+          // Fail closed. The exact reason text varies by kind but
+          // never includes raw href / firm text / numeric IDs.
+          const failureSuffix =
+            matchOutcome.kind === "no_candidates"
+              ? "No role-change anchors found on the page."
+              : matchOutcome.kind === "no_match"
+                ? "No role-change anchor exact-matched the configured target firm."
+                : "Multiple role-change anchors plausibly matched; refusing to click any.";
           console.log(
-            `  tag=${m.tag}, text="${m.text.substring(0, 50)}", href="${(m.href || "").substring(0, 50)}", ` +
-            `class="${m.className.substring(0, 30)}", id="${m.id}", role="${m.role}", ` +
-            `bbox=${m.bbox ? `${m.bbox.x},${m.bbox.y} ${m.bbox.w}x${m.bbox.h}` : "none"}, ` +
-            `vis=${m.isVisible}, interactive=${m.isInteractive}, from=${m.resolvedFrom}, score=${m.score}`
+            `[STAGE 7] FAILED — ${matchOutcome.kind}. ${failureSuffix}${stageTrackingSuffix()}`
           );
-        }
-        writeMarker("STAGE_7_FIRM_CANDIDATES", firmResolve.matches.map((m) =>
-          `tag=${m.tag} text="${m.text.substring(0, 50)}" href="${(m.href || "").substring(0, 50)}" vis=${m.isVisible} interactive=${m.isInteractive} from=${m.resolvedFrom} score=${m.score}`
-        ).join("\n"));
-
-        const visibleFirmTargets = firmResolve.matches.filter((m) => m.isVisible);
-        if (visibleFirmTargets.length === 0) {
-          console.log(`[STAGE 7] FAILED — no visible firm target matches.${stageTrackingSuffix()}`);
-          writeMarker("STAGE_7_FAILED", `reason=no_visible_target, total=${firmResolve.matches.length}`);
+          writeMarker(
+            "STAGE_7_FAILED",
+            `reason=${matchOutcome.kind}\nmatch_status=${safeDiag.matchStatus}`
+          );
           try {
             const tsF = new Date().toISOString().replace(/[:.]/g, "-");
             await this.page.screenshot({
-              path: `${artifactDir1c}/stage7_no_target_${tsF}.png`,
+              path: `${artifactDir1c}/stage7_${matchOutcome.kind}_${tsF}.png`,
               fullPage: true,
             });
-          } catch { /* best effort */ }
+          } catch {
+            /* best effort */
+          }
           return {
             success: false,
-            bootstrapOutcome: "target_firm_visible_on_role_page",
+            bootstrapOutcome:
+              matchOutcome.kind === "no_candidates" ||
+              matchOutcome.kind === "no_match"
+                ? "target_firm_visible_on_role_page"
+                : "target_firm_click_attempted",
             failureReason:
-              `Stage 7: Target firm "${STAGE7_TARGET_FIRM}" resolved by Stage 6b but no visible target found for click. ` +
-              `Total matches: ${firmResolve.matches.length}. ` +
-              "Headed browser kept open for local inspection." + stageTrackingSuffix(),
-            readbackNote: `stage7: no visible firm target. matches=${firmResolve.matches.length}.${stageTrackingSuffix()}`,
+              `Stage 7: ${failureSuffix} ` +
+              `match_status=${safeDiag.matchStatus}, ` +
+              `candidate_anchor_count=${safeDiag.candidateAnchorCount}, ` +
+              `filtered_candidate_count=${safeDiag.filteredCandidateCount}, ` +
+              `exact_firm_match_count=${safeDiag.exactFirmMatchCount}. ` +
+              "Headed browser kept open for local inspection." +
+              stageTrackingSuffix(),
+            readbackNote: `stage7: anchor_match=${safeDiag.matchStatus}.${stageTrackingSuffix()}`,
           };
         }
 
-        const bestFirmTarget = visibleFirmTargets[0];
-        console.log(
-          `[STAGE 7] Best target: tag=${bestFirmTarget.tag}, text="${bestFirmTarget.text.substring(0, 50)}", ` +
-          `href="${(bestFirmTarget.href || "").substring(0, 50)}", from=${bestFirmTarget.resolvedFrom}`
-        );
+        // unique_match — click via the stable data-attr selector.
+        const matchedOrdinal = matchOutcome.ordinal;
+        const matchedSelector = `a[data-westamp-firm-cand="${matchedOrdinal}"]`;
 
-        // Layered click on exact firm target.
-        // bbox_click first: the "confirm" class anchor likely has an onclick
-        // handler. Playwright mouse.click() at the bbox center triggers all
-        // event handlers including any JS confirmation flow, which
-        // page.evaluate click() may not reliably trigger.
-        type FirmClickMethod = "bbox_click" | "normal_click" | "hover_click" | "js_click";
-        const FIRM_CLICK_METHODS: FirmClickMethod[] = ["bbox_click", "normal_click", "hover_click", "js_click"];
+        type FirmClickMethod = "normal_click" | "js_click";
+        const FIRM_CLICK_METHODS: FirmClickMethod[] = [
+          "normal_click",
+          "js_click",
+        ];
 
         let firmClicked = false;
         let firmClickMethod = "";
 
         for (const method of FIRM_CLICK_METHODS) {
           if (firmClicked) break;
-          console.log(`[STAGE 7] Trying ${method} on firm target...`);
-
+          console.log(`[STAGE 7] Trying ${method} on matched anchor...`);
           try {
-            if (method === "normal_click" || method === "hover_click") {
-              // Build locator: by id, then by href, then skip to next method
-              let loc: Locator | null = null;
-              if (bestFirmTarget.id) {
-                loc = this.page.locator(`[id="${bestFirmTarget.id.replace(/"/g, '\\"')}"]`).first();
-              } else if (bestFirmTarget.href && bestFirmTarget.tag === "a") {
-                loc = this.page.locator(`a[href="${bestFirmTarget.href.replace(/"/g, '\\"')}"]`).first();
-              }
-              if (!loc || !(await loc.isVisible({ timeout: 2000 }).catch(() => false))) {
+            if (method === "normal_click") {
+              const loc: Locator = this.page.locator(matchedSelector).first();
+              if (
+                !(await loc.isVisible({ timeout: 2000 }).catch(() => false))
+              ) {
                 continue;
-              }
-              if (method === "hover_click") {
-                await loc.hover({ timeout: 3000 });
-                await this.page.waitForTimeout(500);
               }
               await loc.click({ timeout: 5000 });
               firmClicked = true;
               firmClickMethod = method;
             } else if (method === "js_click") {
-              const clicked = await this.page.evaluate((target: {
-                tag: string; id: string; href: string;
-                bbox: { x: number; y: number; w: number; h: number } | null;
-              }) => {
-                let el: Element | null = null;
-                if (target.id) el = document.getElementById(target.id);
-                if (!el && target.href && target.tag === "a") {
-                  const anchors = document.querySelectorAll("a");
-                  for (const a of anchors) {
-                    if ((a as HTMLAnchorElement).href === target.href || a.getAttribute("href") === target.href) {
-                      const r = a.getBoundingClientRect();
-                      if (r.width > 0 && r.height > 0) { el = a; break; }
-                    }
-                  }
-                }
-                if (!el && target.bbox) {
-                  const els = document.querySelectorAll(target.tag);
-                  for (const c of els) {
-                    const r = c.getBoundingClientRect();
-                    if (target.bbox &&
-                        Math.abs(r.x - target.bbox.x) < 5 && Math.abs(r.y - target.bbox.y) < 5 &&
-                        Math.abs(r.width - target.bbox.w) < 5 && Math.abs(r.height - target.bbox.h) < 5) {
-                      el = c; break;
-                    }
-                  }
-                }
-                if (el) { (el as HTMLElement).click(); return true; }
-                return false;
-              }, bestFirmTarget);
-              if (clicked) { firmClicked = true; firmClickMethod = "js_click"; }
-            } else if (method === "bbox_click" && bestFirmTarget.bbox) {
-              const cx = bestFirmTarget.bbox.x + bestFirmTarget.bbox.w / 2;
-              const cy = bestFirmTarget.bbox.y + bestFirmTarget.bbox.h / 2;
-              await this.page.mouse.move(cx, cy);
-              await this.page.waitForTimeout(200);
-              await this.page.mouse.click(cx, cy);
-              firmClicked = true;
-              firmClickMethod = "bbox_click";
+              const clicked = await this.page.evaluate((sel: string) => {
+                const el = document.querySelector(sel) as HTMLElement | null;
+                if (!el) return false;
+                el.click();
+                return true;
+              }, matchedSelector);
+              if (clicked) {
+                firmClicked = true;
+                firmClickMethod = method;
+              }
             }
           } catch (clickErr) {
-            console.log(`[STAGE 7] ${method} threw: ${clickErr instanceof Error ? clickErr.message : String(clickErr)}`);
+            console.log(
+              `[STAGE 7] ${method} threw: ${clickErr instanceof Error ? clickErr.message : String(clickErr)}`
+            );
           }
         }
 
-        // Post-click evidence — wait longer to allow native dialog or navigation
+        // Post-click evidence — wait longer to allow native dialog or
+        // navigation (the portal redirects to /stamps/utama/dashboard
+        // either directly or via a confirmation modal handled by
+        // Stage 8 below). We classify the post-click URL into a
+        // coarse path-kind enum and use that for diagnostics — the
+        // raw URL, hash, and query string are NEVER logged.
         await this.page.waitForTimeout(5000);
         const stage7PostUrl = this.page.url();
-        const stage7PostHash = (() => { try { return new URL(stage7PostUrl).hash; } catch { return ""; } })();
+        const postPathKind = classifyPathKind(stage7PostUrl);
+        const dashboardRedirectVerified = postPathKind === "dashboard";
 
         console.log(
-          `[STAGE 7] POST: firmClicked=${firmClicked}, method=${firmClickMethod}, ` +
-          `url=${stage7PostUrl.substring(0, 80)}, hash="${stage7PostHash}", ` +
-          `preHash="${stage7PreHash}"`
+          `[STAGE 7] POST: selected_anchor_clicked=${firmClicked}, method=${firmClickMethod}, ` +
+            `dashboard_redirect_verified=${dashboardRedirectVerified}, ` +
+            `current_path_kind=${postPathKind}`
         );
 
         // Screenshot: after firm click
@@ -6161,32 +6121,47 @@ export class PlaywrightStsdsDriver implements BrowserDriverAdapter {
             path: `${artifactDir1c}/stage7_after_firm_click_${ts7post}.png`,
             fullPage: true,
           });
-        } catch { /* best effort */ }
+        } catch {
+          /* best effort */
+        }
 
         bootstrapNotes.push(
-          `stage7: firmClicked=${firmClicked}, method=${firmClickMethod}, ` +
-          `preHash="${stage7PreHash}", postHash="${stage7PostHash}", ` +
-          `target="${bestFirmTarget.tag} ${bestFirmTarget.text.substring(0, 40)}"`
+          `stage7: selected_anchor_clicked=${firmClicked}, method=${firmClickMethod}, ` +
+            `match_status=${safeDiag.matchStatus}, anchor_ordinal=${matchedOrdinal}, ` +
+            `dashboard_redirect_verified=${dashboardRedirectVerified}, ` +
+            `pre_path_kind=${preEntryPathKind}, post_path_kind=${postPathKind}`
         );
 
         if (!firmClicked) {
-          console.log(`[STAGE 7] FAILED — all click methods failed.${stageTrackingSuffix()}`);
-          writeMarker("STAGE_7_FAILED", `reason=all_click_methods_failed`);
+          console.log(
+            `[STAGE 7] FAILED — all click methods failed on matched anchor.${stageTrackingSuffix()}`
+          );
+          writeMarker(
+            "STAGE_7_FAILED",
+            `reason=click_methods_failed_on_matched_anchor\nanchor_ordinal=${matchedOrdinal}`
+          );
           return {
             success: false,
             bootstrapOutcome: "target_firm_click_attempted",
             failureReason:
-              `Stage 7: Target firm "${STAGE7_TARGET_FIRM}" found but all click methods failed. ` +
-              `Best target: tag=${bestFirmTarget.tag}, from=${bestFirmTarget.resolvedFrom}. ` +
-              "Headed browser kept open for local inspection." + stageTrackingSuffix(),
-            readbackNote: `stage7: firm click failed. target=${bestFirmTarget.tag}.${stageTrackingSuffix()}`,
+              `Stage 7: matched anchor (ordinal=${matchedOrdinal}) but all click methods failed. ` +
+              "Headed browser kept open for local inspection." +
+              stageTrackingSuffix(),
+            readbackNote: `stage7: matched anchor click failed. ordinal=${matchedOrdinal}.${stageTrackingSuffix()}`,
           };
         }
 
         lastCompletedStage = "stage_7_target_firm_click";
-        console.log(`[STAGE 7] COMPLETED — firm target clicked via ${firmClickMethod}.${stageTrackingSuffix()}`);
-        writeMarker("STAGE_7_TARGET_FIRM_COMPLETED",
-          `method=${firmClickMethod}, target=${bestFirmTarget.tag} "${bestFirmTarget.text.substring(0, 50)}"`);
+        console.log(
+          `[STAGE 7] COMPLETED — matched anchor clicked via ${firmClickMethod}.${stageTrackingSuffix()}`
+        );
+        writeMarker(
+          "STAGE_7_TARGET_FIRM_COMPLETED",
+          `match_status=${safeDiag.matchStatus}\n` +
+            `anchor_ordinal=${matchedOrdinal}\n` +
+            `click_method=${firmClickMethod}\n` +
+            `dashboard_redirect_verified=${dashboardRedirectVerified}`
+        );
       } catch (stage7Err) {
         console.log(`[STAGE 7] THREW — ${stage7Err instanceof Error ? stage7Err.message : String(stage7Err)}${stageTrackingSuffix()}`);
         writeMarker("STAGE_7_THREW", `error=${stage7Err instanceof Error ? stage7Err.message : String(stage7Err)}`);

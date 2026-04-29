@@ -129,6 +129,16 @@ export function getLaneKnowledgeProfile(
         "Perakuan tab has pds_akuan checkbox (HTML required=false); its role as a Hantar gate not yet proven because Hantar still blocks earlier on pds_alamat_1.",
         "Hantar validation surfaces as a bootbox modal (not a native confirm) — dismiss-guard remains a secondary safety net.",
         "Party entry depends on identity/TIN workflow (still frozen).",
+        // ─── Browser reliability — role/firm selection (passive HAR research) ───
+        // The notes below capture design facts confirmed by a passive
+        // HAR research capture. Treated as DESIGN evidence only — the
+        // raw HAR is NOT stored in this repo. No raw firm IDs,
+        // cookies, tokens, SSO values, or sensitive URLs are recorded
+        // here.
+        "Role/firm selection on /stamps/main/role_change is anchor-href navigation, not a form POST. The intended firm anchor's href contains '/stamps/main/role_change/' and clicking it redirects to '/stamps/utama/dashboard'. WeStamp's driver collects candidate anchors with that href fragment and matches them against the configured target firm (and optional branch) by normalized exact equality on visible text and URL path segments. Selection is never by index. Zero, no-exact, or multiple plausible matches all fail closed. See `src/lib/stsds-firm-anchor-matcher.ts`.",
+        "lhdnmsstoken appears only after the dashboard loads and is embedded in the dashboard HTML; it is used by later AJAX requests. WeStamp must NOT log, store, persist, or treat it as an API credential — the helper layer never reads it.",
+        "p5 draft creation uses pds_id=0 in simpan_dutisetem; the server then allocates a 13-digit portal draft ID visible in the edit URL. This is portal draft creation only, NOT LHDN submission.",
+        "Passive observation: YA confirmation appears to be represented by GET query parameters on /stamps/formv2/p5 rather than a separate YA POST. Recorded for future verification; no automation built around it.",
       ],
     };
   }
