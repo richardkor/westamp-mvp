@@ -636,8 +636,122 @@ export type TenancyPortalIdentityType =
 /**
  * Nationality status — only meaningful for `type === "individual"`.
  * Companies use registration jurisdiction separately.
+ *
+ * NOTE: kept for backwards compatibility with already-persisted job
+ * data, but it is NO LONGER the source of truth for portal identity.
+ * The portal asks a 3-way question — see `TenancyPortalCitizenshipCategory`
+ * and `TenancyPortalParty.citizenshipCategory` below. WeStamp must
+ * NEVER infer `citizenshipCategory` from this `nationality` value.
  */
 export type TenancyPortalNationality = "malaysian" | "non_malaysian";
+
+/**
+ * Bahagian A · party citizenship — `warga` portal field.
+ *
+ * Field-mapping evidence (ε-3 run, 2026-04-28): the portal's `warga`
+ * is a 3-way enum with options `1=Citizen`, `2=Non-citizen`,
+ * `3=Permanent Resident`. WeStamp's earlier 2-way `nationality` could
+ * not represent PR; this enum is the new source of truth for
+ * Bahagian A identity readiness.
+ *
+ * Operator capture is REQUIRED for individual parties and for the
+ * SSM company representative. Never inferred from `nationality`,
+ * `country`, or any other field.
+ */
+export type TenancyPortalCitizenshipCategory =
+  | "citizen"
+  | "non_citizen"
+  | "permanent_resident";
+
+/**
+ * Bahagian A · NRIC sub-type — `EPD_NOKP_TYPE` portal field.
+ *
+ * Field-mapping evidence: the portal's NRIC entry has a sub-type
+ * dropdown with four observed values:
+ *   - "ic_baru"  ≈ portal IC_BARU  (post-1990 standard NRIC)
+ *   - "ic_lama"  ≈ portal IC_LAMA  (pre-1990 NRIC)
+ *   - "ic_polis" ≈ portal IC_POLIS (Polis ID)
+ *   - "ic_army"  ≈ portal IC_ARMY  (Tentera ID)
+ *
+ * Required only when `identityType === "nric"`. Never inferred from
+ * the IC number's format or content — the operator must select.
+ */
+export type TenancyPortalNricSubType =
+  | "ic_baru"
+  | "ic_lama"
+  | "ic_polis"
+  | "ic_army";
+
+/**
+ * Bahagian A · gender — `USER_SEX` portal field.
+ *
+ * Required by the portal for natural-person identity capture (every
+ * `type === "individual"` party AND the SSM company representative).
+ * Operator-set; never inferred from name or IC number.
+ *
+ * "unknown" / "unspecified" is intentionally NOT a value — the
+ * portal expects one of two. If the operator does not know, the
+ * field stays absent and readiness blocks.
+ */
+export type TenancyPortalGender = "male" | "female";
+
+/**
+ * Bahagian A · SSM company business type — `jenis_perniagaan` portal
+ * field. Field-mapping run observed 6 options but did NOT enumerate
+ * the codes / labels. Captured-select shape: operator types the
+ * portal `<option value>` code; an optional human label is allowed.
+ */
+export interface TenancyPortalBusinessType {
+  /** Portal `<option value>` code. Required when supplied. */
+  code: string;
+  /** Operator-supplied portal label. Optional. */
+  label?: string;
+}
+
+/**
+ * Bahagian A · company locality — `tb_syarikat` portal field.
+ * Local vs foreign company. Field-mapping observed two values; codes
+ * not enumerated. Operator-set; NEVER inferred from `country`.
+ */
+export type TenancyPortalCompanyLocality =
+  | "local_company"
+  | "foreign_company";
+
+/**
+ * Bahagian A · SSM company representative identity sub-block.
+ *
+ * Field-mapping evidence: the portal's SSM "Tambah" modal captures
+ * full representative-person identity in addition to the company
+ * entity itself — `owner_name` plus the natural-person identity
+ * fields (citizenship, IC type, IC/passport, gender). WeStamp models
+ * these here so a `company_ssm` party can be ready for portal
+ * preparation only when both the entity AND the representative are
+ * captured.
+ *
+ * Every field is optional in the persisted shape so partial saves
+ * don't silently discard typed values; readiness blocks until all
+ * required fields are present.
+ */
+export interface TenancyPortalCompanyRepresentative {
+  /** Portal field: `owner_name`. Free text. */
+  ownerName?: string;
+  /** Portal field: `warga` for the representative. */
+  citizenshipCategory?: TenancyPortalCitizenshipCategory;
+  /** Identity document type for the representative. */
+  identityType?: TenancyPortalIdentityType;
+  /** Identity number value. */
+  identityNumber?: string;
+  /** Portal field: `EPD_NOKP_TYPE`. Required only when identityType === "nric". */
+  nricSubType?: TenancyPortalNricSubType;
+  /** Portal field: `USER_SEX`. */
+  gender?: TenancyPortalGender;
+  /**
+   * Optional nationality status for the representative. Surfaced for
+   * parity with individual parties; not used to infer
+   * citizenshipCategory.
+   */
+  nationality?: TenancyPortalNationality | null;
+}
 
 /**
  * Single landlord or tenant record. The data model supports any number
@@ -651,12 +765,32 @@ export interface TenancyPortalParty {
   type: TenancyPortalPartyType;
   /** Name as written on the instrument. Free text. */
   nameAsPerInstrument: string;
-  /** Only meaningful when `type === "individual"`. Null for companies. */
+  /**
+   * Legacy nationality flag (pre-A4). Kept for backwards
+   * compatibility. NEVER used to infer `citizenshipCategory`.
+   * Only meaningful when `type === "individual"`. Null for companies.
+   */
   nationality?: TenancyPortalNationality | null;
+  /**
+   * Bahagian A · `warga` (3-way citizenship — Milestone A4). Required
+   * for individual parties. The SSM company representative carries
+   * its own `citizenshipCategory` under `companyRepresentative`.
+   */
+  citizenshipCategory?: TenancyPortalCitizenshipCategory;
   /** NRIC / passport / company registration number type. */
   identityType?: TenancyPortalIdentityType;
   /** Identity number value. Operator-entered. */
   identityNumber?: string;
+  /**
+   * Bahagian A · `EPD_NOKP_TYPE` (NRIC sub-type — Milestone A4).
+   * Required when `identityType === "nric"`.
+   */
+  nricSubType?: TenancyPortalNricSubType;
+  /**
+   * Bahagian A · `USER_SEX` (gender — Milestone A4). Required for
+   * individual parties.
+   */
+  gender?: TenancyPortalGender;
   /**
    * Tax Identification Number (TIN), if known. The portal MAY auto-
    * generate a TIN after identity number entry — in that case operators
@@ -682,6 +816,37 @@ export interface TenancyPortalParty {
   mobile: string;
   /** Optional landline. */
   phone?: string;
+  /**
+   * Bahagian A · `tb_roc` — old / pre-2017 ROC company registration
+   * number. Required for `company_ssm` parties (Milestone A4). The
+   * portal exposes BOTH old and new ROC fields and operators must
+   * supply at least one. WeStamp NEVER fabricates one from the other.
+   */
+  rocOld?: string;
+  /**
+   * Bahagian A · `tb_roc_new` — new / post-2017 ROC company
+   * registration number. Same partial-save rules as `rocOld`.
+   */
+  rocNew?: string;
+  /**
+   * Bahagian A · `jenis_perniagaan` (SSM business type — Milestone A4).
+   * Captured-select; portal codes not yet observed. Required for
+   * `company_ssm`.
+   */
+  businessType?: TenancyPortalBusinessType;
+  /**
+   * Bahagian A · `tb_syarikat` (company locality — Milestone A4).
+   * Required for `company_ssm`. Operator-set; NEVER inferred from
+   * the party's `country` field.
+   */
+  companyLocality?: TenancyPortalCompanyLocality;
+  /**
+   * Bahagian A · SSM company representative identity sub-block
+   * (Milestone A4). Required for `company_ssm` parties. The
+   * representative is the natural person whose identity the portal
+   * captures alongside the company entity in the SSM "Tambah" modal.
+   */
+  companyRepresentative?: TenancyPortalCompanyRepresentative;
   /** Optional internal operator note about this party. */
   operatorNote?: string;
 }

@@ -40,13 +40,17 @@
 import type {
   StampingJob,
   TenancyPortalBuildingType,
+  TenancyPortalCitizenshipCategory,
+  TenancyPortalCompanyLocality,
   TenancyPortalDescriptionType,
   TenancyPortalDetails,
   TenancyPortalFurnishedStatus,
+  TenancyPortalGender,
   TenancyPortalIdentityType,
   TenancyPortalInstrumentRelationship,
   TenancyPortalLandAreaUnit,
   TenancyPortalNationality,
+  TenancyPortalNricSubType,
   TenancyPortalParty,
   TenancyPortalPartyRole,
   TenancyPortalPartyType,
@@ -102,6 +106,30 @@ export interface TenancyPortalPayloadSectionReadiness {
   blockingReasons: string[];
 }
 
+/**
+ * Bahagian A · payload-side representative sub-block (Milestone A4).
+ * Mirrors `TenancyPortalCompanyRepresentative` from the data model
+ * but renders nulls explicitly so the operator preview can show
+ * which rep fields are still missing. `complete` is true only when
+ * every required rep field is captured (gates the parent party's
+ * `identityComplete`).
+ */
+export interface TenancyPortalPayloadCompanyRepresentative {
+  ownerName: string | null;
+  citizenshipCategory: TenancyPortalCitizenshipCategory | null;
+  identityType: TenancyPortalIdentityType | null;
+  identityNumber: string | null;
+  nricSubType: TenancyPortalNricSubType | null;
+  gender: TenancyPortalGender | null;
+  nationality: TenancyPortalNationality | null;
+  /**
+   * True when all required rep fields are captured: ownerName,
+   * citizenshipCategory, identityType (nric|passport),
+   * identityNumber, nricSubType (when identityType=nric), gender.
+   */
+  complete: boolean;
+}
+
 /** Bahagian A · single party row in the payload. */
 export interface TenancyPortalPayloadParty {
   role: TenancyPortalPartyRole;
@@ -128,6 +156,34 @@ export interface TenancyPortalPayloadParty {
   country: string;
   mobile: string;
   phone: string | null;
+  /**
+   * Bahagian A party identity sub-fields (Milestone A4). All optional
+   * in storage; readiness blocks until the relevant ones are
+   * captured. Portal field names preserved in field comments.
+   */
+  /** Portal field: `warga` — 3-way citizenship. */
+  citizenshipCategory: TenancyPortalCitizenshipCategory | null;
+  /** Portal field: `EPD_NOKP_TYPE` — NRIC sub-type (NRIC path only). */
+  nricSubType: TenancyPortalNricSubType | null;
+  /** Portal field: `USER_SEX` — gender. */
+  gender: TenancyPortalGender | null;
+  /** Portal field: `tb_roc` — old / pre-2017 ROC. SSM-only. */
+  rocOld: string | null;
+  /** Portal field: `tb_roc_new` — new / post-2017 ROC. SSM-only. */
+  rocNew: string | null;
+  /** Portal field: `jenis_perniagaan` — captured-select. SSM-only. */
+  businessType: { code: string | null; label: string | null };
+  /** Portal field: `tb_syarikat` — local vs foreign company. SSM-only. */
+  companyLocality: TenancyPortalCompanyLocality | null;
+  /** SSM company representative sub-block. Always present so the
+   *  operator preview can render rows; `complete` flag indicates
+   *  whether the rep identity is captured. */
+  companyRepresentative: TenancyPortalPayloadCompanyRepresentative;
+  /**
+   * True when this party's full Bahagian A identity is captured.
+   * Composite of the individual / SSM-rep field requirements above.
+   */
+  identityComplete: boolean;
 }
 
 /** Bahagian A · summary block. */
@@ -685,6 +741,69 @@ export function compileTenancyPortalPayload(
 // ─── Section mappers ───────────────────────────────────────────────
 
 function mapParty(p: TenancyPortalParty): TenancyPortalPayloadParty {
+  // ── Bahagian A party identity sub-fields (Milestone A4) ──
+  // Build the SSM rep sub-block first so we can use its `complete`
+  // flag in the parent party's `identityComplete` decision.
+  const rep = p.companyRepresentative;
+  const repIdentityTypeOk =
+    rep?.identityType === "nric" || rep?.identityType === "passport";
+  const repNricOk =
+    rep?.identityType !== "nric" ||
+    rep.nricSubType === "ic_baru" ||
+    rep.nricSubType === "ic_lama" ||
+    rep.nricSubType === "ic_polis" ||
+    rep.nricSubType === "ic_army";
+  const companyRepresentativeComplete =
+    NON_EMPTY(rep?.ownerName) &&
+    (rep?.citizenshipCategory === "citizen" ||
+      rep?.citizenshipCategory === "non_citizen" ||
+      rep?.citizenshipCategory === "permanent_resident") &&
+    repIdentityTypeOk &&
+    NON_EMPTY(rep?.identityNumber) &&
+    repNricOk &&
+    (rep?.gender === "male" || rep?.gender === "female");
+  const companyRepresentative: TenancyPortalPayloadCompanyRepresentative = {
+    ownerName: NON_EMPTY(rep?.ownerName) ? (rep?.ownerName as string) : null,
+    citizenshipCategory: rep?.citizenshipCategory ?? null,
+    identityType: rep?.identityType ?? null,
+    identityNumber: NON_EMPTY(rep?.identityNumber)
+      ? (rep?.identityNumber as string)
+      : null,
+    nricSubType: rep?.nricSubType ?? null,
+    gender: rep?.gender ?? null,
+    nationality: rep?.nationality ?? null,
+    complete: companyRepresentativeComplete,
+  };
+
+  // Compose the parent identity-complete flag.
+  let identityComplete = false;
+  if (p.type === "individual") {
+    const partyNricOk =
+      p.identityType !== "nric" ||
+      p.nricSubType === "ic_baru" ||
+      p.nricSubType === "ic_lama" ||
+      p.nricSubType === "ic_polis" ||
+      p.nricSubType === "ic_army";
+    identityComplete =
+      (p.gender === "male" || p.gender === "female") &&
+      (p.citizenshipCategory === "citizen" ||
+        p.citizenshipCategory === "non_citizen" ||
+        p.citizenshipCategory === "permanent_resident") &&
+      partyNricOk;
+  } else if (p.type === "company_ssm") {
+    const hasRoc = NON_EMPTY(p.rocOld) || NON_EMPTY(p.rocNew);
+    identityComplete =
+      hasRoc &&
+      NON_EMPTY(p.businessType?.code) &&
+      (p.companyLocality === "local_company" ||
+        p.companyLocality === "foreign_company") &&
+      companyRepresentativeComplete;
+  } else {
+    // company_non_ssm — out of A4 scope; treat as identity-complete
+    // when basic name/identity already validated by required-details.
+    identityComplete = true;
+  }
+
   return {
     role: p.role,
     type: p.type,
@@ -703,6 +822,22 @@ function mapParty(p: TenancyPortalParty): TenancyPortalPayloadParty {
     country: p.country,
     mobile: p.mobile,
     phone: NON_EMPTY(p.phone) ? p.phone : null,
+    citizenshipCategory: p.citizenshipCategory ?? null,
+    nricSubType: p.nricSubType ?? null,
+    gender: p.gender ?? null,
+    rocOld: NON_EMPTY(p.rocOld) ? (p.rocOld as string) : null,
+    rocNew: NON_EMPTY(p.rocNew) ? (p.rocNew as string) : null,
+    businessType: {
+      code: NON_EMPTY(p.businessType?.code)
+        ? (p.businessType?.code as string)
+        : null,
+      label: NON_EMPTY(p.businessType?.label)
+        ? (p.businessType?.label as string)
+        : null,
+    },
+    companyLocality: p.companyLocality ?? null,
+    companyRepresentative,
+    identityComplete,
   };
 }
 

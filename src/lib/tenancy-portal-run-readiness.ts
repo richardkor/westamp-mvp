@@ -820,52 +820,158 @@ export function evaluateTenancyPortalFieldMappingGaps(
   }
 
   // ── D) Per-party model gaps ─────────────────────────────────
-  // The portal requires gender, 3-way citizenship (citizen / non-
-  // citizen / PR), NRIC sub-type, and — for SSM-registered companies
-  // — full representative-person identity capture. WeStamp's data
-  // model has none of these fields. Surface as per-party blockers so
-  // the operator can see exactly which party rows are unsupported.
+  //
+  // Milestone A4 (2026-04-29): the portal-required party identity
+  // fields are now modelled (see `TenancyPortalParty` and
+  // `TenancyPortalCompanyRepresentative` in `stamping-types.ts`).
+  // The blockers below are now per-FIELD: each fires only when the
+  // corresponding field is missing or invalid, and is lifted as soon
+  // as the operator captures a valid value. Blocker codes are
+  // preserved from earlier milestones for backwards compatibility
+  // with existing UI / tests; new codes are added for the SSM-only
+  // fields modelled in A4.
+  //
+  // Conditional rules:
+  //   - gender                     required for individuals AND
+  //                                 the SSM company rep
+  //   - citizenship_3way           required for individuals AND
+  //                                 the SSM company rep
+  //   - nric_subtype               required only when the relevant
+  //                                 identityType is "nric"
+  //   - ssm_rep_identity           one combined blocker that fires
+  //                                 when ANY required SSM rep
+  //                                 identity field is missing
+  //   - business_type / locality / ROC at-least-one — SSM-only
   const parties: TenancyPortalParty[] = tpd?.parties ?? [];
   parties.forEach((p, idx) => {
     const partyLabel = `${p.role === "landlord" ? "Landlord" : "Tenant"} #${idx + 1}${
       p.nameAsPerInstrument ? ` (${p.nameAsPerInstrument})` : ""
     }`;
 
-    // Gender is required by every party row in the portal.
-    gaps.push({
-      category: "party_model_not_modelled",
-      code: `party_${idx}_gender_not_modelled`,
-      reason: `${partyLabel}: portal field USER_SEX (gender) is required and not modelled by WeStamp.`,
-    });
-
-    // 3-way citizenship (PR is the missing third value).
-    gaps.push({
-      category: "party_model_not_modelled",
-      code: `party_${idx}_citizenship_3way_not_modelled`,
-      reason: `${partyLabel}: portal warga is a 3-option enum (Citizen / Non-citizen / PR). WeStamp's nationality is 2-way — Permanent Resident is unmodelled.`,
-    });
-
-    // NRIC sub-type (4-way) — only meaningful for individuals using
-    // an NRIC; passport and company_registration paths do not need
-    // this field. Still surface as not-modelled since the portal
-    // requires it for the NRIC path.
-    if (p.type === "individual" && p.identityType === "nric") {
-      gaps.push({
-        category: "party_model_not_modelled",
-        code: `party_${idx}_nric_subtype_not_modelled`,
-        reason: `${partyLabel}: portal EPD_NOKP_TYPE is a 4-option NRIC sub-type (IC_BARU / IC_LAMA / IC_POLIS / IC_ARMY). WeStamp captures a single NRIC string with no sub-type.`,
-      });
+    if (p.type === "individual") {
+      // USER_SEX (gender) — required.
+      if (p.gender !== "male" && p.gender !== "female") {
+        gaps.push({
+          category: "party_model_not_modelled",
+          code: `party_${idx}_gender_not_modelled`,
+          reason: `${partyLabel}: portal field USER_SEX (gender) is required and not yet captured. Pick 'male' or 'female'.`,
+        });
+      }
+      // warga (3-way citizenship) — required. NEVER inferred from nationality.
+      if (
+        p.citizenshipCategory !== "citizen" &&
+        p.citizenshipCategory !== "non_citizen" &&
+        p.citizenshipCategory !== "permanent_resident"
+      ) {
+        gaps.push({
+          category: "party_model_not_modelled",
+          code: `party_${idx}_citizenship_3way_not_modelled`,
+          reason: `${partyLabel}: portal field warga (3-way citizenship) is required and not yet captured. Pick 'citizen', 'non_citizen', or 'permanent_resident'. Never inferred from nationality.`,
+        });
+      }
+      // EPD_NOKP_TYPE (NRIC sub-type) — required only when NRIC.
+      if (p.identityType === "nric") {
+        if (
+          p.nricSubType !== "ic_baru" &&
+          p.nricSubType !== "ic_lama" &&
+          p.nricSubType !== "ic_polis" &&
+          p.nricSubType !== "ic_army"
+        ) {
+          gaps.push({
+            category: "party_model_not_modelled",
+            code: `party_${idx}_nric_subtype_not_modelled`,
+            reason: `${partyLabel}: portal field EPD_NOKP_TYPE (NRIC sub-type) is required when identity type is NRIC. Pick 'ic_baru', 'ic_lama', 'ic_polis', or 'ic_army'. Never inferred from IC number.`,
+          });
+        }
+      }
     }
 
-    // SSM company representative-person identity capture is required
-    // by the portal SSM modal. WeStamp does not model an owner /
-    // representative on company parties at all.
     if (p.type === "company_ssm") {
-      gaps.push({
-        category: "party_model_not_modelled",
-        code: `party_${idx}_ssm_rep_identity_not_modelled`,
-        reason: `${partyLabel}: SSM-registered company. Portal SSM Tambah modal requires full representative-person identity (owner_name, citizenship, IC type, IC/passport, gender). WeStamp has no representative-identity capture for company parties.`,
-      });
+      // ── SSM-only blockers ──
+      // ROC split: at least one of tb_roc / tb_roc_new must be captured.
+      const hasRocOld =
+        typeof p.rocOld === "string" && p.rocOld.trim().length > 0;
+      const hasRocNew =
+        typeof p.rocNew === "string" && p.rocNew.trim().length > 0;
+      if (!hasRocOld && !hasRocNew) {
+        gaps.push({
+          category: "party_model_not_modelled",
+          code: `party_${idx}_ssm_roc_not_captured`,
+          reason: `${partyLabel}: SSM-registered company. Portal exposes both old ROC (tb_roc) and new ROC (tb_roc_new). At least one must be captured. WeStamp NEVER fabricates one from the other.`,
+        });
+      }
+      // jenis_perniagaan — captured-select code required.
+      if (
+        !p.businessType ||
+        typeof p.businessType.code !== "string" ||
+        p.businessType.code.trim().length === 0
+      ) {
+        gaps.push({
+          category: "party_model_not_modelled",
+          code: `party_${idx}_ssm_business_type_not_captured`,
+          reason: `${partyLabel}: SSM-registered company. Portal field jenis_perniagaan (6-option dropdown) is required and not yet captured. Operator must supply the portal option code.`,
+        });
+      }
+      // tb_syarikat — company locality required.
+      if (
+        p.companyLocality !== "local_company" &&
+        p.companyLocality !== "foreign_company"
+      ) {
+        gaps.push({
+          category: "party_model_not_modelled",
+          code: `party_${idx}_ssm_locality_not_captured`,
+          reason: `${partyLabel}: SSM-registered company. Portal field tb_syarikat (local vs foreign) is required and not yet captured. Operator must select; never inferred from country.`,
+        });
+      }
+      // companyRepresentative — single combined blocker fires when
+      // any required rep field is missing. Preserves the legacy
+      // `_ssm_rep_identity_not_modelled` code for backwards
+      // compatibility but fires only on actual gaps now.
+      const rep = p.companyRepresentative;
+      const repFieldMissing: string[] = [];
+      if (!rep || typeof rep.ownerName !== "string" || rep.ownerName.trim().length === 0) {
+        repFieldMissing.push("owner_name");
+      }
+      if (
+        !rep ||
+        (rep.citizenshipCategory !== "citizen" &&
+          rep.citizenshipCategory !== "non_citizen" &&
+          rep.citizenshipCategory !== "permanent_resident")
+      ) {
+        repFieldMissing.push("warga");
+      }
+      if (
+        !rep ||
+        (rep.identityType !== "nric" && rep.identityType !== "passport")
+      ) {
+        repFieldMissing.push("identity type");
+      }
+      if (
+        !rep ||
+        typeof rep.identityNumber !== "string" ||
+        rep.identityNumber.trim().length === 0
+      ) {
+        repFieldMissing.push("identity number");
+      }
+      if (
+        rep?.identityType === "nric" &&
+        rep.nricSubType !== "ic_baru" &&
+        rep.nricSubType !== "ic_lama" &&
+        rep.nricSubType !== "ic_polis" &&
+        rep.nricSubType !== "ic_army"
+      ) {
+        repFieldMissing.push("EPD_NOKP_TYPE");
+      }
+      if (!rep || (rep.gender !== "male" && rep.gender !== "female")) {
+        repFieldMissing.push("USER_SEX");
+      }
+      if (repFieldMissing.length > 0) {
+        gaps.push({
+          category: "party_model_not_modelled",
+          code: `party_${idx}_ssm_rep_identity_not_modelled`,
+          reason: `${partyLabel}: SSM-registered company. Portal SSM "Tambah" modal requires full representative-person identity. Missing: ${repFieldMissing.join(", ")}.`,
+        });
+      }
     }
   });
 

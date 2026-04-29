@@ -1744,3 +1744,510 @@ describe("Milestone A3 · payload compiler · canonical mapping summaries", () =
     );
   });
 });
+
+// ─── Milestone A4 · Bahagian A party identity model gaps ───────────
+//
+// These tests prove the per-party identity blockers fire and lift
+// per actual field presence, not "always" as before A4. They cover:
+//   - individual party gender / citizenship_3way / NRIC sub-type
+//   - SSM company rep identity (combined blocker on missing fields)
+//   - SSM business type / ROC split / company locality
+//   - the citizenship-from-nationality and NRIC-subtype-from-IC
+//     non-inference rules
+//   - payload compiler emits new portal field names + identityComplete
+
+/**
+ * Build a complete individual party that satisfies all A4
+ * individual-side blockers. Used as a "ready individual" baseline.
+ */
+function makeReadyIndividual(
+  overrides: Partial<TenancyPortalParty> = {}
+): TenancyPortalParty {
+  return {
+    role: "landlord",
+    type: "individual",
+    nameAsPerInstrument: "Test Landlord",
+    nationality: "malaysian",
+    identityType: "nric",
+    identityNumber: "900101015555",
+    addressLine1: "1 Test Lane",
+    postcode: "50000",
+    city: "Kuala Lumpur",
+    state: "Kuala Lumpur",
+    country: "Malaysia",
+    mobile: "0123456789",
+    citizenshipCategory: "citizen",
+    gender: "male",
+    nricSubType: "ic_baru",
+    ...overrides,
+  };
+}
+
+/**
+ * Build a complete SSM company party (company + rep + ROC + business
+ * type + locality) that satisfies all A4 SSM-side blockers.
+ */
+function makeReadySsmCompany(
+  overrides: Partial<TenancyPortalParty> = {}
+): TenancyPortalParty {
+  return {
+    role: "landlord",
+    type: "company_ssm",
+    nameAsPerInstrument: "Test Co Sdn Bhd",
+    identityType: "company_registration",
+    identityNumber: "201901000001",
+    addressLine1: "1 Co Lane",
+    postcode: "50000",
+    city: "Kuala Lumpur",
+    state: "Kuala Lumpur",
+    country: "Malaysia",
+    mobile: "0123456789",
+    rocOld: "201901000001",
+    businessType: { code: "1" },
+    companyLocality: "local_company",
+    companyRepresentative: {
+      ownerName: "Director Director",
+      citizenshipCategory: "citizen",
+      identityType: "nric",
+      identityNumber: "800808088888",
+      nricSubType: "ic_baru",
+      gender: "female",
+    },
+    ...overrides,
+  };
+}
+
+describe("Milestone A4 · individual party identity blockers", () => {
+  test("missing gender keeps party_*_gender_not_modelled blocker firing", () => {
+    const job = makeJob({
+      parties: [
+        makeReadyIndividual({ gender: undefined }),
+        makeReadyIndividual({ role: "tenant" }),
+      ],
+    });
+    expect(gapCodes(job)).toContain("party_0_gender_not_modelled");
+    // Other party (1) has gender — its blocker should NOT fire.
+    expect(gapCodes(job)).not.toContain("party_1_gender_not_modelled");
+  });
+
+  test("missing 3-way citizenship keeps party_*_citizenship_3way_not_modelled firing", () => {
+    const job = makeJob({
+      parties: [
+        makeReadyIndividual({ citizenshipCategory: undefined }),
+        makeReadyIndividual({ role: "tenant" }),
+      ],
+    });
+    expect(gapCodes(job)).toContain(
+      "party_0_citizenship_3way_not_modelled"
+    );
+    expect(gapCodes(job)).not.toContain(
+      "party_1_citizenship_3way_not_modelled"
+    );
+  });
+
+  test("NRIC party missing nricSubType keeps party_*_nric_subtype_not_modelled firing", () => {
+    const job = makeJob({
+      parties: [
+        makeReadyIndividual({ nricSubType: undefined }),
+        makeReadyIndividual({
+          role: "tenant",
+          identityType: "passport",
+          nationality: "non_malaysian",
+          identityNumber: "P1234567",
+        }),
+      ],
+    });
+    const codes = gapCodes(job);
+    expect(codes).toContain("party_0_nric_subtype_not_modelled");
+    // Passport party — nricSubType blocker MUST NOT fire.
+    expect(codes).not.toContain("party_1_nric_subtype_not_modelled");
+  });
+
+  test("complete individual identity fields lift all individual blockers for that party", () => {
+    const job = makeJob({
+      parties: [makeReadyIndividual(), makeReadyIndividual({ role: "tenant" })],
+    });
+    const codes = gapCodes(job);
+    expect(codes).not.toContain("party_0_gender_not_modelled");
+    expect(codes).not.toContain("party_1_gender_not_modelled");
+    expect(codes).not.toContain("party_0_citizenship_3way_not_modelled");
+    expect(codes).not.toContain("party_0_nric_subtype_not_modelled");
+  });
+
+  test("citizenship is NOT inferred from nationality (Malaysian + missing citizenshipCategory still blocks)", () => {
+    const job = makeJob({
+      parties: [
+        makeReadyIndividual({
+          nationality: "malaysian",
+          citizenshipCategory: undefined,
+        }),
+        makeReadyIndividual({ role: "tenant" }),
+      ],
+    });
+    expect(gapCodes(job)).toContain(
+      "party_0_citizenship_3way_not_modelled"
+    );
+  });
+
+  test("NRIC sub-type is NOT inferred from identity number format (still blocks)", () => {
+    const job = makeJob({
+      parties: [
+        makeReadyIndividual({
+          // Format that "looks" like a Baru NRIC; matcher must NOT
+          // promote to ic_baru on its own.
+          identityNumber: "900101015555",
+          nricSubType: undefined,
+        }),
+        makeReadyIndividual({ role: "tenant" }),
+      ],
+    });
+    expect(gapCodes(job)).toContain("party_0_nric_subtype_not_modelled");
+  });
+});
+
+describe("Milestone A4 · SSM company party blockers", () => {
+  test("company_ssm with no representative captured fires combined rep-identity blocker", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({ companyRepresentative: undefined }),
+        makeIndividualTenant(),
+      ],
+    });
+    expect(gapCodes(job)).toContain(
+      "party_0_ssm_rep_identity_not_modelled"
+    );
+  });
+
+  test("partial representative identity persists but readiness still blocks", () => {
+    // Operator captures only ownerName + citizenshipCategory; the
+    // rest is missing. The combined blocker still fires because
+    // identity number / type / gender are not yet captured.
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({
+          companyRepresentative: {
+            ownerName: "Director Director",
+            citizenshipCategory: "citizen",
+          },
+        }),
+        makeIndividualTenant(),
+      ],
+    });
+    const codes = gapCodes(job);
+    expect(codes).toContain("party_0_ssm_rep_identity_not_modelled");
+  });
+
+  test("complete representative identity lifts the rep-identity blocker", () => {
+    const job = makeJob({
+      parties: [makeReadySsmCompany(), makeIndividualTenant()],
+    });
+    expect(gapCodes(job)).not.toContain(
+      "party_0_ssm_rep_identity_not_modelled"
+    );
+  });
+
+  test("company_ssm missing businessType keeps the business-type blocker firing", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({ businessType: undefined }),
+        makeIndividualTenant(),
+      ],
+    });
+    expect(gapCodes(job)).toContain(
+      "party_0_ssm_business_type_not_captured"
+    );
+  });
+
+  test("company_ssm with both ROC fields blank keeps ROC blocker firing", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({ rocOld: undefined, rocNew: undefined }),
+        makeIndividualTenant(),
+      ],
+    });
+    expect(gapCodes(job)).toContain("party_0_ssm_roc_not_captured");
+  });
+
+  test("company_ssm with rocOld lifts ROC blocker; rocOld and rocNew are stored separately", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({
+          rocOld: "201901000001",
+          rocNew: undefined,
+        }),
+        makeIndividualTenant(),
+      ],
+    });
+    expect(gapCodes(job)).not.toContain("party_0_ssm_roc_not_captured");
+  });
+
+  test("company_ssm with rocNew alone also lifts ROC blocker", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({
+          rocOld: undefined,
+          rocNew: "202101000999",
+        }),
+        makeIndividualTenant(),
+      ],
+    });
+    expect(gapCodes(job)).not.toContain("party_0_ssm_roc_not_captured");
+  });
+
+  test("company_ssm missing companyLocality keeps the locality blocker firing", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({ companyLocality: undefined }),
+        makeIndividualTenant(),
+      ],
+    });
+    expect(gapCodes(job)).toContain("party_0_ssm_locality_not_captured");
+  });
+
+  test("companyLocality is NOT inferred from country (Malaysia + missing locality still blocks)", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({
+          country: "Malaysia",
+          companyLocality: undefined,
+        }),
+        makeIndividualTenant(),
+      ],
+    });
+    expect(gapCodes(job)).toContain("party_0_ssm_locality_not_captured");
+  });
+
+  test("complete SSM company lifts every SSM-only blocker for that party", () => {
+    const job = makeJob({
+      parties: [makeReadySsmCompany(), makeIndividualTenant()],
+    });
+    const codes = gapCodes(job);
+    expect(codes).not.toContain("party_0_ssm_rep_identity_not_modelled");
+    expect(codes).not.toContain("party_0_ssm_business_type_not_captured");
+    expect(codes).not.toContain("party_0_ssm_roc_not_captured");
+    expect(codes).not.toContain("party_0_ssm_locality_not_captured");
+  });
+});
+
+describe("Milestone A4 · payload compiler · new party fields", () => {
+  test("payload exposes citizenshipCategory / nricSubType / gender per party", () => {
+    const job = makeJob({
+      parties: [makeReadyIndividual(), makeReadyIndividual({ role: "tenant" })],
+    });
+    const payload = compileTenancyPortalPayload(job);
+    const party0 = payload.bahagianA.parties[0];
+    expect(party0.citizenshipCategory).toBe("citizen");
+    expect(party0.nricSubType).toBe("ic_baru");
+    expect(party0.gender).toBe("male");
+    expect(party0.identityComplete).toBe(true);
+  });
+
+  test("payload exposes SSM company entity fields and rep sub-block", () => {
+    const job = makeJob({
+      parties: [makeReadySsmCompany(), makeIndividualTenant()],
+    });
+    const payload = compileTenancyPortalPayload(job);
+    const party0 = payload.bahagianA.parties[0];
+    expect(party0.rocOld).toBe("201901000001");
+    expect(party0.rocNew).toBe(null);
+    expect(party0.businessType.code).toBe("1");
+    expect(party0.companyLocality).toBe("local_company");
+    expect(party0.companyRepresentative.ownerName).toBe("Director Director");
+    expect(party0.companyRepresentative.citizenshipCategory).toBe("citizen");
+    expect(party0.companyRepresentative.identityType).toBe("nric");
+    expect(party0.companyRepresentative.nricSubType).toBe("ic_baru");
+    expect(party0.companyRepresentative.gender).toBe("female");
+    expect(party0.companyRepresentative.complete).toBe(true);
+    expect(party0.identityComplete).toBe(true);
+  });
+
+  test("payload identityComplete=false when individual gender missing", () => {
+    const job = makeJob({
+      parties: [
+        makeReadyIndividual({ gender: undefined }),
+        makeReadyIndividual({ role: "tenant" }),
+      ],
+    });
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.bahagianA.parties[0].identityComplete).toBe(false);
+    expect(payload.bahagianA.parties[1].identityComplete).toBe(true);
+  });
+
+  test("payload companyRepresentative.complete=false when ownerName missing", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({
+          companyRepresentative: {
+            citizenshipCategory: "citizen",
+            identityType: "nric",
+            identityNumber: "800808088888",
+            nricSubType: "ic_baru",
+            gender: "female",
+          },
+        }),
+        makeIndividualTenant(),
+      ],
+    });
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.bahagianA.parties[0].companyRepresentative.complete).toBe(
+      false
+    );
+    expect(payload.bahagianA.parties[0].identityComplete).toBe(false);
+  });
+
+  test("payload preserves rocOld and rocNew as separate fields", () => {
+    const job = makeJob({
+      parties: [
+        makeReadySsmCompany({
+          rocOld: "201901000001",
+          rocNew: "202101000999",
+        }),
+        makeIndividualTenant(),
+      ],
+    });
+    const payload = compileTenancyPortalPayload(job);
+    expect(payload.bahagianA.parties[0].rocOld).toBe("201901000001");
+    expect(payload.bahagianA.parties[0].rocNew).toBe("202101000999");
+  });
+});
+
+describe("Milestone A4 · validator partial-save", () => {
+  test("validator accepts partial new individual fields", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [
+        {
+          role: "landlord",
+          type: "individual",
+          nameAsPerInstrument: "Partial",
+          addressLine1: "1 Lane",
+          postcode: "50000",
+          city: "KL",
+          state: "KL",
+          country: "Malaysia",
+          mobile: "0123456789",
+          gender: "male",
+          // citizenshipCategory + nricSubType deliberately omitted
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const stored = result.value.parties[0];
+    expect(stored.gender).toBe("male");
+    expect(stored.citizenshipCategory).toBeUndefined();
+    expect(stored.nricSubType).toBeUndefined();
+  });
+
+  test("validator REJECTS unknown citizenshipCategory value", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [
+        {
+          role: "landlord",
+          type: "individual",
+          nameAsPerInstrument: "Test",
+          addressLine1: "1 Lane",
+          postcode: "50000",
+          city: "KL",
+          state: "KL",
+          country: "Malaysia",
+          mobile: "0123456789",
+          citizenshipCategory: "alien",
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/citizenshipCategory/);
+  });
+
+  test("validator REJECTS unknown gender value", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [
+        {
+          role: "landlord",
+          type: "individual",
+          nameAsPerInstrument: "Test",
+          addressLine1: "1 Lane",
+          postcode: "50000",
+          city: "KL",
+          state: "KL",
+          country: "Malaysia",
+          mobile: "0123456789",
+          gender: "other",
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("validator REJECTS unknown nricSubType value", () => {
+    const result = validateTenancyPortalDetailsInput({
+      parties: [
+        {
+          role: "landlord",
+          type: "individual",
+          nameAsPerInstrument: "Test",
+          addressLine1: "1 Lane",
+          postcode: "50000",
+          city: "KL",
+          state: "KL",
+          country: "Malaysia",
+          mobile: "0123456789",
+          nricSubType: "ic_unknown",
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("validator accepts SSM company with partial representative (round-trip)", () => {
+    const firstSave = validateTenancyPortalDetailsInput({
+      parties: [
+        {
+          role: "landlord",
+          type: "company_ssm",
+          nameAsPerInstrument: "Co",
+          addressLine1: "1 Co Lane",
+          postcode: "50000",
+          city: "KL",
+          state: "KL",
+          country: "Malaysia",
+          mobile: "0123456789",
+          companyRepresentative: { ownerName: "Director" },
+        },
+      ],
+    });
+    expect(firstSave.ok).toBe(true);
+    if (!firstSave.ok) return;
+    expect(firstSave.value.parties[0].companyRepresentative).toEqual({
+      ownerName: "Director",
+    });
+  });
+});
+
+describe("Milestone A4 · unrelated blockers untouched", () => {
+  test("multi-pass and enum-mismatch blockers still fire when party model is complete", () => {
+    const job = makeJob({
+      parties: [makeReadyIndividual(), makeReadyIndividual({ role: "tenant" })],
+      instrument: {
+        instrumentDate: "2026-01-01",
+        duplicateCopies: 1,
+        portalDescriptionType:
+          "amendment_to_original_tenancy" as TenancyPortalDescriptionType,
+        rentSchedule: [
+          { startDate: "2026-01-01", endDate: "2027-01-01", monthlyRent: 1000 },
+        ],
+      },
+      property: propertyWithLandRegistry({}),
+    });
+    const codes = gapCodes(job);
+    // Multi-pass + enum-mismatch survive
+    expect(codes).toContain("pds_jenis_1105_unsupported");
+    expect(codes).toContain("pds_salinan_no_canonical_mapping");
+    expect(codes).toContain("pds_harta_state_no_canonical_mapping");
+    // But individual party blockers are gone
+    expect(codes).not.toContain("party_0_gender_not_modelled");
+    expect(codes).not.toContain("party_0_citizenship_3way_not_modelled");
+    expect(codes).not.toContain("party_0_nric_subtype_not_modelled");
+  });
+});

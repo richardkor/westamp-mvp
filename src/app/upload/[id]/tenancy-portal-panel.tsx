@@ -50,14 +50,18 @@ import {
 import type {
   StampingJob,
   TenancyPortalBuildingType,
+  TenancyPortalCitizenshipCategory,
+  TenancyPortalCompanyLocality,
   TenancyPortalDescriptionType,
   TenancyPortalDetails,
   TenancyPortalFurnishedStatus,
+  TenancyPortalGender,
   TenancyPortalIdentityType,
   TenancyPortalInstrumentNameCode,
   TenancyPortalInstrumentRelationship,
   TenancyPortalLandAreaUnit,
   TenancyPortalNationality,
+  TenancyPortalNricSubType,
   TenancyPortalParty,
   TenancyPortalPartyRole,
   TenancyPortalPartyType,
@@ -210,6 +214,17 @@ const EMPTY_PARTY: DraftParty = {
   country: "Malaysia",
   mobile: "",
   phone: "",
+  // Bahagian A party identity sub-fields (Milestone A4). Undefined
+  // means "not yet captured"; the readiness gate blocks until the
+  // operator selects a value.
+  citizenshipCategory: undefined,
+  nricSubType: undefined,
+  gender: undefined,
+  rocOld: undefined,
+  rocNew: undefined,
+  businessType: undefined,
+  companyLocality: undefined,
+  companyRepresentative: undefined,
   operatorNote: "",
 };
 
@@ -325,6 +340,44 @@ function buildSavePayload(d: Draft): Record<string, unknown> {
     if (p.addressLine2 && p.addressLine2.trim())
       out.addressLine2 = p.addressLine2.trim();
     if (p.phone && p.phone.trim()) out.phone = p.phone.trim();
+
+    // ── Bahagian A party identity sub-fields (Milestone A4) ──
+    // Only emit fields the operator actually selected/typed. No
+    // defaults invented. The server validator accepts partial
+    // captures and the readiness gate blocks until complete.
+    if (p.citizenshipCategory) out.citizenshipCategory = p.citizenshipCategory;
+    if (p.nricSubType) out.nricSubType = p.nricSubType;
+    if (p.gender) out.gender = p.gender;
+    if (p.rocOld && p.rocOld.trim()) out.rocOld = p.rocOld.trim();
+    if (p.rocNew && p.rocNew.trim()) out.rocNew = p.rocNew.trim();
+    if (p.businessType?.code && p.businessType.code.trim()) {
+      const btOut: Record<string, unknown> = {
+        code: p.businessType.code.trim(),
+      };
+      if (p.businessType.label && p.businessType.label.trim()) {
+        btOut.label = p.businessType.label.trim();
+      }
+      out.businessType = btOut;
+    }
+    if (p.companyLocality) out.companyLocality = p.companyLocality;
+    if (p.companyRepresentative) {
+      const r = p.companyRepresentative;
+      const repOut: Record<string, unknown> = {};
+      if (r.ownerName && r.ownerName.trim())
+        repOut.ownerName = r.ownerName.trim();
+      if (r.citizenshipCategory)
+        repOut.citizenshipCategory = r.citizenshipCategory;
+      if (r.identityType) repOut.identityType = r.identityType;
+      if (r.identityNumber && r.identityNumber.trim())
+        repOut.identityNumber = r.identityNumber.trim();
+      if (r.nricSubType) repOut.nricSubType = r.nricSubType;
+      if (r.gender) repOut.gender = r.gender;
+      if (r.nationality) repOut.nationality = r.nationality;
+      if (Object.keys(repOut).length > 0) {
+        out.companyRepresentative = repOut;
+      }
+    }
+
     if (p.operatorNote && p.operatorNote.trim())
       out.operatorNote = p.operatorNote.trim();
     return out;
@@ -1051,6 +1104,307 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
                       }
                     />
                   </Field>
+                </div>
+
+                {/* ── Bahagian A Party Identity Fields (Milestone A4) ──
+                    Captures the portal-required identity sub-fields
+                    discovered during the ε-3 supervised field-mapping
+                    run. Internal operator capture only — NOT a
+                    public review page. */}
+                <div className="tpr-form-subsection">
+                  <h4>Bahagian A Party Identity Fields</h4>
+                  <p className="tpr-form-helper">
+                    These fields were observed during the
+                    Sewa/Pajakan field-mapping run and are required
+                    before WeStamp can truthfully prepare a
+                    supervised portal run.
+                  </p>
+                  {p.type === "individual" ? (
+                    <div className="tpr-grid">
+                      <Field label="Citizenship · Warga (warga)">
+                        <select
+                          value={p.citizenshipCategory ?? ""}
+                          onChange={(e) =>
+                            updatePartyField(
+                              idx,
+                              "citizenshipCategory",
+                              (e.target.value as
+                                | TenancyPortalCitizenshipCategory
+                                | "") || undefined
+                            )
+                          }
+                        >
+                          <option value="">— select —</option>
+                          <option value="citizen">Citizen</option>
+                          <option value="non_citizen">Non-citizen</option>
+                          <option value="permanent_resident">
+                            Permanent Resident
+                          </option>
+                        </select>
+                        <span className="tpr-field-helper-note">
+                          Required. Never inferred from nationality.
+                        </span>
+                      </Field>
+                      <Field label="Gender (USER_SEX)">
+                        <select
+                          value={p.gender ?? ""}
+                          onChange={(e) =>
+                            updatePartyField(
+                              idx,
+                              "gender",
+                              (e.target.value as TenancyPortalGender | "") ||
+                                undefined
+                            )
+                          }
+                        >
+                          <option value="">— select —</option>
+                          <option value="male">Male</option>
+                          <option value="female">Female</option>
+                        </select>
+                        <span className="tpr-field-helper-note">
+                          Required. Never inferred from name or IC
+                          number.
+                        </span>
+                      </Field>
+                      {p.identityType === "nric" && (
+                        <Field label="NRIC sub-type (EPD_NOKP_TYPE)">
+                          <select
+                            value={p.nricSubType ?? ""}
+                            onChange={(e) =>
+                              updatePartyField(
+                                idx,
+                                "nricSubType",
+                                (e.target.value as
+                                  | TenancyPortalNricSubType
+                                  | "") || undefined
+                              )
+                            }
+                          >
+                            <option value="">— select —</option>
+                            <option value="ic_baru">
+                              IC Baru (post-1990)
+                            </option>
+                            <option value="ic_lama">
+                              IC Lama (pre-1990)
+                            </option>
+                            <option value="ic_polis">IC Polis</option>
+                            <option value="ic_army">IC Army (Tentera)</option>
+                          </select>
+                          <span className="tpr-field-helper-note">
+                            Required when identity type is NRIC.
+                            Never inferred from IC number.
+                          </span>
+                        </Field>
+                      )}
+                    </div>
+                  ) : null}
+                  {p.type === "company_ssm" ? (
+                    <>
+                      <div className="tpr-grid">
+                        <Field label="Old ROC (tb_roc)">
+                          <input
+                            type="text"
+                            value={p.rocOld ?? ""}
+                            onChange={(e) =>
+                              updatePartyField(idx, "rocOld", e.target.value)
+                            }
+                            placeholder="Pre-2017 ROC number"
+                          />
+                        </Field>
+                        <Field label="New ROC (tb_roc_new)">
+                          <input
+                            type="text"
+                            value={p.rocNew ?? ""}
+                            onChange={(e) =>
+                              updatePartyField(idx, "rocNew", e.target.value)
+                            }
+                            placeholder="Post-2017 ROC number"
+                          />
+                          <span className="tpr-field-helper-note">
+                            Capture either old or new ROC. WeStamp
+                            never fabricates one from the other.
+                          </span>
+                        </Field>
+                        <Field label="Business type code (jenis_perniagaan)">
+                          <input
+                            type="text"
+                            value={p.businessType?.code ?? ""}
+                            onChange={(e) =>
+                              updatePartyField(idx, "businessType", {
+                                code: e.target.value,
+                                label: p.businessType?.label,
+                              })
+                            }
+                            placeholder="Portal option code"
+                          />
+                          <span className="tpr-field-helper-note">
+                            6-option dropdown observed; full enum not
+                            yet catalogued. Required.
+                          </span>
+                        </Field>
+                        <Field label="Business type label (optional)">
+                          <input
+                            type="text"
+                            value={p.businessType?.label ?? ""}
+                            onChange={(e) =>
+                              updatePartyField(idx, "businessType", {
+                                code: p.businessType?.code ?? "",
+                                label: e.target.value,
+                              })
+                            }
+                          />
+                        </Field>
+                        <Field label="Company locality (tb_syarikat)">
+                          <select
+                            value={p.companyLocality ?? ""}
+                            onChange={(e) =>
+                              updatePartyField(
+                                idx,
+                                "companyLocality",
+                                (e.target.value as
+                                  | TenancyPortalCompanyLocality
+                                  | "") || undefined
+                              )
+                            }
+                          >
+                            <option value="">— select —</option>
+                            <option value="local_company">
+                              Local company
+                            </option>
+                            <option value="foreign_company">
+                              Foreign company
+                            </option>
+                          </select>
+                          <span className="tpr-field-helper-note">
+                            Required. Never inferred from country.
+                          </span>
+                        </Field>
+                      </div>
+                      <h5>SSM Representative Identity</h5>
+                      <p className="tpr-form-helper">
+                        Natural-person identity captured by the SSM
+                        Tambah modal alongside the company entity.
+                      </p>
+                      <div className="tpr-grid">
+                        <Field label="Representative name (owner_name)">
+                          <input
+                            type="text"
+                            value={p.companyRepresentative?.ownerName ?? ""}
+                            onChange={(e) =>
+                              updatePartyField(idx, "companyRepresentative", {
+                                ...(p.companyRepresentative ?? {}),
+                                ownerName: e.target.value,
+                              })
+                            }
+                          />
+                        </Field>
+                        <Field label="Representative citizenship (warga)">
+                          <select
+                            value={
+                              p.companyRepresentative?.citizenshipCategory ??
+                              ""
+                            }
+                            onChange={(e) =>
+                              updatePartyField(idx, "companyRepresentative", {
+                                ...(p.companyRepresentative ?? {}),
+                                citizenshipCategory:
+                                  (e.target.value as
+                                    | TenancyPortalCitizenshipCategory
+                                    | "") || undefined,
+                              })
+                            }
+                          >
+                            <option value="">— select —</option>
+                            <option value="citizen">Citizen</option>
+                            <option value="non_citizen">Non-citizen</option>
+                            <option value="permanent_resident">
+                              Permanent Resident
+                            </option>
+                          </select>
+                        </Field>
+                        <Field label="Representative identity type">
+                          <select
+                            value={
+                              p.companyRepresentative?.identityType ?? ""
+                            }
+                            onChange={(e) =>
+                              updatePartyField(idx, "companyRepresentative", {
+                                ...(p.companyRepresentative ?? {}),
+                                identityType:
+                                  (e.target.value as
+                                    | TenancyPortalIdentityType
+                                    | "") || undefined,
+                              })
+                            }
+                          >
+                            <option value="">— select —</option>
+                            <option value="nric">NRIC</option>
+                            <option value="passport">Passport</option>
+                          </select>
+                        </Field>
+                        <Field label="Representative identity number">
+                          <input
+                            type="text"
+                            value={
+                              p.companyRepresentative?.identityNumber ?? ""
+                            }
+                            onChange={(e) =>
+                              updatePartyField(idx, "companyRepresentative", {
+                                ...(p.companyRepresentative ?? {}),
+                                identityNumber: e.target.value,
+                              })
+                            }
+                          />
+                        </Field>
+                        {p.companyRepresentative?.identityType === "nric" && (
+                          <Field label="Representative NRIC sub-type (EPD_NOKP_TYPE)">
+                            <select
+                              value={
+                                p.companyRepresentative?.nricSubType ?? ""
+                              }
+                              onChange={(e) =>
+                                updatePartyField(
+                                  idx,
+                                  "companyRepresentative",
+                                  {
+                                    ...(p.companyRepresentative ?? {}),
+                                    nricSubType:
+                                      (e.target.value as
+                                        | TenancyPortalNricSubType
+                                        | "") || undefined,
+                                  }
+                                )
+                              }
+                            >
+                              <option value="">— select —</option>
+                              <option value="ic_baru">IC Baru</option>
+                              <option value="ic_lama">IC Lama</option>
+                              <option value="ic_polis">IC Polis</option>
+                              <option value="ic_army">IC Army</option>
+                            </select>
+                          </Field>
+                        )}
+                        <Field label="Representative gender (USER_SEX)">
+                          <select
+                            value={p.companyRepresentative?.gender ?? ""}
+                            onChange={(e) =>
+                              updatePartyField(idx, "companyRepresentative", {
+                                ...(p.companyRepresentative ?? {}),
+                                gender:
+                                  (e.target.value as
+                                    | TenancyPortalGender
+                                    | "") || undefined,
+                              })
+                            }
+                          >
+                            <option value="">— select —</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                          </select>
+                        </Field>
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </div>
             ))}

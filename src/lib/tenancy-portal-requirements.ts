@@ -464,6 +464,215 @@ export function evaluateTenancyPortalReadiness(
       currentValue: NON_EMPTY(p.mobile) ? p.mobile : null,
       portalMeaning: "No. Telefon Bimbit",
     });
+
+    // ── Milestone A4 · Bahagian A party identity sub-fields ──
+    // Per-row readiness for the new fields the field-mapping run
+    // proved are required by the portal but were not modelled before.
+    // Conditional on party type so we don't surface NRIC sub-type
+    // for passport-bearing individuals etc.
+    if (p.type === "individual") {
+      // warga (3-way citizenship)
+      fields.push({
+        fieldKey: `parties[${idx}].citizenshipCategory`,
+        label: `${partyLabel} — Citizenship · Warga (warga)`,
+        section: "bahagian_a",
+        state:
+          p.citizenshipCategory === "citizen" ||
+          p.citizenshipCategory === "non_citizen" ||
+          p.citizenshipCategory === "permanent_resident"
+            ? "ready"
+            : "missing",
+        currentValue: p.citizenshipCategory ?? null,
+        portalMeaning: "warga · 3-way citizenship",
+        notes:
+          p.citizenshipCategory === undefined
+            ? "Required. Pick 'citizen', 'non_citizen', or 'permanent_resident'. Never inferred from nationality."
+            : undefined,
+      });
+      // USER_SEX (gender)
+      fields.push({
+        fieldKey: `parties[${idx}].gender`,
+        label: `${partyLabel} — Gender (USER_SEX)`,
+        section: "bahagian_a",
+        state:
+          p.gender === "male" || p.gender === "female" ? "ready" : "missing",
+        currentValue: p.gender ?? null,
+        portalMeaning: "USER_SEX",
+        notes:
+          p.gender === undefined
+            ? "Required. Pick 'male' or 'female'. Never inferred from name or IC number."
+            : undefined,
+      });
+      // EPD_NOKP_TYPE — only when identityType === "nric"
+      if (p.identityType === "nric") {
+        fields.push({
+          fieldKey: `parties[${idx}].nricSubType`,
+          label: `${partyLabel} — NRIC sub-type (EPD_NOKP_TYPE)`,
+          section: "bahagian_a",
+          state:
+            p.nricSubType === "ic_baru" ||
+            p.nricSubType === "ic_lama" ||
+            p.nricSubType === "ic_polis" ||
+            p.nricSubType === "ic_army"
+              ? "ready"
+              : "missing",
+          currentValue: p.nricSubType ?? null,
+          portalMeaning: "EPD_NOKP_TYPE",
+          notes:
+            p.nricSubType === undefined
+              ? "Required when identity type is NRIC. Pick 'ic_baru', 'ic_lama', 'ic_polis', or 'ic_army'. Never inferred from IC number."
+              : undefined,
+        });
+      }
+    }
+
+    if (p.type === "company_ssm") {
+      // tb_roc / tb_roc_new — at least one required.
+      const hasRocOld = NON_EMPTY(p.rocOld);
+      const hasRocNew = NON_EMPTY(p.rocNew);
+      fields.push({
+        fieldKey: `parties[${idx}].rocOld`,
+        label: `${partyLabel} — Old ROC (tb_roc)`,
+        section: "bahagian_a",
+        state:
+          hasRocOld || hasRocNew ? "ready" : "conditional_missing",
+        currentValue: hasRocOld ? (p.rocOld as string) : null,
+        portalMeaning: "tb_roc · old ROC / pre-2017 number",
+        notes: hasRocOld
+          ? undefined
+          : hasRocNew
+            ? "Optional once new ROC is captured."
+            : "Capture either old ROC (tb_roc) or new ROC (tb_roc_new). Never fabricate one from the other.",
+      });
+      fields.push({
+        fieldKey: `parties[${idx}].rocNew`,
+        label: `${partyLabel} — New ROC (tb_roc_new)`,
+        section: "bahagian_a",
+        state:
+          hasRocOld || hasRocNew ? "ready" : "conditional_missing",
+        currentValue: hasRocNew ? (p.rocNew as string) : null,
+        portalMeaning: "tb_roc_new · new ROC / post-2017 number",
+        notes: hasRocNew
+          ? undefined
+          : hasRocOld
+            ? "Optional once old ROC is captured."
+            : "Capture either old ROC (tb_roc) or new ROC (tb_roc_new). Never fabricate one from the other.",
+      });
+      // jenis_perniagaan — captured-select code required.
+      const businessTypeCode = p.businessType?.code;
+      fields.push({
+        fieldKey: `parties[${idx}].businessType`,
+        label: `${partyLabel} — Business type (jenis_perniagaan)`,
+        section: "bahagian_a",
+        state: NON_EMPTY(businessTypeCode) ? "ready" : "missing",
+        currentValue: NON_EMPTY(businessTypeCode)
+          ? p.businessType?.label
+            ? `${businessTypeCode} · ${p.businessType.label}`
+            : (businessTypeCode as string)
+          : null,
+        portalMeaning: "jenis_perniagaan · 6-option dropdown",
+        notes: NON_EMPTY(businessTypeCode)
+          ? undefined
+          : "Required. Operator-captured portal code (6-option dropdown; full enum not yet catalogued in WeStamp).",
+      });
+      // tb_syarikat — company locality
+      fields.push({
+        fieldKey: `parties[${idx}].companyLocality`,
+        label: `${partyLabel} — Company locality (tb_syarikat)`,
+        section: "bahagian_a",
+        state:
+          p.companyLocality === "local_company" ||
+          p.companyLocality === "foreign_company"
+            ? "ready"
+            : "missing",
+        currentValue: p.companyLocality ?? null,
+        portalMeaning: "tb_syarikat · local vs foreign",
+        notes:
+          p.companyLocality === undefined
+            ? "Required. Pick 'local_company' or 'foreign_company'. Never inferred from country."
+            : undefined,
+      });
+      // companyRepresentative — full natural-person identity sub-block.
+      const rep = p.companyRepresentative;
+      fields.push({
+        fieldKey: `parties[${idx}].companyRepresentative.ownerName`,
+        label: `${partyLabel} — Representative name (owner_name)`,
+        section: "bahagian_a",
+        state: NON_EMPTY(rep?.ownerName) ? "ready" : "missing",
+        currentValue: NON_EMPTY(rep?.ownerName)
+          ? (rep?.ownerName as string)
+          : null,
+        portalMeaning: "owner_name",
+      });
+      fields.push({
+        fieldKey: `parties[${idx}].companyRepresentative.citizenshipCategory`,
+        label: `${partyLabel} — Representative citizenship (warga)`,
+        section: "bahagian_a",
+        state:
+          rep?.citizenshipCategory === "citizen" ||
+          rep?.citizenshipCategory === "non_citizen" ||
+          rep?.citizenshipCategory === "permanent_resident"
+            ? "ready"
+            : "missing",
+        currentValue: rep?.citizenshipCategory ?? null,
+        portalMeaning: "warga · 3-way citizenship for the SSM rep",
+      });
+      fields.push({
+        fieldKey: `parties[${idx}].companyRepresentative.identityType`,
+        label: `${partyLabel} — Representative identity type`,
+        section: "bahagian_a",
+        state:
+          rep?.identityType === "nric" ||
+          rep?.identityType === "passport"
+            ? "ready"
+            : "missing",
+        currentValue: rep?.identityType ?? null,
+        portalMeaning: "Identity document type",
+        notes:
+          rep?.identityType === undefined
+            ? "Required. Pick 'nric' or 'passport' for the representative."
+            : rep?.identityType === "company_registration"
+              ? "Representative is a natural person; 'company_registration' is not valid here."
+              : undefined,
+      });
+      fields.push({
+        fieldKey: `parties[${idx}].companyRepresentative.identityNumber`,
+        label: `${partyLabel} — Representative identity number`,
+        section: "bahagian_a",
+        state: NON_EMPTY(rep?.identityNumber) ? "ready" : "missing",
+        currentValue: NON_EMPTY(rep?.identityNumber)
+          ? (rep?.identityNumber as string)
+          : null,
+        portalMeaning: "Identity number",
+      });
+      if (rep?.identityType === "nric") {
+        fields.push({
+          fieldKey: `parties[${idx}].companyRepresentative.nricSubType`,
+          label: `${partyLabel} — Representative NRIC sub-type (EPD_NOKP_TYPE)`,
+          section: "bahagian_a",
+          state:
+            rep?.nricSubType === "ic_baru" ||
+            rep?.nricSubType === "ic_lama" ||
+            rep?.nricSubType === "ic_polis" ||
+            rep?.nricSubType === "ic_army"
+              ? "ready"
+              : "missing",
+          currentValue: rep?.nricSubType ?? null,
+          portalMeaning: "EPD_NOKP_TYPE",
+        });
+      }
+      fields.push({
+        fieldKey: `parties[${idx}].companyRepresentative.gender`,
+        label: `${partyLabel} — Representative gender (USER_SEX)`,
+        section: "bahagian_a",
+        state:
+          rep?.gender === "male" || rep?.gender === "female"
+            ? "ready"
+            : "missing",
+        currentValue: rep?.gender ?? null,
+        portalMeaning: "USER_SEX",
+      });
+    }
   });
 
   // ── Bahagian B — Instrument and rent ──────────────────────────
@@ -1068,6 +1277,201 @@ export function validateTenancyPortalDetailsInput(
     if (typeof p.phone === "string" && p.phone.trim()) {
       party.phone = p.phone.trim();
     }
+
+    // ── Bahagian A · party identity sub-fields (Milestone A4) ──
+    // Partial-save semantics: each new field is independently
+    // optional in storage. Recognised enum values are accepted;
+    // unknown values are rejected with a clear error so operator
+    // typos are surfaced. Blanks for free-text fields are dropped.
+    if (
+      p.citizenshipCategory === "citizen" ||
+      p.citizenshipCategory === "non_citizen" ||
+      p.citizenshipCategory === "permanent_resident"
+    ) {
+      party.citizenshipCategory = p.citizenshipCategory;
+    } else if (
+      p.citizenshipCategory !== undefined &&
+      p.citizenshipCategory !== null
+    ) {
+      return {
+        ok: false,
+        error: `parties[${i}].citizenshipCategory must be one of 'citizen', 'non_citizen', 'permanent_resident' when supplied.`,
+      };
+    }
+    if (
+      p.nricSubType === "ic_baru" ||
+      p.nricSubType === "ic_lama" ||
+      p.nricSubType === "ic_polis" ||
+      p.nricSubType === "ic_army"
+    ) {
+      party.nricSubType = p.nricSubType;
+    } else if (p.nricSubType !== undefined && p.nricSubType !== null) {
+      return {
+        ok: false,
+        error: `parties[${i}].nricSubType must be one of 'ic_baru', 'ic_lama', 'ic_polis', 'ic_army' when supplied.`,
+      };
+    }
+    if (p.gender === "male" || p.gender === "female") {
+      party.gender = p.gender;
+    } else if (p.gender !== undefined && p.gender !== null) {
+      return {
+        ok: false,
+        error: `parties[${i}].gender must be 'male' or 'female' when supplied.`,
+      };
+    }
+
+    // ── company_ssm fields (Milestone A4) ──
+    // ROC split (rocOld / rocNew). Free-text. Drop blanks. We do NOT
+    // require either at validator level — operator may save a partial
+    // ROC capture; readiness blocks until at least one is present.
+    if (typeof p.rocOld === "string" && p.rocOld.trim()) {
+      party.rocOld = p.rocOld.trim();
+    }
+    if (typeof p.rocNew === "string" && p.rocNew.trim()) {
+      party.rocNew = p.rocNew.trim();
+    }
+    // Business type — captured-select (code + optional label).
+    if (p.businessType !== undefined && p.businessType !== null) {
+      if (typeof p.businessType !== "object") {
+        return {
+          ok: false,
+          error: `parties[${i}].businessType must be an object when supplied.`,
+        };
+      }
+      const rbt = p.businessType as Record<string, unknown>;
+      if (rbt.code !== undefined && rbt.code !== null) {
+        if (typeof rbt.code !== "string") {
+          return {
+            ok: false,
+            error: `parties[${i}].businessType.code must be a string when supplied.`,
+          };
+        }
+        const trimmedCode = rbt.code.trim();
+        if (trimmedCode !== "") {
+          const captured: { code: string; label?: string } = {
+            code: trimmedCode,
+          };
+          if (typeof rbt.label === "string" && rbt.label.trim()) {
+            captured.label = rbt.label.trim();
+          }
+          party.businessType = captured;
+        }
+      }
+    }
+    // Company locality — narrow enum.
+    if (
+      p.companyLocality === "local_company" ||
+      p.companyLocality === "foreign_company"
+    ) {
+      party.companyLocality = p.companyLocality;
+    } else if (
+      p.companyLocality !== undefined &&
+      p.companyLocality !== null
+    ) {
+      return {
+        ok: false,
+        error: `parties[${i}].companyLocality must be 'local_company' or 'foreign_company' when supplied.`,
+      };
+    }
+    // Company representative sub-block.
+    if (
+      p.companyRepresentative !== undefined &&
+      p.companyRepresentative !== null
+    ) {
+      if (typeof p.companyRepresentative !== "object") {
+        return {
+          ok: false,
+          error: `parties[${i}].companyRepresentative must be an object when supplied.`,
+        };
+      }
+      const rcr = p.companyRepresentative as Record<string, unknown>;
+      const rep: NonNullable<TenancyPortalParty["companyRepresentative"]> = {};
+
+      if (typeof rcr.ownerName === "string" && rcr.ownerName.trim()) {
+        rep.ownerName = rcr.ownerName.trim();
+      } else if (
+        rcr.ownerName !== undefined &&
+        rcr.ownerName !== null &&
+        typeof rcr.ownerName !== "string"
+      ) {
+        return {
+          ok: false,
+          error: `parties[${i}].companyRepresentative.ownerName must be a string when supplied.`,
+        };
+      }
+      if (
+        rcr.citizenshipCategory === "citizen" ||
+        rcr.citizenshipCategory === "non_citizen" ||
+        rcr.citizenshipCategory === "permanent_resident"
+      ) {
+        rep.citizenshipCategory = rcr.citizenshipCategory;
+      } else if (
+        rcr.citizenshipCategory !== undefined &&
+        rcr.citizenshipCategory !== null
+      ) {
+        return {
+          ok: false,
+          error: `parties[${i}].companyRepresentative.citizenshipCategory must be one of 'citizen', 'non_citizen', 'permanent_resident' when supplied.`,
+        };
+      }
+      if (
+        rcr.identityType === "nric" ||
+        rcr.identityType === "passport" ||
+        rcr.identityType === "company_registration"
+      ) {
+        rep.identityType = rcr.identityType;
+      } else if (
+        rcr.identityType !== undefined &&
+        rcr.identityType !== null
+      ) {
+        return {
+          ok: false,
+          error: `parties[${i}].companyRepresentative.identityType must be one of 'nric', 'passport', 'company_registration' when supplied.`,
+        };
+      }
+      if (
+        typeof rcr.identityNumber === "string" &&
+        rcr.identityNumber.trim()
+      ) {
+        rep.identityNumber = rcr.identityNumber.trim();
+      }
+      if (
+        rcr.nricSubType === "ic_baru" ||
+        rcr.nricSubType === "ic_lama" ||
+        rcr.nricSubType === "ic_polis" ||
+        rcr.nricSubType === "ic_army"
+      ) {
+        rep.nricSubType = rcr.nricSubType;
+      } else if (
+        rcr.nricSubType !== undefined &&
+        rcr.nricSubType !== null
+      ) {
+        return {
+          ok: false,
+          error: `parties[${i}].companyRepresentative.nricSubType must be one of 'ic_baru', 'ic_lama', 'ic_polis', 'ic_army' when supplied.`,
+        };
+      }
+      if (rcr.gender === "male" || rcr.gender === "female") {
+        rep.gender = rcr.gender;
+      } else if (rcr.gender !== undefined && rcr.gender !== null) {
+        return {
+          ok: false,
+          error: `parties[${i}].companyRepresentative.gender must be 'male' or 'female' when supplied.`,
+        };
+      }
+      if (
+        rcr.nationality === "malaysian" ||
+        rcr.nationality === "non_malaysian"
+      ) {
+        rep.nationality = rcr.nationality;
+      } else if (rcr.nationality === null) {
+        rep.nationality = null;
+      }
+      if (Object.keys(rep).length > 0) {
+        party.companyRepresentative = rep;
+      }
+    }
+
     if (typeof p.operatorNote === "string" && p.operatorNote.trim()) {
       party.operatorNote = p.operatorNote.trim();
     }
