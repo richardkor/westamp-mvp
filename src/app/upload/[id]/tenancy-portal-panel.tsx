@@ -47,6 +47,14 @@ import {
   type TenancyPortalFieldMappingGapCategory,
   type TenancyPortalRunReadinessReport,
 } from "../../../lib/tenancy-portal-run-readiness";
+import {
+  buildTenancyInstructionGraph,
+  type TenancyInstructionGraph,
+} from "../../../lib/tenancy-instruction-graph";
+import {
+  buildInstructionGraphPreviewViewModel,
+  type InstructionGraphPreviewViewModel,
+} from "../../../lib/tenancy-instruction-graph-preview";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -635,6 +643,25 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
     return evaluateTenancyPortalRunReadiness(liveJobInput);
   }, [liveJobInput]);
 
+  // Offline instruction graph (Milestone B-impl Phase 0). The graph
+  // is purely planned — no portal contact, no execution. We pass the
+  // pre-computed `liveRunReadiness` report so the builder does not
+  // re-call the readiness gate; this keeps the readiness verdict and
+  // the graph in lockstep as the operator edits.
+  const liveInstructionGraph: TenancyInstructionGraph = useMemo(() => {
+    return buildTenancyInstructionGraph({
+      job: liveJobInput,
+      jobId,
+      readinessReport: liveRunReadiness,
+    });
+  }, [jobId, liveJobInput, liveRunReadiness]);
+
+  const liveInstructionGraphPreview: InstructionGraphPreviewViewModel =
+    useMemo(
+      () => buildInstructionGraphPreviewViewModel(liveInstructionGraph),
+      [liveInstructionGraph]
+    );
+
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -753,6 +780,19 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
           existing gap / payload / instruction-draft previews — those
           remain intact below for detail. */}
       <RunReadinessSummary report={liveRunReadiness} />
+
+      {/* ── Instruction Graph Preview (Milestone B1) ─────────────
+          Operator-side, read-only preview of the offline instruction
+          graph (Milestone B-impl Phase 0). Displays planned phases,
+          per-phase mutation level / step count / operator-gate flag,
+          and the canonical 5 operator-gate labels. The graph never
+          executes; this preview is design-only. All wording is
+          sourced from the pure preview helper, never composed
+          inline, so the sensitive-data and forbidden-wording
+          invariants tested in
+          `tenancy-instruction-graph-preview.test.ts` apply to the
+          rendered surface verbatim. */}
+      <InstructionGraphPreview viewModel={liveInstructionGraphPreview} />
 
       {/* ── Readiness summary counts ────────────────────────────── */}
       <div className="tpr-summary">
@@ -3051,6 +3091,154 @@ function RunReadinessSummary({
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+// ─── Instruction Graph Preview (Milestone B1) ──────────────────────
+
+/**
+ * Read-only render of the offline instruction graph view-model.
+ *
+ * This component is a thin renderer — every string it shows is read
+ * verbatim from `viewModel`, which is built by the pure helper
+ * `buildInstructionGraphPreviewViewModel`. The helper enforces the
+ * B1 wording rules and the sensitive-data invariant; the React
+ * component must not introduce its own wording or compose its own
+ * strings from raw job values.
+ *
+ * The component does NOT render any "Run" / "Execute" / "Submit"
+ * affordance and does NOT trigger any side-effect.
+ */
+function InstructionGraphPreview({
+  viewModel,
+}: {
+  viewModel: InstructionGraphPreviewViewModel;
+}) {
+  const isReady = viewModel.banner.tone === "ready";
+  return (
+    <section
+      className={`tpr-igp tpr-igp-${viewModel.banner.tone}`}
+      aria-label={viewModel.heading}
+      data-graph-id={viewModel.graphId}
+    >
+      <header className="tpr-igp-header">
+        <h3>{viewModel.heading}</h3>
+        <span
+          className={`tpr-igp-banner tpr-igp-banner-${viewModel.banner.tone}`}
+        >
+          {viewModel.banner.text}
+        </span>
+      </header>
+
+      <p className="tpr-igp-helper">{viewModel.helperText}</p>
+
+      <div className="tpr-igp-meta">
+        <span className="tpr-igp-meta-cell">
+          Lane: <strong>{viewModel.laneLabel}</strong>
+        </span>
+        <span className="tpr-igp-meta-cell">
+          Supported path: <strong>{viewModel.supportedPathLabel}</strong>
+        </span>
+        <span className="tpr-igp-meta-cell">
+          Future execution:{" "}
+          <strong>{viewModel.futureExecutionLabel}</strong>
+        </span>
+      </div>
+
+      {isReady ? (
+        <>
+          <div className="tpr-igp-table-wrap">
+            <table className="tpr-igp-phase-table">
+              <thead>
+                <tr>
+                  <th>Phase</th>
+                  <th>Mutation level</th>
+                  <th>Execution status</th>
+                  <th>Steps</th>
+                  <th>Operator gate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {viewModel.phases.map((row) => (
+                  <tr key={row.phaseId} className="tpr-igp-phase-row">
+                    <td className="tpr-igp-phase-name">{row.phaseName}</td>
+                    <td>
+                      <span className="tpr-igp-mutation">
+                        {row.mutationLevelLabel}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="tpr-igp-status tpr-igp-status-planned">
+                        {row.executionStatusLabel}
+                      </span>
+                    </td>
+                    <td className="tpr-igp-step-count">{row.stepCount}</td>
+                    <td>
+                      {row.hasOperatorGate ? (
+                        <span className="tpr-igp-gate-yes">Required</span>
+                      ) : (
+                        <span className="tpr-igp-gate-no">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="tpr-igp-gates">
+            <p className="tpr-igp-gates-title">
+              <strong>Operator gates</strong>
+            </p>
+            <ul className="tpr-igp-gates-list">
+              {viewModel.operatorGates.map((g) => (
+                <li key={g.key}>
+                  <span className="tpr-igp-gate-label">{g.label}</span>
+                  <span className="tpr-igp-gate-phase"> · {g.phaseName}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      ) : (
+        viewModel.blockedSummary && (
+          <div className="tpr-igp-blocked" role="alert">
+            <p className="tpr-igp-blocked-action">
+              <strong>{viewModel.blockedSummary.safeActionText}</strong>
+            </p>
+            {viewModel.blockedSummary.groups.length > 0 && (
+              <ul className="tpr-igp-blocked-groups">
+                {viewModel.blockedSummary.groups.map((g) => (
+                  <li key={g.category} className="tpr-igp-blocked-group">
+                    <span className="tpr-igp-blocked-category">
+                      {g.categoryLabel}
+                    </span>
+                    <span className="tpr-igp-blocked-count">
+                      {" "}
+                      · {g.count} blocker{g.count === 1 ? "" : "s"}
+                    </span>
+                    {g.representativeCodes.length > 0 && (
+                      <ul className="tpr-igp-blocked-codes">
+                        {g.representativeCodes.map((c) => (
+                          <li key={c}>
+                            <code>{c}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
+      )}
+
+      <footer className="tpr-igp-footer">
+        <p>{viewModel.authorizationCaveat}</p>
+        <p>{viewModel.finalHantarCaveat}</p>
+      </footer>
     </section>
   );
 }

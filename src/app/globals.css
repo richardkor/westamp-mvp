@@ -9189,3 +9189,235 @@ section[data-section] {
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
+
+/* ── Instruction Graph Preview (Milestone B1) ─────────────────────
+   Read-only operator-side panel that renders the offline
+   instruction graph view-model. Visual style parallels the
+   neighbouring `.tpr-run-readiness` block so the operator's eye
+   reads them as a single decision-area. */
+.tpr-igp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.tpr-igp-ready {
+  border-color: #1e7a3a;
+  background: rgba(30, 122, 58, 0.06);
+}
+
+.tpr-igp-blocked {
+  border-color: #b34a00;
+  background: rgba(179, 74, 0, 0.06);
+}
+
+.tpr-igp-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.tpr-igp-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.tpr-igp-banner {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.tpr-igp-banner-ready {
+  background: #1e7a3a;
+  color: #ffffff;
+}
+
+.tpr-igp-banner-blocked {
+  background: #b34a00;
+  color: #ffffff;
+}
+
+.tpr-igp-helper {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tpr-igp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 13px;
+}
+
+.tpr-igp-meta-cell {
+  background: var(--surface-muted, transparent);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px dashed var(--border);
+}
+
+.tpr-igp-table-wrap {
+  overflow-x: auto;
+}
+
+.tpr-igp-phase-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tpr-igp-phase-table th,
+.tpr-igp-phase-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.tpr-igp-phase-table thead th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tpr-igp-phase-name {
+  font-weight: 600;
+}
+
+.tpr-igp-mutation {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-muted, transparent);
+  font-variant: small-caps;
+  font-size: 12px;
+}
+
+.tpr-igp-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tpr-igp-status-planned {
+  background: rgba(30, 122, 58, 0.1);
+  color: #1e7a3a;
+}
+
+.tpr-igp-step-count {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.tpr-igp-gate-yes {
+  color: #b34a00;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.tpr-igp-gate-no {
+  color: var(--muted);
+}
+
+.tpr-igp-gates {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tpr-igp-gates-title {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+}
+
+.tpr-igp-gates-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tpr-igp-gate-label {
+  font-weight: 600;
+}
+
+.tpr-igp-gate-phase {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tpr-igp-blocked {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tpr-igp-blocked-action {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+}
+
+.tpr-igp-blocked-groups {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.tpr-igp-blocked-category {
+  font-weight: 600;
+}
+
+.tpr-igp-blocked-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tpr-igp-blocked-codes {
+  margin: 4px 0 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.tpr-igp-blocked-codes code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.tpr-igp-footer {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tpr-igp-footer p {
+  margin: 0;
+}
