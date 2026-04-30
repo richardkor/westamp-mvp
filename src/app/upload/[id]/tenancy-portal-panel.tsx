@@ -64,6 +64,11 @@ import {
   type BrowserSessionStatusCardLifecycle,
 } from "../../../lib/tenancy-supervised-session-card";
 import type { SupervisedSessionReport } from "../../../lib/tenancy-supervised-session-shell";
+import {
+  buildSupervisedRunSessionViewModel,
+  type SupervisedRunSessionViewModel,
+  type TenancyRunSessionState,
+} from "../../../lib/tenancy-supervised-run-session";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -585,6 +590,7 @@ interface PanelProps {
     | "mimeType"
     | "documentCategory"
     | "stampingDetails"
+    | "supervisedRunSession"
   >;
 }
 
@@ -844,6 +850,21 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
           portal mutation, no field fill, no upload, no submission
           ever runs from this card. */}
       <BrowserSessionStatusCard />
+
+      {/* ── Supervised Run Session (Milestone B6) ────────────────
+          Operator-side internal control surface for the
+          supervised-run lifecycle. Calls the operator-protected
+          /api/intake/[id]/supervised-run/prepare and
+          /api/intake/[id]/supervised-run/approve-first-mutation
+          routes. Records WeStamp's internal readiness to begin a
+          future supervised portal run; never executes any portal
+          action. The "Approve First Portal Mutation" button writes
+          an internal flag only — the next milestone is required
+          before WeStamp can create a portal draft. */}
+      <SupervisedRunSessionCard
+        jobId={jobId}
+        initialState={job.supervisedRunSession ?? null}
+      />
 
       {/* ── Readiness summary counts ────────────────────────────── */}
       <div className="tpr-summary">
@@ -3654,6 +3675,282 @@ function BrowserSessionStatusCard() {
           {viewModel.nonExecutionNote}
         </span>
       </div>
+    </section>
+  );
+}
+
+// ─── Supervised Run Session Card (Milestone B6) ────────────────────
+
+/**
+ * Operator-side internal control surface for the supervised-run
+ * lifecycle. Reads / writes the `supervisedRunSession` block on
+ * the StampingJob via two operator-protected routes:
+ *   - POST /api/intake/[id]/supervised-run/prepare
+ *   - POST /api/intake/[id]/supervised-run/approve-first-mutation
+ *
+ * The component is a thin renderer over
+ * `buildSupervisedRunSessionViewModel`, which carries every B6
+ * approved string as exported constants. The component never
+ * composes its own wording, never accesses the raw job, and never
+ * exposes a Start / Submit / Execute / Send / Pay / Upload / Hantar
+ * affordance.
+ *
+ * Approval is internal only — clicking "Approve First Portal
+ * Mutation" sets a flag; no Playwright API is called, no portal
+ * URL is hit, no field is filled.
+ */
+function SupervisedRunSessionCard({
+  jobId,
+  initialState,
+}: {
+  jobId: string;
+  initialState: TenancyRunSessionState | null;
+}) {
+  const [state, setState] = useState<TenancyRunSessionState | null>(
+    initialState
+  );
+  const [busy, setBusy] = useState<"prepare" | "approve" | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [completedNotice, setCompletedNotice] = useState<string | null>(null);
+
+  const viewModel: SupervisedRunSessionViewModel = useMemo(
+    () => buildSupervisedRunSessionViewModel(state),
+    [state]
+  );
+
+  const handlePrepare = useCallback(
+    async (inspectBrowser: boolean) => {
+      setBusy("prepare");
+      setErrorMessage(null);
+      setCompletedNotice(null);
+      try {
+        const res = await fetch(
+          `/api/intake/${encodeURIComponent(jobId)}/supervised-run/prepare`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ inspectBrowserSession: inspectBrowser }),
+          }
+        );
+        let json: unknown;
+        try {
+          json = await res.json();
+        } catch {
+          json = null;
+        }
+        if (
+          res.ok &&
+          json &&
+          typeof json === "object" &&
+          "ok" in json &&
+          (json as { ok: unknown }).ok === true &&
+          "state" in json
+        ) {
+          setState((json as { state: TenancyRunSessionState }).state);
+        } else {
+          const errMsg =
+            json &&
+            typeof json === "object" &&
+            "error" in json &&
+            typeof (json as { error: unknown }).error === "string"
+              ? (json as { error: string }).error
+              : "Failed to prepare run session.";
+          setErrorMessage(errMsg);
+        }
+      } catch {
+        setErrorMessage("Network failure. Please try again.");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [jobId]
+  );
+
+  const handleApprove = useCallback(async () => {
+    setBusy("approve");
+    setErrorMessage(null);
+    setCompletedNotice(null);
+    try {
+      const res = await fetch(
+        `/api/intake/${encodeURIComponent(jobId)}/supervised-run/approve-first-mutation`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }
+      );
+      let json: unknown;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+      if (
+        res.ok &&
+        json &&
+        typeof json === "object" &&
+        "ok" in json &&
+        (json as { ok: unknown }).ok === true &&
+        "state" in json
+      ) {
+        const successJson = json as {
+          state: TenancyRunSessionState;
+          notice?: string;
+        };
+        setState(successJson.state);
+        if (typeof successJson.notice === "string") {
+          setCompletedNotice(successJson.notice);
+        }
+      } else {
+        const errMsg =
+          json &&
+          typeof json === "object" &&
+          "error" in json &&
+          typeof (json as { error: unknown }).error === "string"
+            ? (json as { error: string }).error
+            : "Failed to approve first mutation.";
+        setErrorMessage(errMsg);
+      }
+    } catch {
+      setErrorMessage("Network failure. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }, [jobId]);
+
+  const stageClass = `tpr-srs-stage-${viewModel.runStage}`;
+  return (
+    <section
+      className={`tpr-srs ${stageClass}`}
+      aria-label={viewModel.heading}
+    >
+      <header className="tpr-srs-header">
+        <h3>{viewModel.heading}</h3>
+        <span className={`tpr-srs-stage-badge ${stageClass}-badge`}>
+          {viewModel.runStageLabel}
+        </span>
+      </header>
+
+      <p className="tpr-srs-helper">{viewModel.helperText}</p>
+
+      <div className="tpr-srs-info-grid">
+        <div className="tpr-srs-info-cell">
+          <span className="tpr-srs-info-label">Readiness verdict</span>
+          <strong className="tpr-srs-info-value">
+            {viewModel.readinessVerdictLabel}
+          </strong>
+        </div>
+        <div className="tpr-srs-info-cell">
+          <span className="tpr-srs-info-label">Instruction graph</span>
+          <strong className="tpr-srs-info-value">
+            {viewModel.instructionGraphVerdictLabel}
+          </strong>
+        </div>
+        <div className="tpr-srs-info-cell">
+          <span className="tpr-srs-info-label">Browser phase compatibility</span>
+          <strong className="tpr-srs-info-value">
+            {viewModel.browserPhaseCompatibilityLabel ?? "—"}
+          </strong>
+        </div>
+        <div className="tpr-srs-info-cell">
+          <span className="tpr-srs-info-label">First mutation approval</span>
+          <strong className="tpr-srs-info-value">
+            {viewModel.approvalStatusLabel}
+          </strong>
+        </div>
+        <div className="tpr-srs-info-cell">
+          <span className="tpr-srs-info-label">Last updated</span>
+          <strong className="tpr-srs-info-value">
+            {viewModel.lastUpdatedAt ?? "—"}
+          </strong>
+        </div>
+        <div className="tpr-srs-info-cell">
+          <span className="tpr-srs-info-label">Blocker codes</span>
+          <strong className="tpr-srs-info-value">
+            {viewModel.blockerCount}
+          </strong>
+        </div>
+      </div>
+
+      {viewModel.blockerCodes.length > 0 && (
+        <ul className="tpr-srs-blocker-codes">
+          {viewModel.blockerCodes.map((code) => (
+            <li key={code}>
+              <code>{code}</code>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {viewModel.approveRefusalLabel && (
+        <p className="tpr-srs-refusal" role="alert">
+          {viewModel.approveRefusalLabel}
+        </p>
+      )}
+
+      {viewModel.approvalCompletedNotice && (
+        <p className="tpr-srs-approved-notice">
+          <strong>{viewModel.approvalCompletedNotice}</strong>
+        </p>
+      )}
+
+      {completedNotice && completedNotice !== viewModel.approvalCompletedNotice && (
+        <p className="tpr-srs-approved-notice">
+          <strong>{completedNotice}</strong>
+        </p>
+      )}
+
+      {errorMessage && (
+        <p className="tpr-srs-error" role="alert">
+          {errorMessage}
+        </p>
+      )}
+
+      <div className="tpr-srs-action-row">
+        <button
+          type="button"
+          className="tpr-srs-prepare-button"
+          onClick={() => handlePrepare(false)}
+          disabled={busy !== null}
+        >
+          {busy === "prepare"
+            ? "Preparing…"
+            : viewModel.prepareButtonLabel}
+        </button>
+        <button
+          type="button"
+          className="tpr-srs-prepare-with-browser-button"
+          onClick={() => handlePrepare(true)}
+          disabled={busy !== null}
+          title="Prepare run session and snapshot the browser session via read-only CDP attach."
+        >
+          {busy === "prepare"
+            ? "Preparing…"
+            : `${viewModel.prepareButtonLabel} (with browser check)`}
+        </button>
+        <button
+          type="button"
+          className="tpr-srs-approve-button"
+          onClick={handleApprove}
+          disabled={busy !== null || !viewModel.approveButtonEnabled}
+          title={
+            viewModel.approveRefusalLabel ??
+            viewModel.approvalButtonHelperWarning
+          }
+        >
+          {busy === "approve"
+            ? "Recording approval…"
+            : viewModel.approveButtonLabel}
+        </button>
+      </div>
+
+      <p className="tpr-srs-helper-warning">
+        {viewModel.approvalButtonHelperWarning}
+      </p>
+
+      <footer className="tpr-srs-footer">
+        <p>{viewModel.nonExecutionNote}</p>
+      </footer>
     </section>
   );
 }

@@ -9909,3 +9909,242 @@ section[data-section] {
 .tpr-bss-positioning-row-unknown .tpr-bss-positioning-compat {
   color: var(--muted);
 }
+
+/* ── Supervised Run Session card (Milestone B6) ───────────────────
+   Internal control surface that records WeStamp's readiness to
+   begin a future supervised portal run. Visual style follows the
+   existing `.tpr-bss` and `.tpr-src` blocks; the stage-class
+   (`.tpr-srs-stage-*`) drives accent colour. */
+.tpr-srs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.tpr-srs-stage-not_prepared {
+  border-color: var(--border);
+}
+
+.tpr-srs-stage-preflight_ready {
+  border-color: #1e7a3a;
+  background: rgba(30, 122, 58, 0.04);
+}
+
+.tpr-srs-stage-awaiting_first_mutation_approval {
+  border-color: #1e7a3a;
+  background: rgba(30, 122, 58, 0.08);
+}
+
+.tpr-srs-stage-first_mutation_approved {
+  border-color: #0c4a76;
+  background: rgba(12, 74, 118, 0.06);
+}
+
+.tpr-srs-stage-browser_not_ready,
+.tpr-srs-stage-blocked,
+.tpr-srs-stage-aborted {
+  border-color: #b34a00;
+  background: rgba(179, 74, 0, 0.05);
+}
+
+.tpr-srs-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.tpr-srs-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.tpr-srs-stage-badge {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-muted, transparent);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.tpr-srs-stage-preflight_ready-badge,
+.tpr-srs-stage-awaiting_first_mutation_approval-badge {
+  background: #1e7a3a;
+  color: #ffffff;
+  border-color: #1e7a3a;
+}
+
+.tpr-srs-stage-first_mutation_approved-badge {
+  background: #0c4a76;
+  color: #ffffff;
+  border-color: #0c4a76;
+}
+
+.tpr-srs-stage-browser_not_ready-badge,
+.tpr-srs-stage-blocked-badge,
+.tpr-srs-stage-aborted-badge {
+  background: #b34a00;
+  color: #ffffff;
+  border-color: #b34a00;
+}
+
+.tpr-srs-helper {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tpr-srs-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 12px;
+}
+
+.tpr-srs-info-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted, transparent);
+}
+
+.tpr-srs-info-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.tpr-srs-info-value {
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.tpr-srs-blocker-codes {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12px;
+  list-style: none;
+}
+
+.tpr-srs-blocker-codes li {
+  margin: 0;
+}
+
+.tpr-srs-blocker-codes code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.tpr-srs-refusal {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(179, 74, 0, 0.1);
+  border: 1px solid #b34a00;
+  color: #7a3300;
+  font-size: 13px;
+}
+
+.tpr-srs-approved-notice {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(12, 74, 118, 0.1);
+  border: 1px solid #0c4a76;
+  color: #0c4a76;
+  font-size: 13px;
+}
+
+.tpr-srs-error {
+  margin: 0;
+  font-size: 13px;
+  color: #b34a00;
+}
+
+.tpr-srs-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tpr-srs-prepare-button,
+.tpr-srs-prepare-with-browser-button,
+.tpr-srs-approve-button {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tpr-srs-prepare-button:hover:not(:disabled),
+.tpr-srs-prepare-button:focus-visible,
+.tpr-srs-prepare-with-browser-button:hover:not(:disabled),
+.tpr-srs-prepare-with-browser-button:focus-visible {
+  background: var(--surface-muted, var(--surface));
+  border-color: var(--accent, var(--border));
+  outline: none;
+}
+
+.tpr-srs-approve-button {
+  border-color: #0c4a76;
+  color: #0c4a76;
+  font-weight: 600;
+}
+
+.tpr-srs-approve-button:hover:not(:disabled),
+.tpr-srs-approve-button:focus-visible {
+  background: #0c4a76;
+  color: #ffffff;
+  outline: none;
+}
+
+.tpr-srs-prepare-button:disabled,
+.tpr-srs-prepare-with-browser-button:disabled,
+.tpr-srs-approve-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tpr-srs-helper-warning {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.tpr-srs-footer {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tpr-srs-footer p {
+  margin: 0;
+}

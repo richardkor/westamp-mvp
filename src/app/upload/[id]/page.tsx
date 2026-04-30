@@ -31,6 +31,7 @@ import {
 import { resolveConfirmedTenancyPreparationValues } from "../../../lib/tenancy-preparation-resolver";
 import { derivePublicStatus } from "../../../lib/public-status";
 import type { TenancyPortalDetails as ImportedTenancyPortalDetails } from "../../../lib/stamping-types";
+import type { TenancyRunSessionState as ImportedTenancyRunSessionState } from "../../../lib/tenancy-supervised-run-session";
 import { TenancyPortalPanel } from "./tenancy-portal-panel";
 
 // ─── Types (mirrored from stamping-types for client use) ─────────────
@@ -843,6 +844,11 @@ interface StampingJob {
    * Internal only — not surfaced on the public receipt.
    */
   tenancyPortalDetails?: ImportedTenancyPortalDetails;
+  /**
+   * Internal supervised-run-session state (Milestone B6).
+   * Sanitized; no portal data.
+   */
+  supervisedRunSession?: ImportedTenancyRunSessionState;
 }
 
 interface CatalogueSearchResult {
@@ -2833,6 +2839,7 @@ export default function IntakeDetailsPage({
               mimeType: job.mimeType,
               documentCategory: job.documentCategory,
               stampingDetails: job.stampingDetails,
+              supervisedRunSession: job.supervisedRunSession,
             }}
           />
         )}

@@ -149,7 +149,14 @@ export type JobEventType =
   // that updates the structured `tenancyPortalDetails` block used to
   // close the e-Duti Setem Sewa/Pajakan data gap. Does NOT touch the
   // portal, payment, or fulfilment.
-  | "tenancy_portal_details_updated";
+  | "tenancy_portal_details_updated"
+  // Tenancy supervised-run session lifecycle (Milestone B6). Internal
+  // operator-driven; both events are recorded by routes under
+  // `/api/intake/[id]/supervised-run/`. Neither event implies any
+  // e-Duti Setem portal action — they describe WeStamp's internal
+  // readiness to begin a future supervised portal run.
+  | "supervised_run_prepared"
+  | "supervised_run_first_mutation_approved";
 
 export interface JobEvent {
   /** Event type identifier. */
@@ -1687,4 +1694,19 @@ export interface StampingJob {
    * does not represent.
    */
   tenancyPortalDetails?: TenancyPortalDetails;
+  /**
+   * Internal supervised-run session state (Milestone B6). Optional;
+   * absent until the operator first calls
+   * `POST /api/intake/[id]/supervised-run/prepare`.
+   *
+   * This block stores ONLY sanitized scalars (enum values, ISO
+   * timestamps, booleans, blocker-code list, and a non-execution
+   * marker). It NEVER stores raw URLs, hrefs, cookies, tokens,
+   * `lhdnmsstoken`, IC numbers, TINs, firm IDs, party names,
+   * addresses, or uploaded document content. See
+   * `tenancy-supervised-run-session.ts` for the type contract and
+   * `tenancy-supervised-run-session.test.ts` for the
+   * sensitive-data invariant.
+   */
+  supervisedRunSession?: import("./tenancy-supervised-run-session").TenancyRunSessionState;
 }
