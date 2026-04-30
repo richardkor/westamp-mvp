@@ -7,7 +7,8 @@
  * Protected pages: /jobs, /upload/[id]
  * Protected APIs: /api/intake/[id], /api/intake/[id]/*, /api/stsds-search,
  *                 /api/operator/storage-smoke, /api/operator/migrate-to-supabase,
- *                 /api/operator/verify-supabase-migration
+ *                 /api/operator/verify-supabase-migration,
+ *                 /api/operator/cdp-inspect
  * Public: /, /upload (bare), /generate, /receipt, /api/intake (POST, no ID),
  *         /api/receipt, /api/generate-pdf, /api/operator/login, /api/operator/logout
  */
@@ -45,6 +46,9 @@ function isProtectedRoute(pathname: string): "page" | "api" | false {
 
   // /api/operator/verify-supabase-migration — operator-only post-migration verification
   if (pathname === "/api/operator/verify-supabase-migration") return "api";
+
+  // /api/operator/cdp-inspect — operator-only read-only CDP session inspection (B4)
+  if (pathname === "/api/operator/cdp-inspect") return "api";
 
   return false;
 }
@@ -106,5 +110,6 @@ export const config = {
     "/api/operator/storage-smoke",
     "/api/operator/migrate-to-supabase",
     "/api/operator/verify-supabase-migration",
+    "/api/operator/cdp-inspect",
   ],
 };

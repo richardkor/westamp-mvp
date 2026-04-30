@@ -21,7 +21,7 @@
  * No portal automation. No portal probing. No payment.
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   evaluateTenancyPortalReadiness,
   INSTRUMENT_NAME_OPTIONS,
@@ -59,6 +59,11 @@ import {
   buildSupervisedRunConsoleViewModel,
   type SupervisedRunConsoleViewModel,
 } from "../../../lib/tenancy-supervised-run-console";
+import {
+  buildBrowserSessionStatusCardViewModel,
+  type BrowserSessionStatusCardLifecycle,
+} from "../../../lib/tenancy-supervised-session-card";
+import type { SupervisedSessionReport } from "../../../lib/tenancy-supervised-session-shell";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -829,6 +834,16 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
           / Execute / Send / Pay / Upload-to-portal / Hantar
           affordance. */}
       <SupervisedRunConsole viewModel={liveSupervisedRunConsole} />
+
+      {/* ── Browser Session Status (Milestone B4) ────────────────
+          Operator-side, read-only card that calls the local
+          operator API route /api/operator/cdp-inspect to inspect
+          whether the operator's existing Chrome session is
+          positioned correctly for the planned supervised run. The
+          API route delegates to the B3 read-only inspector; no
+          portal mutation, no field fill, no upload, no submission
+          ever runs from this card. */}
+      <BrowserSessionStatusCard />
 
       {/* ── Readiness summary counts ────────────────────────────── */}
       <div className="tpr-summary">
@@ -3451,6 +3466,171 @@ function SupervisedRunConsole({
         <p>{viewModel.futureGateNote}</p>
         <p>{viewModel.authorizationCaveat}</p>
       </footer>
+    </section>
+  );
+}
+
+// ─── Browser Session Status Card (Milestone B4) ────────────────────
+
+/**
+ * Read-only operator-facing card that calls
+ * `/api/operator/cdp-inspect` (operator-protected) and renders the
+ * sanitized session report.
+ *
+ * Behavioural contract:
+ *   - Initial render → "Not checked yet" / idle state.
+ *   - Click `Check Browser Session` → POSTs to the local operator
+ *     API route, transitions to loading, then ready / error.
+ *   - The card NEVER mutates the portal — the route delegates to
+ *     the B3 read-only inspector which only reads `page.url()` and
+ *     `page.locator(name).count()`.
+ *   - All wording is sourced from the pure card view-model helper,
+ *     which is invariant-tested for forbidden wording and
+ *     sensitive-data leaks.
+ */
+function BrowserSessionStatusCard() {
+  const [lifecycle, setLifecycle] =
+    useState<BrowserSessionStatusCardLifecycle>("idle");
+  const [report, setReport] = useState<SupervisedSessionReport | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const viewModel = useMemo(
+    () =>
+      buildBrowserSessionStatusCardViewModel({
+        state: lifecycle,
+        report,
+        errorMessage,
+      }),
+    [lifecycle, report, errorMessage]
+  );
+
+  const handleCheck = useCallback(async () => {
+    setLifecycle("loading");
+    setErrorMessage(null);
+    try {
+      const res = await fetch("/api/operator/cdp-inspect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          // Default to the first phase that needs portal contact;
+          // gives the operator immediately-actionable phase
+          // compatibility info on the card.
+          targetPhaseId: "phase_1_session_positioning",
+        }),
+      });
+      let json: unknown;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+      if (
+        res.ok &&
+        json &&
+        typeof json === "object" &&
+        "ok" in json &&
+        (json as { ok: unknown }).ok === true &&
+        "report" in json
+      ) {
+        setReport((json as { report: SupervisedSessionReport }).report);
+        setLifecycle("ready");
+        return;
+      }
+      const errMsg =
+        json &&
+        typeof json === "object" &&
+        "error" in json &&
+        typeof (json as { error: unknown }).error === "string"
+          ? ((json as { error: string }).error)
+          : "Inspection failed.";
+      setErrorMessage(errMsg);
+      setLifecycle("error");
+    } catch {
+      // Network failure / offline — fall back to the safe default
+      // wording. Never surface raw exception text into the UI.
+      setErrorMessage("Network failure. Please try again.");
+      setLifecycle("error");
+    }
+  }, []);
+
+  return (
+    <section
+      className={`tpr-bss tpr-bss-${lifecycle}`}
+      aria-label={viewModel.heading}
+    >
+      <header className="tpr-bss-header">
+        <h3>{viewModel.heading}</h3>
+        <span
+          className={`tpr-bss-badge tpr-bss-badge-${lifecycle}`}
+        >
+          {viewModel.statusText}
+        </span>
+      </header>
+
+      <p className="tpr-bss-helper">{viewModel.helperText}</p>
+
+      <div className="tpr-bss-info-grid">
+        <div className="tpr-bss-info-cell">
+          <span className="tpr-bss-info-label">Page kind</span>
+          <strong className="tpr-bss-info-value">
+            {viewModel.pageKindLabel}
+          </strong>
+        </div>
+        <div className="tpr-bss-info-cell">
+          <span className="tpr-bss-info-label">Candidate page count</span>
+          <strong className="tpr-bss-info-value tpr-bss-info-numeric">
+            {viewModel.candidatePageCount}
+          </strong>
+        </div>
+        <div className="tpr-bss-info-cell">
+          <span className="tpr-bss-info-label">Phase compatibility</span>
+          <strong className="tpr-bss-info-value">
+            {viewModel.phaseCompatibilityLabel}
+          </strong>
+        </div>
+        <div className="tpr-bss-info-cell">
+          <span className="tpr-bss-info-label">Marker summary</span>
+          <strong className="tpr-bss-info-value tpr-bss-info-numeric">
+            {viewModel.markerSummary.presentCount} /{" "}
+            {viewModel.markerSummary.totalCount}
+          </strong>
+          <span className="tpr-bss-info-sub">
+            P5 selects {viewModel.markerSummary.p5SelectsPresent}/
+            {viewModel.markerSummary.p5SelectsTotal} · tabs{" "}
+            {viewModel.markerSummary.tabsPresent}/
+            {viewModel.markerSummary.tabsTotal}
+          </span>
+        </div>
+      </div>
+
+      {viewModel.recommendedOperatorAction && (
+        <p className="tpr-bss-action">
+          <strong>Recommended action: </strong>
+          {viewModel.recommendedOperatorAction}
+        </p>
+      )}
+
+      {viewModel.errorMessage && (
+        <p className="tpr-bss-error" role="alert">
+          {viewModel.errorMessage}
+        </p>
+      )}
+
+      <div className="tpr-bss-action-row">
+        <button
+          type="button"
+          className="tpr-bss-check-button"
+          onClick={handleCheck}
+          disabled={viewModel.buttonDisabled}
+        >
+          {lifecycle === "loading"
+            ? viewModel.loadingLabel
+            : viewModel.buttonLabel}
+        </button>
+        <span className="tpr-bss-non-execution-note">
+          {viewModel.nonExecutionNote}
+        </span>
+      </div>
     </section>
   );
 }

@@ -9664,3 +9664,174 @@ section[data-section] {
 .tpr-src-footer p {
   margin: 0;
 }
+
+/* ── Browser Session Status Card (Milestone B4) ───────────────────
+   Read-only operator card that shows whether the operator's
+   existing Chrome session is positioned for the planned supervised
+   run. Visual style follows the existing Supervised Run Console
+   block. */
+.tpr-bss {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.tpr-bss-idle {
+  border-color: var(--border);
+}
+
+.tpr-bss-loading {
+  border-color: var(--accent, var(--border));
+}
+
+.tpr-bss-ready {
+  border-color: #1e7a3a;
+  background: rgba(30, 122, 58, 0.04);
+}
+
+.tpr-bss-error {
+  border-color: #b34a00;
+  background: rgba(179, 74, 0, 0.04);
+}
+
+.tpr-bss-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.tpr-bss-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.tpr-bss-badge {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-muted, transparent);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.tpr-bss-badge-loading {
+  background: rgba(30, 122, 58, 0.08);
+  color: #1e7a3a;
+  border-color: #1e7a3a;
+}
+
+.tpr-bss-badge-ready {
+  background: #1e7a3a;
+  color: #ffffff;
+  border-color: #1e7a3a;
+}
+
+.tpr-bss-badge-error {
+  background: #b34a00;
+  color: #ffffff;
+  border-color: #b34a00;
+}
+
+.tpr-bss-helper {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tpr-bss-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 12px;
+}
+
+.tpr-bss-info-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted, transparent);
+}
+
+.tpr-bss-info-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.tpr-bss-info-value {
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.tpr-bss-info-numeric {
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+}
+
+.tpr-bss-info-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tpr-bss-action {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tpr-bss-error {
+  margin: 0;
+  font-size: 13px;
+  color: #b34a00;
+}
+
+.tpr-bss-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tpr-bss-check-button {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tpr-bss-check-button:hover:not(:disabled),
+.tpr-bss-check-button:focus-visible {
+  background: var(--surface-muted, var(--surface));
+  border-color: var(--accent, var(--border));
+  outline: none;
+}
+
+.tpr-bss-check-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.tpr-bss-non-execution-note {
+  color: var(--muted);
+  font-size: 12px;
+}
