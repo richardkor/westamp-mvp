@@ -84,9 +84,16 @@ import {
 import {
   BAHAGIAN_A_INDIVIDUAL_REGISTRY,
   BAHAGIAN_A_COMPANY_SSM_REGISTRY,
+  BAHAGIAN_A_MODAL_TRIGGERS,
+  BAHAGIAN_A_OBSERVED_UNMAPPED_FIELDS,
   summarizeBahagianAFieldMapping,
   type BahagianAMappingCertaintySummary,
 } from "../../../lib/tenancy-bahagian-a-field-mapping";
+import {
+  buildBahagianAExecutorDraftBundle,
+  type BahagianAExecutorDraftBundle,
+  type BahagianAExecutorDraftStatus,
+} from "../../../lib/tenancy-bahagian-a-executor-draft";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -724,6 +731,20 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
     [liveJobInput]
   );
 
+  // Bahagian A executor-draft bundle (Milestone B9). Pure planner.
+  // Emits per-role planned step lists from the live B9-evidenced
+  // selectors / option codes captured in the field-mapping registry.
+  // Plans never include a click on the modal Simpan button; the
+  // bundle's `bundleStatus` aggregates per-role readiness.
+  const liveBahagianAExecutorDraft: BahagianAExecutorDraftBundle = useMemo(
+    () =>
+      buildBahagianAExecutorDraftBundle({
+        ...job,
+        ...liveJobInput,
+      } as StampingJob),
+    [job, liveJobInput]
+  );
+
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -894,12 +915,18 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
         initialState={job.supervisedRunSession ?? null}
       />
 
-      {/* ── Bahagian A Party Entry Plan (Milestone B8) ───────────
+      {/* ── Bahagian A Party Entry Plan (Milestone B8 + B9) ──────
           Internal preview of the next supervised execution phase.
           Pure planning surface — no portal contact, no row save,
           no Hantar / payment / certificate action. Updates live as
-          the operator edits party data above. */}
-      <BahagianAPartyEntryPlanCard plan={liveBahagianAPartyPlan} />
+          the operator edits party data above. The B9 patch adds
+          the executor-draft bundle showing observed modal selectors,
+          per-role trigger observation, and overall executor-draft
+          status. */}
+      <BahagianAPartyEntryPlanCard
+        plan={liveBahagianAPartyPlan}
+        executorDraft={liveBahagianAExecutorDraft}
+      />
 
       {/* ── Readiness summary counts ────────────────────────────── */}
       <div className="tpr-summary">
@@ -4122,8 +4149,19 @@ const BAHAGIAN_A_PLAN_STATUS_LABEL: Record<
   mapping_unknown: "Mapping unknown",
 };
 
+const BAHAGIAN_A_EXECUTOR_DRAFT_STATUS_LABEL: Record<
+  BahagianAExecutorDraftStatus,
+  string
+> = {
+  blocked_missing_party_data: "Blocked — party data missing",
+  blocked_missing_selector: "Blocked — selector missing",
+  selectors_captured: "Selectors captured",
+  ready_for_next_execution_milestone: "Ready for next execution milestone",
+  planned_only: "Planned only",
+};
+
 const BAHAGIAN_A_NO_ROW_SAVED_NOTE =
-  "No Bahagian A party row has been saved to e-Duti Setem by this milestone.";
+  "No Bahagian A party row has been saved to e-Duti Setem.";
 
 /**
  * Compact internal preview of the next supervised execution phase.
@@ -4147,8 +4185,10 @@ const BAHAGIAN_A_NO_ROW_SAVED_NOTE =
  */
 function BahagianAPartyEntryPlanCard({
   plan,
+  executorDraft,
 }: {
   plan: TenancyBahagianAPartyPlan;
+  executorDraft: BahagianAExecutorDraftBundle;
 }) {
   const individualSummary: BahagianAMappingCertaintySummary = useMemo(
     () => summarizeBahagianAFieldMapping(BAHAGIAN_A_INDIVIDUAL_REGISTRY),
@@ -4185,19 +4225,21 @@ function BahagianAPartyEntryPlanCard({
 
   const nextOperatorAction: string = useMemo(() => {
     if (plan.overallStatus === "blocked_missing_party_data") {
-      return "Capture the missing party fields above (gender, citizenship, NRIC sub-type, etc.) before B8 modal diagnosis can proceed.";
+      return "Capture the missing party fields above (gender, citizenship, NRIC sub-type, etc.) before Bahagian A execution can proceed.";
     }
     if (plan.overallStatus === "unsupported_party_type") {
       return "One or more parties is `company_non_ssm` — currently unsupported by the Bahagian A planner. Convert the party to `individual` or `company_ssm`, or wait for a future milestone.";
     }
     if (
-      individualSummary.unknownSelectors > 0 ||
-      ssmSummary.unknownSelectors > 0
+      executorDraft.bundleStatus === "ready_for_next_execution_milestone"
     ) {
-      return "Run a live read-only Bahagian A modal diagnosis to populate selectors. Operator should manually navigate to the Bahagian A section on the open Sewa/Pajakan p5 form and open one of the Tambah modals (Tambah Individu / Tambah Syarikat SSM / Tambah Syarikat Bukan SSM) before triggering the diagnostic.";
+      return "Individual-party modal mapping is complete and the executor draft is ready. The next milestone may wire a controlled Bahagian A row-save route. SSM modal selectors are still pending live capture.";
     }
-    return "Mapping is complete. The next milestone (B9) may begin Bahagian A row-by-row execution.";
-  }, [plan.overallStatus, individualSummary, ssmSummary]);
+    if (executorDraft.bundleStatus === "blocked_missing_selector") {
+      return "Some Bahagian A selectors are still missing. Capture the SSM modal live before promoting executor-draft entries to executable.";
+    }
+    return "Capture the missing party data so the executor draft can advance to ready_for_next_execution_milestone.";
+  }, [plan.overallStatus, executorDraft.bundleStatus]);
 
   return (
     <section className="tpr-bahagian-a-plan" aria-label="Bahagian A Party Entry Plan">
@@ -4335,9 +4377,82 @@ function BahagianAPartyEntryPlanCard({
         </details>
       )}
 
+      {/* ── B9 modal-mapping summary ─────────────────────────────
+          Reports how much of the live Tambah Individu modal we've
+          mapped, which role-scoped triggers are observed, and the
+          executor-draft readiness. */}
+      <details className="tpr-bahagian-a-plan-modal-mapping" open>
+        <summary>
+          Modal mapping ·{" "}
+          <code>
+            {BAHAGIAN_A_EXECUTOR_DRAFT_STATUS_LABEL[
+              executorDraft.bundleStatus
+            ] ?? executorDraft.bundleStatus}
+          </code>
+        </summary>
+        <ul>
+          <li>
+            <strong>Observed selectors (individual modal):</strong>{" "}
+            {individualSummary.observedSelectors}/
+            {individualSummary.totalEntries}
+          </li>
+          <li>
+            <strong>Executable individual-modal entries:</strong>{" "}
+            {individualSummary.executableEntries}/
+            {individualSummary.totalEntries}
+          </li>
+          <li>
+            <strong>Landlord add trigger observed:</strong>{" "}
+            {BAHAGIAN_A_MODAL_TRIGGERS.some(
+              (t) =>
+                t.role === "landlord" &&
+                t.partyType === "individual" &&
+                t.certainty === "observed"
+            )
+              ? "yes"
+              : "no"}
+          </li>
+          <li>
+            <strong>Tenant add trigger observed:</strong>{" "}
+            {BAHAGIAN_A_MODAL_TRIGGERS.some(
+              (t) =>
+                t.role === "tenant" &&
+                t.partyType === "individual" &&
+                t.certainty === "observed"
+            )
+              ? "yes"
+              : "no"}
+          </li>
+          <li>
+            <strong>Executor-draft landlord plan:</strong>{" "}
+            <code>{executorDraft.landlord.status}</code> ·{" "}
+            {executorDraft.landlord.steps.length} planned steps
+          </li>
+          <li>
+            <strong>Executor-draft tenant plan:</strong>{" "}
+            <code>{executorDraft.tenant.status}</code> ·{" "}
+            {executorDraft.tenant.steps.length} planned steps
+          </li>
+          <li>
+            <strong>Observed-but-unmapped portal fields:</strong>{" "}
+            {BAHAGIAN_A_OBSERVED_UNMAPPED_FIELDS.length} (e.g.{" "}
+            {BAHAGIAN_A_OBSERVED_UNMAPPED_FIELDS.slice(0, 3)
+              .map((f) => f.portalFieldKey)
+              .join(", ")}
+            )
+          </li>
+        </ul>
+        <p>
+          <em>{executorDraft.landlord.warning}</em>
+        </p>
+      </details>
+
       <footer className="tpr-bahagian-a-plan-footer">
         <p>
           <strong>Next required action:</strong> {nextOperatorAction}
+        </p>
+        <p className="tpr-bahagian-a-plan-no-save-warning" role="note">
+          <strong>{BAHAGIAN_A_NO_ROW_SAVED_NOTE}</strong>
         </p>
       </footer>
     </section>

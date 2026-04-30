@@ -50,28 +50,114 @@ describe("Bahagian A · field mapping · individual registry", () => {
     }
   });
 
-  test("warga is observed with three documented option codes", () => {
+  test("warga is observed with the live B9 option codes (Bahasa Malaysia labels)", () => {
     const warga = BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find(
-      (e) => e.portalFieldKey === "warga"
+      (e) => e.internalKey === "citizenshipCategory"
     );
     expect(warga).toBeDefined();
     expect(warga!.selectorCertainty).toBe("observed");
     expect(warga!.optionValuesCertainty).toBe("observed");
+    expect(warga!.selector).toBe("select#warga");
+    // Codes match the live B9 capture; labels are the live Bahasa
+    // Malaysia strings.
     expect(warga!.optionValues).toEqual([
-      { code: "1", label: "Citizen" },
-      { code: "2", label: "Non-citizen" },
-      { code: "3", label: "Permanent Resident" },
+      { code: "1", label: "Warganegara" },
+      { code: "3", label: "Penduduk Tetap" },
+      { code: "2", label: "Bukan Warganegara" },
     ]);
   });
 
-  test("USER_SEX is observed selector but option codes still unknown", () => {
+  test("USER_SEX is observed as a 2-option radio_group (B9 live evidence)", () => {
     const gender = BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find(
-      (e) => e.portalFieldKey === "USER_SEX"
+      (e) => e.internalKey === "gender"
     );
     expect(gender).toBeDefined();
+    expect(gender!.fieldKind).toBe("radio_group");
+    expect(gender!.selector).toBe('input[name="USER_SEX"]');
     expect(gender!.selectorCertainty).toBe("observed");
-    expect(gender!.optionValuesCertainty).toBe("unknown");
-    expect(gender!.optionValues).toBeNull();
+    expect(gender!.optionValuesCertainty).toBe("observed");
+    expect(gender!.optionValues).toEqual([
+      { code: "USER_SEX-1", label: "Lelaki" },
+      { code: "USER_SEX-2", label: "Perempuan" },
+    ]);
+  });
+
+  test("nricSubType is observed as a 4-option radio_group with portal IDs as codes", () => {
+    const sub = BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find(
+      (e) => e.internalKey === "nricSubType"
+    );
+    expect(sub).toBeDefined();
+    expect(sub!.fieldKind).toBe("radio_group");
+    expect(sub!.selector).toBe('input[name="EPD_NOKP_TYPE"]');
+    expect(sub!.optionValues?.map((o) => o.code)).toEqual([
+      "IC_BARU",
+      "IC_LAMA",
+      "IC_POLIS",
+      "IC_ARMY",
+    ]);
+  });
+
+  test("identityNumber selector is observed (#kpin) with disabled-by-default behavior noted", () => {
+    const id = BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find(
+      (e) => e.internalKey === "identityNumber"
+    );
+    expect(id).toBeDefined();
+    expect(id!.selector).toBe("input#kpin");
+    expect(id!.note).toMatch(/disabled by default/i);
+  });
+
+  test("address / city / postcode / mobile selectors are observed live", () => {
+    const get = (key: string) =>
+      BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find(
+        (e) => e.internalKey === key
+      );
+    expect(get("addressLine1")!.selector).toBe("input#tb_alamat_1");
+    expect(get("addressLine2")!.selector).toBe("input#tb_alamat_2");
+    expect(get("city")!.selector).toBe("input#tb_city");
+    expect(get("postcode")!.selector).toBe("input#tb_poskod");
+    expect(get("mobile")!.selector).toBe("input#tb_telno");
+  });
+
+  test("state (negeri1) carries 17 observed options", () => {
+    const state = BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find(
+      (e) => e.internalKey === "state"
+    );
+    expect(state!.selector).toBe("select#negeri1");
+    expect(state!.optionValuesCertainty).toBe("observed");
+    expect(state!.optionValues).toHaveLength(17);
+    // Spot-check a few key codes.
+    expect(
+      state!.optionValues!.find((o) => o.label === "Selangor")?.code
+    ).toBe("12");
+    expect(
+      state!.optionValues!.find((o) => o.label === "Wilayah Persekutuan Kuala Lumpur")?.code
+    ).toBe("14");
+  });
+
+  test("country (negara2) is observed but options remain partial → certainty = inferred", () => {
+    const c = BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find(
+      (e) => e.internalKey === "country"
+    );
+    expect(c!.selector).toBe("select#negara2");
+    expect(c!.selectorCertainty).toBe("observed");
+    expect(c!.optionValuesCertainty).toBe("inferred");
+  });
+
+  test("phone has no portal counterpart and remains unknown", () => {
+    const phone = BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find(
+      (e) => e.internalKey === "phone"
+    );
+    expect(phone!.selector).toBeNull();
+    expect(phone!.selectorCertainty).toBe("unknown");
+  });
+
+  test("every individual-registry entry carries roleScope=`shared` (B9 live evidence — both modals share the field surface)", () => {
+    for (const e of BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries) {
+      expect({ key: e.internalKey, scope: e.roleScope }).toEqual({
+        key: e.internalKey,
+        scope: "shared",
+      });
+    }
   });
 });
 
@@ -121,13 +207,20 @@ describe("Bahagian A · field mapping · company SSM registry", () => {
 // ─── Cross-registry invariants ─────────────────────────────────────
 
 describe("Bahagian A · field mapping · invariants", () => {
-  test("no entry invents a selector — every entry's `selector` is null until live diagnosis", () => {
+  test("no entry invents a selector — entries either carry a live-observed selector or `null`", () => {
+    // After B9 live capture, individual registry entries carry
+    // concrete selectors. SSM entries remain `null` until that
+    // modal is captured live. The invariant is now: every selector
+    // is either a non-empty string OR strictly `null` — never a
+    // zero-length string, never a guessed pattern.
     const all: BahagianAFieldMappingEntry[] = [
       ...BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries,
       ...BAHAGIAN_A_COMPANY_SSM_REGISTRY.entries,
     ];
     for (const e of all) {
-      expect(e.selector).toBeNull();
+      if (e.selector === null) continue;
+      expect(typeof e.selector).toBe("string");
+      expect(e.selector.length).toBeGreaterThan(0);
     }
   });
 
@@ -161,18 +254,35 @@ describe("Bahagian A · field mapping · invariants", () => {
     }
   });
 
-  test("at the B8 evidence level, NO entry is yet executable (selectors not observed)", () => {
-    // This is intentionally strict — until the modal-diagnosis
-    // milestone documents live selectors, no Bahagian A field
-    // should be marked executable. If a future milestone documents
-    // selectors, this test will fail and prompt the developer to
-    // intentionally relax it.
-    const all: BahagianAFieldMappingEntry[] = [
-      ...BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries,
-      ...BAHAGIAN_A_COMPANY_SSM_REGISTRY.entries,
-    ];
-    const executableEntries = all.filter((e) => e.executable);
-    expect(executableEntries).toEqual([]);
+  test("B9 evidence level: individual-registry entries with both selector AND option values are executable", () => {
+    // After B9 live capture, the individual registry has multiple
+    // executable entries. Anti-regression bound: at least 5 entries
+    // must be executable (the live capture observed 23 fields; we
+    // mapped 12+ to internal keys; selects + radio_groups need
+    // option codes; text inputs only need a selector).
+    const indExecutable = BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.filter(
+      (e) => e.executable
+    );
+    expect(indExecutable.length).toBeGreaterThanOrEqual(5);
+
+    // Specific spot-checks: name, citizenship, gender, state, mobile
+    // are all executable (selectors + option codes captured).
+    const get = (k: string) =>
+      BAHAGIAN_A_INDIVIDUAL_REGISTRY.entries.find((e) => e.internalKey === k);
+    expect(get("nameAsPerInstrument")?.executable).toBe(true);
+    expect(get("citizenshipCategory")?.executable).toBe(true);
+    expect(get("gender")?.executable).toBe(true);
+    expect(get("state")?.executable).toBe(true);
+    expect(get("mobile")?.executable).toBe(true);
+    expect(get("addressLine1")?.executable).toBe(true);
+    expect(get("postcode")?.executable).toBe(true);
+    expect(get("city")?.executable).toBe(true);
+
+    // SSM registry remains non-executable (modal not captured yet).
+    const ssmExecutable = BAHAGIAN_A_COMPANY_SSM_REGISTRY.entries.filter(
+      (e) => e.executable
+    );
+    expect(ssmExecutable).toEqual([]);
   });
 
   test("certainty values are drawn from the closed enum", () => {
