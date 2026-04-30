@@ -77,6 +77,16 @@ import {
   type Phase2ExecutionResult,
   type Phase2RefusalReason,
 } from "../../../lib/tenancy-phase-2-executor";
+import {
+  buildTenancyBahagianAPartyPlan,
+  type TenancyBahagianAPartyPlan,
+} from "../../../lib/tenancy-bahagian-a-party-plan";
+import {
+  BAHAGIAN_A_INDIVIDUAL_REGISTRY,
+  BAHAGIAN_A_COMPANY_SSM_REGISTRY,
+  summarizeBahagianAFieldMapping,
+  type BahagianAMappingCertaintySummary,
+} from "../../../lib/tenancy-bahagian-a-field-mapping";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -704,6 +714,16 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
     ]
   );
 
+  // Bahagian A Party Entry Plan (Milestone B8). Pure helper — no
+  // portal contact, no execution, no row save. Updates live as the
+  // operator edits party data above. Renders below the supervised-
+  // run session card so the operator can see what comes after the
+  // Maklumat Am draft save.
+  const liveBahagianAPartyPlan: TenancyBahagianAPartyPlan = useMemo(
+    () => buildTenancyBahagianAPartyPlan(liveJobInput),
+    [liveJobInput]
+  );
+
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -873,6 +893,13 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
         jobId={jobId}
         initialState={job.supervisedRunSession ?? null}
       />
+
+      {/* ── Bahagian A Party Entry Plan (Milestone B8) ───────────
+          Internal preview of the next supervised execution phase.
+          Pure planning surface — no portal contact, no row save,
+          no Hantar / payment / certificate action. Updates live as
+          the operator edits party data above. */}
+      <BahagianAPartyEntryPlanCard plan={liveBahagianAPartyPlan} />
 
       {/* ── Readiness summary counts ────────────────────────────── */}
       <div className="tpr-summary">
@@ -4078,6 +4105,240 @@ function SupervisedRunSessionCard({
 
       <footer className="tpr-srs-footer">
         <p>{viewModel.nonExecutionNote}</p>
+      </footer>
+    </section>
+  );
+}
+
+// ─── Bahagian A Party Entry Plan Card (Milestone B8) ───────────────
+
+const BAHAGIAN_A_PLAN_STATUS_LABEL: Record<
+  TenancyBahagianAPartyPlan["overallStatus"],
+  string
+> = {
+  ready_for_modal_mapping: "Ready for modal mapping",
+  blocked_missing_party_data: "Blocked — party data missing",
+  unsupported_party_type: "Unsupported party type",
+  mapping_unknown: "Mapping unknown",
+};
+
+const BAHAGIAN_A_NO_ROW_SAVED_NOTE =
+  "No Bahagian A party row has been saved to e-Duti Setem by this milestone.";
+
+/**
+ * Compact internal preview of the next supervised execution phase.
+ * Operator-only; not surfaced on the public receipt.
+ *
+ * Reads:
+ *   - The party plan from `buildTenancyBahagianAPartyPlan` (pure).
+ *   - The B8 field-mapping certainty summary for the two registries
+ *     present at this evidence level.
+ *
+ * Renders:
+ *   - Expected party count + role split (L · T).
+ *   - Plan status (overall verdict).
+ *   - Per-party plan rows with row-count expectation and missing
+ *     internal field count (clicking opens a details disclosure
+ *     listing the missing keys).
+ *   - Selector certainty summary across both party-type registries.
+ *   - The closed-vocabulary "no row saved" note.
+ *
+ * Never executes any portal action.
+ */
+function BahagianAPartyEntryPlanCard({
+  plan,
+}: {
+  plan: TenancyBahagianAPartyPlan;
+}) {
+  const individualSummary: BahagianAMappingCertaintySummary = useMemo(
+    () => summarizeBahagianAFieldMapping(BAHAGIAN_A_INDIVIDUAL_REGISTRY),
+    []
+  );
+  const ssmSummary: BahagianAMappingCertaintySummary = useMemo(
+    () => summarizeBahagianAFieldMapping(BAHAGIAN_A_COMPANY_SSM_REGISTRY),
+    []
+  );
+  const missingMappingCategories: string[] = useMemo(() => {
+    const cats: string[] = [];
+    if (individualSummary.unknownSelectors > 0) {
+      cats.push(
+        `Individual: ${individualSummary.unknownSelectors} unknown selectors`
+      );
+    }
+    if (individualSummary.unknownOptionValueLists > 0) {
+      cats.push(
+        `Individual: ${individualSummary.unknownOptionValueLists} unknown option-value lists`
+      );
+    }
+    if (ssmSummary.unknownSelectors > 0) {
+      cats.push(
+        `SSM: ${ssmSummary.unknownSelectors} unknown selectors`
+      );
+    }
+    if (ssmSummary.unknownOptionValueLists > 0) {
+      cats.push(
+        `SSM: ${ssmSummary.unknownOptionValueLists} unknown option-value lists`
+      );
+    }
+    return cats;
+  }, [individualSummary, ssmSummary]);
+
+  const nextOperatorAction: string = useMemo(() => {
+    if (plan.overallStatus === "blocked_missing_party_data") {
+      return "Capture the missing party fields above (gender, citizenship, NRIC sub-type, etc.) before B8 modal diagnosis can proceed.";
+    }
+    if (plan.overallStatus === "unsupported_party_type") {
+      return "One or more parties is `company_non_ssm` — currently unsupported by the Bahagian A planner. Convert the party to `individual` or `company_ssm`, or wait for a future milestone.";
+    }
+    if (
+      individualSummary.unknownSelectors > 0 ||
+      ssmSummary.unknownSelectors > 0
+    ) {
+      return "Run a live read-only Bahagian A modal diagnosis to populate selectors. Operator should manually navigate to the Bahagian A section on the open Sewa/Pajakan p5 form and open one of the Tambah modals (Tambah Individu / Tambah Syarikat SSM / Tambah Syarikat Bukan SSM) before triggering the diagnostic.";
+    }
+    return "Mapping is complete. The next milestone (B9) may begin Bahagian A row-by-row execution.";
+  }, [plan.overallStatus, individualSummary, ssmSummary]);
+
+  return (
+    <section className="tpr-bahagian-a-plan" aria-label="Bahagian A Party Entry Plan">
+      <header>
+        <h3>Bahagian A Party Entry Plan</h3>
+        <p className="tpr-bahagian-a-plan-note" role="note">
+          {BAHAGIAN_A_NO_ROW_SAVED_NOTE}
+        </p>
+      </header>
+
+      <dl className="tpr-bahagian-a-plan-meta">
+        <div>
+          <dt>Expected party count</dt>
+          <dd>{plan.expectedPartyCount}</dd>
+        </div>
+        <div>
+          <dt>Landlord(s)</dt>
+          <dd>{plan.landlordCount}</dd>
+        </div>
+        <div>
+          <dt>Tenant(s)</dt>
+          <dd>{plan.tenantCount}</dd>
+        </div>
+        <div>
+          <dt>Plan status</dt>
+          <dd>
+            <code>{plan.overallStatus}</code> ·{" "}
+            {BAHAGIAN_A_PLAN_STATUS_LABEL[plan.overallStatus]}
+          </dd>
+        </div>
+      </dl>
+
+      {plan.parties.length > 0 ? (
+        <table className="tpr-bahagian-a-plan-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Role</th>
+              <th>Type</th>
+              <th>Name</th>
+              <th>Row after</th>
+              <th>Status</th>
+              <th>Missing fields</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.parties.map((p) => (
+              <tr key={p.ordinal}>
+                <td>{p.ordinal}</td>
+                <td>{p.role}</td>
+                <td>
+                  <code>{p.type}</code>
+                </td>
+                <td>{p.partyName ?? "—"}</td>
+                <td>{p.expectedRowCountAfter}</td>
+                <td>
+                  <code>{p.planStatus}</code>
+                </td>
+                <td>
+                  {p.missingInternalFields.length === 0 ? (
+                    "—"
+                  ) : (
+                    <details>
+                      <summary>{p.missingInternalFields.length}</summary>
+                      <ul>
+                        {p.missingInternalFields.map((k) => (
+                          <li key={k}>
+                            <code>{k}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="tpr-bahagian-a-plan-empty">
+          No parties captured yet. Bahagian A requires at least one
+          party.
+        </p>
+      )}
+
+      <details className="tpr-bahagian-a-plan-mapping">
+        <summary>Selector certainty summary</summary>
+        <ul>
+          <li>
+            <strong>Individual:</strong> {individualSummary.totalEntries}{" "}
+            entries · selectors observed/inferred/unknown ={" "}
+            {individualSummary.observedSelectors}/
+            {individualSummary.inferredSelectors}/
+            {individualSummary.unknownSelectors} · option-value lists
+            observed/inferred/unknown ={" "}
+            {individualSummary.observedOptionValueLists}/
+            {individualSummary.inferredOptionValueLists}/
+            {individualSummary.unknownOptionValueLists} · executable ={" "}
+            {individualSummary.executableEntries}
+          </li>
+          <li>
+            <strong>Company SSM:</strong> {ssmSummary.totalEntries} entries ·
+            selectors observed/inferred/unknown ={" "}
+            {ssmSummary.observedSelectors}/{ssmSummary.inferredSelectors}/
+            {ssmSummary.unknownSelectors} · option-value lists
+            observed/inferred/unknown ={" "}
+            {ssmSummary.observedOptionValueLists}/
+            {ssmSummary.inferredOptionValueLists}/
+            {ssmSummary.unknownOptionValueLists} · executable ={" "}
+            {ssmSummary.executableEntries}
+          </li>
+        </ul>
+        {missingMappingCategories.length > 0 && (
+          <>
+            <p>
+              <strong>Missing mapping categories:</strong>
+            </p>
+            <ul>
+              {missingMappingCategories.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </details>
+
+      {plan.blockers.length > 0 && (
+        <details className="tpr-bahagian-a-plan-blockers" open>
+          <summary>Blockers ({plan.blockers.length})</summary>
+          <ul>
+            {plan.blockers.map((b, i) => (
+              <li key={i}>{b}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <footer className="tpr-bahagian-a-plan-footer">
+        <p>
+          <strong>Next required action:</strong> {nextOperatorAction}
+        </p>
       </footer>
     </section>
   );

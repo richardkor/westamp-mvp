@@ -10221,3 +10221,111 @@ section[data-section] {
   border-radius: 4px;
   font-size: 12px;
 }
+
+/* ── Bahagian A Party Entry Plan Card (Milestone B8) ─────────────── */
+
+.tpr-bahagian-a-plan {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  background: #fafbfd;
+}
+
+.tpr-bahagian-a-plan h3 {
+  margin: 0 0 4px 0;
+  font-size: 15px;
+}
+
+.tpr-bahagian-a-plan-note {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  color: #555;
+  font-style: italic;
+}
+
+.tpr-bahagian-a-plan-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin: 0 0 12px 0;
+  padding: 0;
+}
+
+.tpr-bahagian-a-plan-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tpr-bahagian-a-plan-meta dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+}
+
+.tpr-bahagian-a-plan-meta dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tpr-bahagian-a-plan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 0 0 12px 0;
+}
+
+.tpr-bahagian-a-plan-table th,
+.tpr-bahagian-a-plan-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.tpr-bahagian-a-plan-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+}
+
+.tpr-bahagian-a-plan-empty {
+  margin: 4px 0 12px 0;
+  color: #888;
+  font-style: italic;
+  font-size: 13px;
+}
+
+.tpr-bahagian-a-plan-mapping,
+.tpr-bahagian-a-plan-blockers {
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.tpr-bahagian-a-plan-mapping summary,
+.tpr-bahagian-a-plan-blockers summary {
+  cursor: pointer;
+  color: #444;
+  font-weight: 500;
+}
+
+.tpr-bahagian-a-plan-mapping ul,
+.tpr-bahagian-a-plan-blockers ul {
+  margin: 6px 0 0 0;
+  padding-left: 22px;
+}
+
+.tpr-bahagian-a-plan-footer {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.tpr-bahagian-a-plan-footer p {
+  margin: 0;
+  font-size: 12px;
+  color: #444;
+}
