@@ -3610,6 +3610,29 @@ function BrowserSessionStatusCard() {
         </p>
       )}
 
+      {viewModel.phasePositioningSummary && (
+        <div className="tpr-bss-positioning">
+          <p className="tpr-bss-positioning-summary">
+            <strong>{viewModel.phasePositioningSummary.overallSummary}</strong>
+          </p>
+          <ul className="tpr-bss-positioning-rows">
+            {viewModel.phasePositioningSummary.rows.map((row) => (
+              <li
+                key={row.phaseGroupId}
+                className={`tpr-bss-positioning-row tpr-bss-positioning-row-${row.compatibility}`}
+              >
+                <span className="tpr-bss-positioning-phase">
+                  {row.phaseLabel}
+                </span>
+                <span className="tpr-bss-positioning-compat">
+                  {row.compatibilityLabel}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {viewModel.errorMessage && (
         <p className="tpr-bss-error" role="alert">
           {viewModel.errorMessage}

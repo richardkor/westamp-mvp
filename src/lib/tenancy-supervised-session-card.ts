@@ -45,6 +45,10 @@ import type {
   SupervisedSessionSafeMarkers,
   SupervisedSessionStatus,
 } from "./tenancy-supervised-session-shell";
+import {
+  buildPhasePositioningSummary,
+  type PhasePositioningSummary,
+} from "./tenancy-supervised-phase-positioning";
 
 // ─── Approved B4 wording (constants) ───────────────────────────────
 
@@ -144,6 +148,14 @@ export interface BrowserSessionStatusCardViewModel {
   /** Operator-action sentence pulled verbatim from the report. */
   recommendedOperatorAction: string;
 
+  /**
+   * Multi-phase positioning summary (B5 Part B). Populated only
+   * when `state === "ready"`; null in other lifecycle states. Keeps
+   * the operator's view of compatibility against Phase 1, Phase 2,
+   * and later p5 phases in a single glance.
+   */
+  phasePositioningSummary: PhasePositioningSummary | null;
+
   /** Populated only when `state === "error"`. */
   errorMessage: string | null;
 
@@ -228,6 +240,7 @@ export function buildBrowserSessionStatusCardViewModel(
       phaseCompatibilityLabel: PHASE_COMPATIBILITY_LABELS.unknown,
       markerSummary: emptyMarkerSummary(),
       recommendedOperatorAction: "",
+      phasePositioningSummary: null,
       errorMessage: null,
       buttonDisabled: false,
     };
@@ -243,6 +256,7 @@ export function buildBrowserSessionStatusCardViewModel(
       phaseCompatibilityLabel: PHASE_COMPATIBILITY_LABELS.unknown,
       markerSummary: emptyMarkerSummary(),
       recommendedOperatorAction: "",
+      phasePositioningSummary: null,
       errorMessage: null,
       buttonDisabled: true,
     };
@@ -258,6 +272,7 @@ export function buildBrowserSessionStatusCardViewModel(
       phaseCompatibilityLabel: PHASE_COMPATIBILITY_LABELS.unknown,
       markerSummary: emptyMarkerSummary(),
       recommendedOperatorAction: "",
+      phasePositioningSummary: null,
       errorMessage:
         typeof errorMessage === "string" && errorMessage.trim().length > 0
           ? errorMessage
@@ -280,6 +295,7 @@ export function buildBrowserSessionStatusCardViewModel(
       phaseCompatibilityLabel: PHASE_COMPATIBILITY_LABELS.unknown,
       markerSummary: emptyMarkerSummary(),
       recommendedOperatorAction: "",
+      phasePositioningSummary: null,
       errorMessage: CARD_ERROR_FALLBACK,
       buttonDisabled: false,
     };
@@ -289,6 +305,7 @@ export function buildBrowserSessionStatusCardViewModel(
   const pageKindLabel = PAGE_KIND_LABELS[report.pageKind];
   const phaseCompatibilityLabel =
     PHASE_COMPATIBILITY_LABELS[report.graphPhaseCompatibility];
+  const phasePositioningSummary = buildPhasePositioningSummary(report);
 
   return {
     ...baseConstants,
@@ -299,6 +316,7 @@ export function buildBrowserSessionStatusCardViewModel(
     phaseCompatibilityLabel,
     markerSummary: summariseMarkers(report.safeMarkers),
     recommendedOperatorAction: report.recommendedOperatorAction,
+    phasePositioningSummary,
     errorMessage: null,
     buttonDisabled: false,
   };

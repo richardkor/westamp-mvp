@@ -93,6 +93,7 @@ describe("Card view-model · lifecycle states", () => {
     expect(vm.markerSummary.presentCount).toBe(0);
     expect(vm.markerSummary.totalCount).toBe(16);
     expect(vm.recommendedOperatorAction).toBe("");
+    expect(vm.phasePositioningSummary).toBeNull();
     expect(vm.errorMessage).toBeNull();
     expect(vm.buttonDisabled).toBe(false);
   });
@@ -347,6 +348,89 @@ describe("Card view-model · button label", () => {
       expect({
         pattern: pattern.source,
         hit: pattern.test(vm.buttonLabel),
+      }).toEqual({ pattern: pattern.source, hit: false });
+    }
+  });
+});
+
+// ─── Test 7b · Phase-positioning summary (B5 Part B) ──────────────
+
+describe("Card view-model · phase-positioning summary", () => {
+  test("ready state with p5-detected report exposes a populated summary", () => {
+    const vm = buildBrowserSessionStatusCardViewModel({
+      state: "ready",
+      report: reportFor("sewa_pajakan_p5_form", {
+        graphPhaseCompatibility: "compatible",
+      }),
+    });
+    expect(vm.phasePositioningSummary).not.toBeNull();
+    const sum = vm.phasePositioningSummary!;
+    expect(sum.rows).toHaveLength(3);
+    expect(sum.rows.map((r) => r.phaseGroupId)).toEqual([
+      "phase_1_session_positioning",
+      "phase_2_maklumat_am_draft",
+      "later_p5_form_phases",
+    ]);
+    // p5 detected → Phase 2 + later p5 are compatible; Phase 1 isn't.
+    expect(sum.rows[0].compatibility).toBe("incompatible");
+    expect(sum.rows[1].compatibility).toBe("compatible");
+    expect(sum.rows[2].compatibility).toBe("compatible");
+    expect(sum.overallSummary).toBe(
+      "Browser position is compatible with the planned phase"
+    );
+  });
+
+  test("ready state with mytax-detected report shows incompatible across all phase groups", () => {
+    const vm = buildBrowserSessionStatusCardViewModel({
+      state: "ready",
+      report: reportFor("mytax_dashboard", {
+        graphPhaseCompatibility: "incompatible",
+      }),
+    });
+    const sum = vm.phasePositioningSummary!;
+    expect(sum.rows.every((r) => r.compatibility === "incompatible")).toBe(
+      true
+    );
+    expect(sum.overallSummary).toBe(
+      "Browser position is not compatible with the planned phase"
+    );
+  });
+
+  test("idle / loading / error states have null phasePositioningSummary", () => {
+    const idle = buildBrowserSessionStatusCardViewModel({ state: "idle" });
+    const loading = buildBrowserSessionStatusCardViewModel({
+      state: "loading",
+    });
+    const errored = buildBrowserSessionStatusCardViewModel({
+      state: "error",
+      errorMessage: "Network failure.",
+    });
+    expect(idle.phasePositioningSummary).toBeNull();
+    expect(loading.phasePositioningSummary).toBeNull();
+    expect(errored.phasePositioningSummary).toBeNull();
+  });
+
+  test("phase-positioning summary contains no forbidden execution wording", () => {
+    const FORBIDDEN: RegExp[] = [
+      /\bStart automation\b/i,
+      /\bStart portal run\b/i,
+      /\bExecute\b/i,
+      /\bSubmit\b/i,
+      /\bSend to LHDN\b/i,
+      /\bPortal action completed\b/i,
+      /\bReady to submit\b/i,
+    ];
+    const vm = buildBrowserSessionStatusCardViewModel({
+      state: "ready",
+      report: reportFor("sewa_pajakan_p5_form", {
+        graphPhaseCompatibility: "compatible",
+      }),
+    });
+    const serialized = JSON.stringify(vm.phasePositioningSummary);
+    for (const pattern of FORBIDDEN) {
+      expect({
+        pattern: pattern.source,
+        hit: pattern.test(serialized),
       }).toEqual({ pattern: pattern.source, hit: false });
     }
   });

@@ -9835,3 +9835,77 @@ section[data-section] {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* ── Phase-positioning summary (Milestone B5 Part B) ──────────────
+   Multi-phase compatibility breakdown rendered inside the Browser
+   Session Status card. Each row shows whether the operator's
+   detected page kind is compatible with one of three coarse phase
+   groups. Read-only; no portal mutation. */
+.tpr-bss-positioning {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tpr-bss-positioning-summary {
+  margin: 0;
+  font-size: 13px;
+}
+
+.tpr-bss-positioning-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.tpr-bss-positioning-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--surface-muted, transparent);
+  border: 1px solid var(--border);
+}
+
+.tpr-bss-positioning-row-compatible {
+  border-color: #1e7a3a;
+}
+
+.tpr-bss-positioning-row-incompatible {
+  border-color: #b34a00;
+}
+
+.tpr-bss-positioning-row-unknown {
+  border-color: var(--border);
+  opacity: 0.85;
+}
+
+.tpr-bss-positioning-phase {
+  font-weight: 500;
+}
+
+.tpr-bss-positioning-compat {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.tpr-bss-positioning-row-compatible .tpr-bss-positioning-compat {
+  color: #1e7a3a;
+}
+
+.tpr-bss-positioning-row-incompatible .tpr-bss-positioning-compat {
+  color: #b34a00;
+}
+
+.tpr-bss-positioning-row-unknown .tpr-bss-positioning-compat {
+  color: var(--muted);
+}
