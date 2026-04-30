@@ -55,6 +55,10 @@ import {
   buildInstructionGraphPreviewViewModel,
   type InstructionGraphPreviewViewModel,
 } from "../../../lib/tenancy-instruction-graph-preview";
+import {
+  buildSupervisedRunConsoleViewModel,
+  type SupervisedRunConsoleViewModel,
+} from "../../../lib/tenancy-supervised-run-console";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -662,6 +666,25 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
       [liveInstructionGraph]
     );
 
+  // Supervised Run Console (Milestone B2). Pure adapter — no portal
+  // contact, no execution. Computed last so it has access to the
+  // already-derived readiness report + graph + preview.
+  const liveSupervisedRunConsole: SupervisedRunConsoleViewModel = useMemo(
+    () =>
+      buildSupervisedRunConsoleViewModel({
+        job: liveJobInput,
+        readinessReport: liveRunReadiness,
+        graph: liveInstructionGraph,
+        graphPreview: liveInstructionGraphPreview,
+      }),
+    [
+      liveJobInput,
+      liveRunReadiness,
+      liveInstructionGraph,
+      liveInstructionGraphPreview,
+    ]
+  );
+
   async function handleSave() {
     setSaving(true);
     setSaveError(null);
@@ -793,6 +816,19 @@ export function TenancyPortalPanel({ jobId, job }: PanelProps) {
           `tenancy-instruction-graph-preview.test.ts` apply to the
           rendered surface verbatim. */}
       <InstructionGraphPreview viewModel={liveInstructionGraphPreview} />
+
+      {/* ── Supervised Run Console (Milestone B2) ────────────────
+          Operator-facing, non-mutating console that prepares the
+          internal run plan for a future supervised e-Duti Setem
+          session. Reuses the readiness report + offline instruction
+          graph + preview view-model computed above; it does not
+          recompute readiness or rebuild the graph. The console is
+          design-only: it renders an eligibility verdict, a graph
+          summary, an 8-item preflight checklist, and a blocked
+          summary when applicable. It NEVER renders a Start / Submit
+          / Execute / Send / Pay / Upload-to-portal / Hantar
+          affordance. */}
+      <SupervisedRunConsole viewModel={liveSupervisedRunConsole} />
 
       {/* ── Readiness summary counts ────────────────────────────── */}
       <div className="tpr-summary">
@@ -3238,6 +3274,182 @@ function InstructionGraphPreview({
       <footer className="tpr-igp-footer">
         <p>{viewModel.authorizationCaveat}</p>
         <p>{viewModel.finalHantarCaveat}</p>
+      </footer>
+    </section>
+  );
+}
+
+// ─── Supervised Run Console (Milestone B2) ─────────────────────────
+
+/**
+ * Read-only operator-facing console that turns the readiness +
+ * instruction-graph + graph-preview state into a single decision
+ * surface for "is this job eligible for a future supervised run?".
+ *
+ * This component is a thin renderer — every string it shows is read
+ * verbatim from `viewModel`, which is built by the pure helper
+ * `buildSupervisedRunConsoleViewModel`. The helper enforces the B2
+ * wording rules and the sensitive-data invariant; the React
+ * component must not introduce its own wording or compose its own
+ * strings from raw job values.
+ *
+ * It does NOT render Start / Submit / Execute / Send / Pay /
+ * Upload-to-portal / Hantar affordances. The only action it exposes
+ * is the approved non-mutating "Refresh Run Plan" button, which
+ * triggers `window.location.reload()` to re-fetch the server-rendered
+ * job and recompute every derived view-model from a fresh source.
+ */
+function SupervisedRunConsole({
+  viewModel,
+}: {
+  viewModel: SupervisedRunConsoleViewModel;
+}) {
+  const isReady = viewModel.eligibility === "eligible";
+  function handleRefresh() {
+    // Non-mutating refresh — re-fetches the page, which forces
+    // every server-rendered piece of state (job, readiness inputs)
+    // to be re-read. No portal action is triggered.
+    if (typeof window !== "undefined") {
+      window.location.reload();
+    }
+  }
+  return (
+    <section
+      className={`tpr-src tpr-src-${viewModel.banner.tone}`}
+      aria-label={viewModel.heading}
+      data-graph-id={viewModel.graphId}
+    >
+      <header className="tpr-src-header">
+        <h3>{viewModel.heading}</h3>
+        <span
+          className={`tpr-src-banner tpr-src-banner-${viewModel.banner.tone}`}
+        >
+          {viewModel.banner.text}
+        </span>
+      </header>
+
+      <p className="tpr-src-helper">{viewModel.helperText}</p>
+
+      <div className="tpr-src-info-grid">
+        <div className="tpr-src-info-cell">
+          <span className="tpr-src-info-label">Readiness verdict</span>
+          <strong
+            className={`tpr-src-info-value tpr-src-info-value-${
+              viewModel.readinessVerdict === "ready_for_supervised_run"
+                ? "ready"
+                : "blocked"
+            }`}
+          >
+            {viewModel.readinessVerdictLabel}
+          </strong>
+        </div>
+        <div className="tpr-src-info-cell">
+          <span className="tpr-src-info-label">Instruction graph verdict</span>
+          <strong
+            className={`tpr-src-info-value tpr-src-info-value-${viewModel.graphSummary.verdictTone}`}
+          >
+            {viewModel.graphSummary.verdictLabel}
+          </strong>
+        </div>
+        <div className="tpr-src-info-cell">
+          <span className="tpr-src-info-label">Lane</span>
+          <strong className="tpr-src-info-value">
+            {viewModel.graphSummary.laneLabel}
+          </strong>
+        </div>
+        <div className="tpr-src-info-cell">
+          <span className="tpr-src-info-label">Supported path</span>
+          <strong className="tpr-src-info-value">
+            {viewModel.graphSummary.supportedPathLabel}
+          </strong>
+        </div>
+        <div className="tpr-src-info-cell">
+          <span className="tpr-src-info-label">Phase count</span>
+          <strong className="tpr-src-info-value tpr-src-info-numeric">
+            {viewModel.graphSummary.phaseCount}
+          </strong>
+        </div>
+        <div className="tpr-src-info-cell">
+          <span className="tpr-src-info-label">Operator gates</span>
+          <strong className="tpr-src-info-value tpr-src-info-numeric">
+            {viewModel.graphSummary.operatorGateCount}
+          </strong>
+        </div>
+        <div className="tpr-src-info-cell">
+          <span className="tpr-src-info-label">Eligibility</span>
+          <strong
+            className={`tpr-src-info-value tpr-src-info-value-${viewModel.banner.tone}`}
+          >
+            {viewModel.eligibilityLabel}
+          </strong>
+        </div>
+      </div>
+
+      <div className="tpr-src-checklist">
+        <p className="tpr-src-checklist-title">
+          <strong>Preflight checklist</strong>
+        </p>
+        <ul className="tpr-src-checklist-list">
+          {viewModel.preflightChecklist.map((item) => (
+            <li
+              key={item.id}
+              className={`tpr-src-checklist-item tpr-src-checklist-item-${item.status}`}
+            >
+              <span
+                className={`tpr-src-checklist-marker tpr-src-checklist-marker-${item.status}`}
+                aria-hidden="true"
+              >
+                {item.status === "pass" ? "✓" : "✗"}
+              </span>
+              <span className="tpr-src-checklist-label">{item.label}</span>
+              {item.failReason && (
+                <span className="tpr-src-checklist-reason">
+                  {" "}
+                  · {item.failReason}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {!isReady && viewModel.blockedSummary && (
+        <div className="tpr-src-blocked" role="alert">
+          <p className="tpr-src-blocked-action">
+            <strong>{viewModel.blockedSummary.safeActionText}</strong>
+          </p>
+          {viewModel.blockedSummary.groups.length > 0 && (
+            <ul className="tpr-src-blocked-groups">
+              {viewModel.blockedSummary.groups.map((g) => (
+                <li key={g.key} className="tpr-src-blocked-group">
+                  <span className="tpr-src-blocked-category">{g.label}</span>
+                  <span className="tpr-src-blocked-count">
+                    {" "}
+                    · {g.count} blocker{g.count === 1 ? "" : "s"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="tpr-src-action-row">
+        <button
+          type="button"
+          className="tpr-src-refresh-button"
+          onClick={handleRefresh}
+        >
+          {viewModel.refreshActionLabel}
+        </button>
+        <span className="tpr-src-action-note">
+          {viewModel.nonExecutionNote}
+        </span>
+      </div>
+
+      <footer className="tpr-src-footer">
+        <p>{viewModel.futureGateNote}</p>
+        <p>{viewModel.authorizationCaveat}</p>
       </footer>
     </section>
   );

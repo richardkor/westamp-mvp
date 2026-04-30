@@ -9421,3 +9421,246 @@ section[data-section] {
 .tpr-igp-footer p {
   margin: 0;
 }
+
+/* ── Supervised Run Console (Milestone B2) ────────────────────────
+   Operator-facing console that summarises eligibility for a future
+   supervised e-Duti Setem run. Visual style parallels the
+   neighbouring instruction-graph preview block; the eligibility
+   tone-class drives accent colour. */
+.tpr-src {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.tpr-src-ready {
+  border-color: #1e7a3a;
+  background: rgba(30, 122, 58, 0.08);
+}
+
+.tpr-src-blocked {
+  border-color: #b34a00;
+  background: rgba(179, 74, 0, 0.06);
+}
+
+.tpr-src-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.tpr-src-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.tpr-src-banner {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.tpr-src-banner-ready {
+  background: #1e7a3a;
+  color: #ffffff;
+}
+
+.tpr-src-banner-blocked {
+  background: #b34a00;
+  color: #ffffff;
+}
+
+.tpr-src-helper {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tpr-src-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 12px;
+}
+
+.tpr-src-info-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted, transparent);
+}
+
+.tpr-src-info-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.tpr-src-info-value {
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.tpr-src-info-value-ready {
+  color: #1e7a3a;
+}
+
+.tpr-src-info-value-blocked {
+  color: #b34a00;
+}
+
+.tpr-src-info-numeric {
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+}
+
+.tpr-src-checklist {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tpr-src-checklist-title {
+  margin: 0 0 6px 0;
+  font-size: 13px;
+}
+
+.tpr-src-checklist-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.tpr-src-checklist-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.tpr-src-checklist-marker {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tpr-src-checklist-marker-pass {
+  background: rgba(30, 122, 58, 0.12);
+  color: #1e7a3a;
+}
+
+.tpr-src-checklist-marker-fail {
+  background: rgba(179, 74, 0, 0.12);
+  color: #b34a00;
+}
+
+.tpr-src-checklist-label {
+  font-weight: 500;
+}
+
+.tpr-src-checklist-reason {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tpr-src-checklist-item-fail .tpr-src-checklist-label {
+  color: #b34a00;
+}
+
+.tpr-src-blocked {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tpr-src-blocked-action {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+}
+
+.tpr-src-blocked-groups {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.tpr-src-blocked-category {
+  font-weight: 600;
+}
+
+.tpr-src-blocked-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tpr-src-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tpr-src-refresh-button {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tpr-src-refresh-button:hover,
+.tpr-src-refresh-button:focus-visible {
+  background: var(--surface-muted, var(--surface));
+  border-color: var(--accent, var(--border));
+  outline: none;
+}
+
+.tpr-src-action-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tpr-src-footer {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.tpr-src-footer p {
+  margin: 0;
+}
