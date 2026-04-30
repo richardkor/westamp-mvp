@@ -73,13 +73,21 @@ import type { TenancyPortalRunReadinessReport } from "./tenancy-portal-run-readi
 /** The lane currently supported by this layer. */
 export type TenancyRunSessionLane = "sewa_pajakan";
 
-/** Run-stage enum per the brief. */
+/**
+ * Run-stage enum per the B6 brief, extended in B7 with a single
+ * post-save value (`phase_2_maklumat_am_saved`) recorded after the
+ * controlled Phase 2 Maklumat Am draft-creation/save executor
+ * completes successfully. The new value is "sticky" on refresh —
+ * a successful Phase 2 save is a fact about the portal-side draft
+ * that should not be silently undone by a subsequent prepare call.
+ */
 export type TenancyRunStage =
   | "not_prepared"
   | "preflight_ready"
   | "browser_not_ready"
   | "awaiting_first_mutation_approval"
   | "first_mutation_approved"
+  | "phase_2_maklumat_am_saved"
   | "blocked"
   | "aborted";
 
@@ -114,6 +122,42 @@ export interface TenancyRunSessionOperatorApproval {
 }
 
 /**
+ * Narrow result block recorded on the run-session state when the
+ * controlled Phase 2 Maklumat Am executor (Milestone B7) attempts
+ * a mutation. Sanitized: contains stable enum values + ISO
+ * timestamps + safe path/marker enums only. NEVER stores a raw
+ * URL, href, exception text, portal numeric IDs, party data, or
+ * uploaded document content.
+ */
+export interface TenancyRunSessionPhase2Result {
+  /** Always "saved" or "failed" — refusals never reach this block. */
+  status: "saved" | "failed";
+  /** ISO 8601 timestamp of the attempt. */
+  attemptedAt: string;
+  /** ISO 8601 timestamp of successful save; absent on failure. */
+  savedAt?: string;
+  /**
+   * Path-shape enum after save (always
+   * `"sewa_pajakan_p5_form"` on success — verified by the
+   * post-save URL classifier).
+   */
+  postSavePathKind?:
+    | "mytax_dashboard"
+    | "stamps_role_change"
+    | "stamps_dashboard"
+    | "sewa_pajakan_p5_form"
+    | "other";
+  /**
+   * Stable failure-reason code on `status === "failed"`. One of the
+   * Phase 2 refusal-reason codes; declared as `string` here to
+   * avoid a circular type import. The B7 executor always assigns
+   * one of the canonical codes from
+   * `tenancy-phase-2-executor.ts`.
+   */
+  failureReasonCode?: string;
+}
+
+/**
  * Persistent state stored on the StampingJob as
  * `supervisedRunSession`. Pure JSON; sanitized.
  */
@@ -144,6 +188,12 @@ export interface TenancyRunSessionState {
    * and in the UI footer.
    */
   nonExecutionNote: typeof NON_EXECUTION_NOTE;
+  /**
+   * Result of the most recent Phase 2 Maklumat Am executor attempt
+   * (Milestone B7). Absent until the operator triggers Phase 2.
+   * Sanitized; see `TenancyRunSessionPhase2Result`.
+   */
+  phase2MaklumatAm?: TenancyRunSessionPhase2Result;
   /** ISO 8601 timestamp. Set on first prepare call. */
   createdAt: string;
   /** ISO 8601 timestamp. Refreshed on every state mutation. */
@@ -211,6 +261,24 @@ export const APPROVAL_BROWSER_CHECK_REQUIRED_HINT =
 /** Compact badge / chip text for the same condition. */
 export const APPROVAL_BROWSER_CHECK_REQUIRED_LABEL =
   "Browser check required before approval.";
+
+// ─── B7 approved wording (Phase 2 Maklumat Am execution) ──────────
+
+/**
+ * Operator-facing button label for the controlled Phase 2 Maklumat
+ * Am execution. The label is intentionally explicit because this
+ * is the FIRST actual portal mutation WeStamp performs.
+ */
+export const PHASE_2_EXECUTE_BUTTON_LABEL =
+  "Create Portal Draft: Maklumat Am Only";
+
+/** Warning text shown above / next to the Phase 2 execute button. */
+export const PHASE_2_EXECUTE_WARNING =
+  "This will write Maklumat Am data into e-Duti Setem and save the draft. It will not submit, upload, pay, or retrieve a certificate.";
+
+/** Success text shown after a successful Phase 2 save. */
+export const PHASE_2_EXECUTE_SUCCESS =
+  "Maklumat Am draft saved. No Hantar, upload, payment, or certificate retrieval was performed.";
 
 // ─── Build / refresh ───────────────────────────────────────────────
 
@@ -507,6 +575,14 @@ function deriveRunStage(input: {
 }): TenancyRunStage {
   // Aborted is sticky — operators must explicitly re-prepare.
   if (input.previousStage === "aborted") return "aborted";
+  // Phase 2 saved is sticky — a successful portal-side draft save
+  // is a fact about the live portal state. A subsequent prepare
+  // call must not silently revert this stage. The operator can
+  // still re-approve / re-execute later phases; it just can't
+  // pretend Phase 2 was never saved.
+  if (input.previousStage === "phase_2_maklumat_am_saved") {
+    return "phase_2_maklumat_am_saved";
+  }
 
   if (input.operatorApprovalActive) return "first_mutation_approved";
 
@@ -563,6 +639,7 @@ export const RUN_STAGE_LABELS: Record<TenancyRunStage, string> = {
   browser_not_ready: "Browser not ready",
   awaiting_first_mutation_approval: "Awaiting first-mutation approval",
   first_mutation_approved: "First mutation approved internally",
+  phase_2_maklumat_am_saved: "Phase 2 Maklumat Am draft saved",
   blocked: "Blocked",
   aborted: "Aborted",
 };

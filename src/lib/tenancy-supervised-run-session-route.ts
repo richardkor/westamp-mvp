@@ -47,7 +47,9 @@ import { buildTenancyInstructionGraphFromJob } from "./tenancy-instruction-graph
 import {
   DEFAULT_CDP_ENDPOINT,
   DEFAULT_CDP_TIMEOUT_MS,
+  isAllowedPhaseId,
 } from "./tenancy-supervised-session-route";
+import type { TenancyInstructionPhaseId } from "./tenancy-instruction-graph";
 import type { StampingJob } from "./stamping-types";
 
 // ─── Approved wording / error strings ──────────────────────────────
@@ -58,9 +60,25 @@ export const ERROR_NOT_TENANCY_JOB =
   "Supervised run session applies only to tenancy-agreement jobs.";
 export const ERROR_INVALID_INSPECT_FLAG =
   "Invalid inspectBrowserSession flag. Must be a boolean.";
+export const ERROR_INVALID_PREPARE_TARGET_PHASE =
+  "Invalid targetPhaseId. Must be one of the canonical instruction-graph phase ids.";
 export const ERROR_BROWSER_INSPECTION_FAILED =
   "Browser session inspection failed. Verify Chrome is launched with remote debugging enabled.";
 export const ERROR_NOT_ELIGIBLE_PREFIX = "First mutation approval refused: ";
+
+/**
+ * Default target phase for a `prepare` call with
+ * `inspectBrowserSession: true`. Until B7, prepare hardcoded
+ * `phase_1_session_positioning` because Phase 1 was the first
+ * portal-touching phase. After B7, the first mutation is Phase 2;
+ * checking compatibility against Phase 1 wrongly reports
+ * `incompatible` when the operator has correctly positioned Chrome
+ * on the Sewa/Pajakan p5 form (which is exactly where Phase 2
+ * needs to run). Defaulting to Phase 2 aligns the prepare snapshot
+ * with the eligibility the approve route enforces.
+ */
+export const DEFAULT_PREPARE_TARGET_PHASE_ID =
+  "phase_2_maklumat_am_draft" as const;
 
 // ─── Public types ──────────────────────────────────────────────────
 
@@ -73,6 +91,17 @@ export interface PrepareRequestBody {
    * only B3 inspector — no clicks / fills / submits.
    */
   inspectBrowserSession?: boolean;
+  /**
+   * Optional canonical instruction-graph phase id. When supplied
+   * (and `inspectBrowserSession === true`), the inspector computes
+   * the snapshot's phase compatibility against this phase rather
+   * than the default. Validated against the canonical phase set.
+   *
+   * Default when omitted: `phase_2_maklumat_am_draft` (the first
+   * mutation phase B7 approves for). See
+   * `DEFAULT_PREPARE_TARGET_PHASE_ID`.
+   */
+  targetPhaseId?: string;
 }
 
 /** Successful response from the prepare route. */
@@ -172,6 +201,7 @@ export async function handlePrepareRequest(
 
   // ── Body validation ──
   let inspectBrowserSession = false;
+  let targetPhaseId: TenancyInstructionPhaseId | undefined;
   if (body !== undefined && body !== null) {
     if (typeof body !== "object" || Array.isArray(body)) {
       return { ok: false, error: ERROR_INVALID_BODY };
@@ -182,6 +212,12 @@ export async function handlePrepareRequest(
         return { ok: false, error: ERROR_INVALID_INSPECT_FLAG };
       }
       inspectBrowserSession = parsed.inspectBrowserSession;
+    }
+    if (parsed.targetPhaseId !== undefined && parsed.targetPhaseId !== null) {
+      if (!isAllowedPhaseId(parsed.targetPhaseId)) {
+        return { ok: false, error: ERROR_INVALID_PREPARE_TARGET_PHASE };
+      }
+      targetPhaseId = parsed.targetPhaseId;
     }
   }
 
@@ -201,10 +237,18 @@ export async function handlePrepareRequest(
       typeof opts.cdpTimeoutMs === "number" && opts.cdpTimeoutMs > 0
         ? opts.cdpTimeoutMs
         : DEFAULT_CDP_TIMEOUT_MS;
+    // B7 fix: prepare now defaults to `phase_2_maklumat_am_draft`
+    // (the first mutation phase the approve route gates against),
+    // so a snapshot taken when the operator is correctly on the
+    // Sewa/Pajakan p5 form classifies as `compatible`. Operators
+    // who want to verify Phase 1 positioning explicitly can pass
+    // `targetPhaseId: "phase_1_session_positioning"` in the body.
+    const resolvedTargetPhase: TenancyInstructionPhaseId =
+      targetPhaseId ?? DEFAULT_PREPARE_TARGET_PHASE_ID;
     try {
       browserSessionReport = await inspector({
         cdpEndpoint,
-        targetPhaseId: "phase_1_session_positioning",
+        targetPhaseId: resolvedTargetPhase,
         timeoutMs,
       });
     } catch {

@@ -61,6 +61,10 @@
  */
 
 import type { TenancyInstructionPhaseId } from "./tenancy-instruction-graph";
+import {
+  classifySupervisedSessionPath as classifySupervisedSessionPathImpl,
+  type SupervisedSessionPathKind as SupervisedSessionPathKindImpl,
+} from "./tenancy-supervised-session-path";
 
 // ─── Public types ──────────────────────────────────────────────────
 
@@ -110,13 +114,15 @@ export type SupervisedSessionPageKind =
  * URL pathname only (no DOM marker information). Returned by
  * `classifySupervisedSessionPath` at the URL-receiving boundary so
  * the raw URL never propagates into a `SupervisedSessionReport`.
+ *
+ * The implementation lives in
+ * `tenancy-supervised-session-path.ts` so that client-reachable
+ * code paths (e.g. the Phase 2 executor) can import the classifier
+ * without transitively pulling Playwright into the client bundle.
+ * This module re-exports the type and function to keep existing
+ * callers unaffected.
  */
-export type SupervisedSessionPathKind =
-  | "mytax_dashboard"
-  | "stamps_role_change"
-  | "stamps_dashboard"
-  | "sewa_pajakan_p5_form"
-  | "other";
+export type SupervisedSessionPathKind = SupervisedSessionPathKindImpl;
 
 /** Compatibility of the selected page with a target instruction-graph phase. */
 export type GraphPhaseCompatibility = "compatible" | "incompatible" | "unknown";
@@ -240,54 +246,17 @@ export const OPERATOR_ACTION_NAVIGATE_MANUALLY =
 // ─── Path classification (URL-boundary) ────────────────────────────
 
 /**
- * Classify a raw portal URL into a coarse path-shape enum. **Drops
- * the raw URL, query string, hash, and href at this seam** — only
- * the resulting `SupervisedSessionPathKind` is returned. Callers
- * must not retain the URL after calling this function.
+ * Re-export of `classifySupervisedSessionPath` from
+ * `tenancy-supervised-session-path.ts`. The implementation moved
+ * out of this file so that client-reachable code paths (e.g. the
+ * Phase 2 executor) can import the classifier without transitively
+ * loading Playwright into the client bundle.
  *
- * Recognised host / path combinations:
- *   - host `mytax.hasil.gov.my`                                 → `mytax_dashboard`
- *   - host containing `stamps.hasil.gov.my` and pathname:
- *       · starts with `/stamps/main/role_change`                → `stamps_role_change`
- *       · starts with `/stamps/utama/dashboard`                 → `stamps_dashboard`
- *       · starts with `/stamps/formv2/p5/edit`                  → `sewa_pajakan_p5_form`
- *       · starts with `/stamps/formv2/p5/create`                → `sewa_pajakan_p5_form`
- *   - everything else                                            → `other`
- *
- * Defensively returns `"other"` on malformed input — never throws.
+ * Behaviour and contract are unchanged. See the implementation
+ * file for full documentation.
  */
-export function classifySupervisedSessionPath(
-  rawUrl: string
-): SupervisedSessionPathKind {
-  if (typeof rawUrl !== "string" || rawUrl.length === 0) return "other";
-
-  let host = "";
-  let pathname = "";
-  try {
-    const u = new URL(rawUrl);
-    host = u.hostname;
-    pathname = u.pathname;
-  } catch {
-    // Treat as a path-only string. We cannot identify the host so
-    // we skip the host-required classifications.
-    if (rawUrl.startsWith("/stamps/main/role_change")) return "stamps_role_change";
-    if (rawUrl.startsWith("/stamps/utama/dashboard")) return "stamps_dashboard";
-    if (rawUrl.startsWith("/stamps/formv2/p5/edit")) return "sewa_pajakan_p5_form";
-    if (rawUrl.startsWith("/stamps/formv2/p5/create")) return "sewa_pajakan_p5_form";
-    return "other";
-  }
-
-  if (host === "mytax.hasil.gov.my") return "mytax_dashboard";
-
-  if (host.endsWith("stamps.hasil.gov.my")) {
-    if (pathname.startsWith("/stamps/main/role_change")) return "stamps_role_change";
-    if (pathname.startsWith("/stamps/utama/dashboard")) return "stamps_dashboard";
-    if (pathname.startsWith("/stamps/formv2/p5/edit")) return "sewa_pajakan_p5_form";
-    if (pathname.startsWith("/stamps/formv2/p5/create")) return "sewa_pajakan_p5_form";
-  }
-
-  return "other";
-}
+export const classifySupervisedSessionPath =
+  classifySupervisedSessionPathImpl;
 
 // ─── Pure builder ──────────────────────────────────────────────────
 

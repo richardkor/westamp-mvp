@@ -66,9 +66,17 @@ import {
 import type { SupervisedSessionReport } from "../../../lib/tenancy-supervised-session-shell";
 import {
   buildSupervisedRunSessionViewModel,
+  PHASE_2_EXECUTE_BUTTON_LABEL,
+  PHASE_2_EXECUTE_SUCCESS,
+  PHASE_2_EXECUTE_WARNING,
   type SupervisedRunSessionViewModel,
   type TenancyRunSessionState,
 } from "../../../lib/tenancy-supervised-run-session";
+import {
+  PHASE_2_REASON_LABELS,
+  type Phase2ExecutionResult,
+  type Phase2RefusalReason,
+} from "../../../lib/tenancy-phase-2-executor";
 import type {
   StampingJob,
   TenancyPortalBuildingType,
@@ -3709,9 +3717,13 @@ function SupervisedRunSessionCard({
   const [state, setState] = useState<TenancyRunSessionState | null>(
     initialState
   );
-  const [busy, setBusy] = useState<"prepare" | "approve" | null>(null);
+  const [busy, setBusy] = useState<
+    "prepare" | "approve" | "phase2" | null
+  >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedNotice, setCompletedNotice] = useState<string | null>(null);
+  const [phase2Refusal, setPhase2Refusal] =
+    useState<Phase2RefusalReason | null>(null);
 
   const viewModel: SupervisedRunSessionViewModel = useMemo(
     () => buildSupervisedRunSessionViewModel(state),
@@ -3809,6 +3821,82 @@ function SupervisedRunSessionCard({
           typeof (json as { error: unknown }).error === "string"
             ? (json as { error: string }).error
             : "Failed to approve first mutation.";
+        setErrorMessage(errMsg);
+      }
+    } catch {
+      setErrorMessage("Network failure. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }, [jobId]);
+
+  // Phase 2 (Milestone B7) — controlled Maklumat Am draft creation.
+  // Disabled unless the run session is in `first_mutation_approved`
+  // stage; the route enforces the same gate server-side. The button
+  // never triggers any later-phase action; the route's executor
+  // surface is locked to the Phase 2 selector allow-list.
+  const phase2ButtonEnabled =
+    state !== null &&
+    state.currentRunStage === "first_mutation_approved";
+
+  const handleExecutePhase2 = useCallback(async () => {
+    setBusy("phase2");
+    setErrorMessage(null);
+    setCompletedNotice(null);
+    setPhase2Refusal(null);
+    try {
+      const res = await fetch(
+        `/api/intake/${encodeURIComponent(jobId)}/supervised-run/execute-phase-2-maklumat-am`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }
+      );
+      let json: unknown;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+      if (
+        res.ok &&
+        json &&
+        typeof json === "object" &&
+        "ok" in json &&
+        (json as { ok: unknown }).ok === true &&
+        "result" in json
+      ) {
+        const successJson = json as {
+          result: Phase2ExecutionResult;
+        };
+        // Refresh the run-session state after a successful save.
+        if (successJson.result.status === "saved") {
+          setCompletedNotice(PHASE_2_EXECUTE_SUCCESS);
+          // Optimistic local-state transition. The next page
+          // reload will re-fetch the persisted state from the
+          // server, but transitioning here keeps the UI
+          // immediately accurate.
+          setState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  currentRunStage: "phase_2_maklumat_am_saved",
+                  updatedAt: new Date().toISOString(),
+                }
+              : prev
+          );
+        }
+      } else {
+        const failureJson =
+          json && typeof json === "object" && "result" in json
+            ? (json as { result: Phase2ExecutionResult }).result
+            : null;
+        if (failureJson?.refusalReason) {
+          setPhase2Refusal(failureJson.refusalReason);
+        }
+        const errMsg =
+          failureJson?.reason ?? "Phase 2 Maklumat Am attempt failed.";
         setErrorMessage(errMsg);
       }
     } catch {
@@ -3947,6 +4035,46 @@ function SupervisedRunSessionCard({
       <p className="tpr-srs-helper-warning">
         {viewModel.approvalButtonHelperWarning}
       </p>
+
+      {/* ── Phase 2 Maklumat Am execution (Milestone B7) ─────────
+          The first portal-mutating control. Tightly gated server-
+          side AND client-side: button enabled only when the run
+          session is in `first_mutation_approved` stage. The route
+          re-enforces every precondition before any portal contact.
+          The warning above the button is the brief's exact
+          approved wording. */}
+      <div className="tpr-srs-phase2">
+        <p className="tpr-srs-phase2-warning" role="note">
+          {PHASE_2_EXECUTE_WARNING}
+        </p>
+        <button
+          type="button"
+          className="tpr-srs-phase2-button"
+          onClick={handleExecutePhase2}
+          disabled={busy !== null || !phase2ButtonEnabled}
+          title={
+            phase2ButtonEnabled
+              ? PHASE_2_EXECUTE_WARNING
+              : "Approve First Portal Mutation before creating the portal draft."
+          }
+        >
+          {busy === "phase2"
+            ? "Creating portal draft…"
+            : PHASE_2_EXECUTE_BUTTON_LABEL}
+        </button>
+        {state?.currentRunStage === "phase_2_maklumat_am_saved" && (
+          <p className="tpr-srs-phase2-success" role="status">
+            <strong>{PHASE_2_EXECUTE_SUCCESS}</strong>
+          </p>
+        )}
+        {phase2Refusal && (
+          <p className="tpr-srs-phase2-refusal" role="alert">
+            <strong>Phase 2 Maklumat Am refused: </strong>
+            <code>{phase2Refusal}</code> ·{" "}
+            {PHASE_2_REASON_LABELS[phase2Refusal]}
+          </p>
+        )}
+      </div>
 
       <footer className="tpr-srs-footer">
         <p>{viewModel.nonExecutionNote}</p>

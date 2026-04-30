@@ -156,7 +156,16 @@ export type JobEventType =
   // e-Duti Setem portal action — they describe WeStamp's internal
   // readiness to begin a future supervised portal run.
   | "supervised_run_prepared"
-  | "supervised_run_first_mutation_approved";
+  | "supervised_run_first_mutation_approved"
+  // Tenancy supervised-run · Phase 2 Maklumat Am executor outcomes
+  // (Milestone B7). The "saved" event is appended ONLY when the
+  // controlled executor successfully fills the Maklumat Am fields
+  // and clicks Simpan Maklumat Am, AND the post-save URL classifier
+  // confirms the page remains on the Sewa/Pajakan p5 form. The
+  // "failed" event records a sanitized failure reason code; no
+  // portal text, no URL, no exception stack is stored.
+  | "supervised_run_phase_2_maklumat_am_saved"
+  | "supervised_run_phase_2_maklumat_am_failed";
 
 export interface JobEvent {
   /** Event type identifier. */

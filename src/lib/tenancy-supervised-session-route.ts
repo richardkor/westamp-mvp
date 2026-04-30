@@ -106,21 +106,29 @@ export interface HandleCdpInspectOptions {
 
 // ─── Phase id validation ───────────────────────────────────────────
 
-const ALLOWED_PHASE_IDS: ReadonlySet<TenancyInstructionPhaseId> = new Set<
-  TenancyInstructionPhaseId
->([
-  "phase_0_preflight",
-  "phase_1_session_positioning",
-  "phase_2_maklumat_am_draft",
-  "phase_3_bahagian_a_parties",
-  "phase_4_bahagian_b_rent",
-  "phase_5_bahagian_c_property",
-  "phase_6_lampiran_upload",
-  "phase_7_rumusan_readback",
-  "phase_8_perakuan_hantar",
-]);
+/**
+ * Set of canonical instruction-graph phase ids. Exported so other
+ * route helpers (e.g. the B6 prepare helper, after the B7 fix that
+ * lets prepare accept an optional `targetPhaseId`) can validate
+ * incoming phase ids without re-declaring the closed set.
+ */
+export const ALLOWED_PHASE_IDS: ReadonlySet<TenancyInstructionPhaseId> =
+  new Set<TenancyInstructionPhaseId>([
+    "phase_0_preflight",
+    "phase_1_session_positioning",
+    "phase_2_maklumat_am_draft",
+    "phase_3_bahagian_a_parties",
+    "phase_4_bahagian_b_rent",
+    "phase_5_bahagian_c_property",
+    "phase_6_lampiran_upload",
+    "phase_7_rumusan_readback",
+    "phase_8_perakuan_hantar",
+  ]);
 
-function isAllowedPhaseId(v: unknown): v is TenancyInstructionPhaseId {
+/** Type-guard companion for `ALLOWED_PHASE_IDS`. */
+export function isAllowedPhaseId(
+  v: unknown
+): v is TenancyInstructionPhaseId {
   return (
     typeof v === "string" &&
     ALLOWED_PHASE_IDS.has(v as TenancyInstructionPhaseId)

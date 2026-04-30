@@ -16,8 +16,10 @@
  */
 
 import {
+  DEFAULT_PREPARE_TARGET_PHASE_ID,
   ERROR_INVALID_BODY,
   ERROR_INVALID_INSPECT_FLAG,
+  ERROR_INVALID_PREPARE_TARGET_PHASE,
   ERROR_NOT_ELIGIBLE_PREFIX,
   ERROR_NOT_TENANCY_JOB,
   handleApproveFirstMutationRequest,
@@ -230,6 +232,93 @@ describe("Prepare route · body validation", () => {
   });
 });
 
+// ─── Test 2b · prepare · targetPhaseId (B7 fix) ───────────────────
+
+describe("Prepare route · targetPhaseId (B7 fix)", () => {
+  test("defaults to phase_2_maklumat_am_draft when inspectBrowserSession=true and no targetPhaseId", async () => {
+    const { fn, calls } = makeInspectorStub(reachableP5Report("compatible"));
+    const res = await handlePrepareRequest({
+      job: buildJob(),
+      body: { inspectBrowserSession: true },
+      inspector: fn,
+    });
+    expect(res.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].targetPhaseId).toBe("phase_2_maklumat_am_draft");
+    expect(DEFAULT_PREPARE_TARGET_PHASE_ID).toBe("phase_2_maklumat_am_draft");
+  });
+
+  test("accepts a valid targetPhaseId and forwards it to the inspector", async () => {
+    const { fn, calls } = makeInspectorStub(reachableP5Report("compatible"));
+    const res = await handlePrepareRequest({
+      job: buildJob(),
+      body: {
+        inspectBrowserSession: true,
+        targetPhaseId: "phase_1_session_positioning",
+      },
+      inspector: fn,
+    });
+    expect(res.ok).toBe(true);
+    expect(calls[0].targetPhaseId).toBe("phase_1_session_positioning");
+  });
+
+  test("rejects an unknown targetPhaseId without invoking the inspector", async () => {
+    const { fn, calls } = makeInspectorStub(reachableP5Report("compatible"));
+    const res = await handlePrepareRequest({
+      job: buildJob(),
+      body: {
+        inspectBrowserSession: true,
+        targetPhaseId: "phase_99_attack_drones",
+      },
+      inspector: fn,
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: ERROR_INVALID_PREPARE_TARGET_PHASE,
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("rejects a non-string targetPhaseId", async () => {
+    const { fn, calls } = makeInspectorStub(reachableP5Report("compatible"));
+    const res = await handlePrepareRequest({
+      job: buildJob(),
+      body: { inspectBrowserSession: true, targetPhaseId: 42 },
+      inspector: fn,
+    });
+    expect(res).toEqual({
+      ok: false,
+      error: ERROR_INVALID_PREPARE_TARGET_PHASE,
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("ignores targetPhaseId when inspectBrowserSession=false (no inspector call)", async () => {
+    const { fn, calls } = makeInspectorStub(reachableP5Report("compatible"));
+    const res = await handlePrepareRequest({
+      job: buildJob(),
+      body: {
+        inspectBrowserSession: false,
+        targetPhaseId: "phase_1_session_positioning",
+      },
+      inspector: fn,
+    });
+    expect(res.ok).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("a targetPhaseId of null is treated as omitted (default applies)", async () => {
+    const { fn, calls } = makeInspectorStub(reachableP5Report("compatible"));
+    const res = await handlePrepareRequest({
+      job: buildJob(),
+      body: { inspectBrowserSession: true, targetPhaseId: null },
+      inspector: fn,
+    });
+    expect(res.ok).toBe(true);
+    expect(calls[0].targetPhaseId).toBe("phase_2_maklumat_am_draft");
+  });
+});
+
 // ─── Test 3 · prepare · ready job → preflight_ready / awaiting ────
 
 describe("Prepare route · ready job", () => {
@@ -267,7 +356,11 @@ describe("Prepare route · ready job", () => {
       expect(res.state.browserSession?.phaseCompatibility).toBe("compatible");
     }
     expect(calls).toHaveLength(1);
-    expect(calls[0].targetPhaseId).toBe("phase_1_session_positioning");
+    // B7 fix: prepare now defaults to `phase_2_maklumat_am_draft`
+    // because Phase 2 is the first mutation phase the approve
+    // route gates against. Operators who want to verify Phase 1
+    // positioning explicitly can supply `targetPhaseId` in the body.
+    expect(calls[0].targetPhaseId).toBe("phase_2_maklumat_am_draft");
   });
 
   test("returns browser_not_ready when CDP is unreachable", async () => {

@@ -10148,3 +10148,76 @@ section[data-section] {
 .tpr-srs-footer p {
   margin: 0;
 }
+
+/* ── Phase 2 Maklumat Am execution (Milestone B7) ─────────────────
+   First mutation control. Visually distinct from the prepare /
+   approve buttons because it actually writes to the portal. */
+.tpr-srs-phase2 {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tpr-srs-phase2-warning {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(179, 74, 0, 0.08);
+  border: 1px solid #b34a00;
+  color: #7a3300;
+  font-size: 13px;
+}
+
+.tpr-srs-phase2-button {
+  appearance: none;
+  background: #7a3300;
+  color: #ffffff;
+  border: 1px solid #7a3300;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.tpr-srs-phase2-button:hover:not(:disabled),
+.tpr-srs-phase2-button:focus-visible {
+  background: #5e2700;
+  border-color: #5e2700;
+  outline: none;
+}
+
+.tpr-srs-phase2-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tpr-srs-phase2-success {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(12, 74, 118, 0.08);
+  border: 1px solid #0c4a76;
+  color: #0c4a76;
+  font-size: 13px;
+}
+
+.tpr-srs-phase2-refusal {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(179, 74, 0, 0.08);
+  border: 1px solid #b34a00;
+  color: #7a3300;
+  font-size: 13px;
+}
+
+.tpr-srs-phase2-refusal code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
