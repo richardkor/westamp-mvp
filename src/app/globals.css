@@ -10430,3 +10430,15 @@ section[data-section] {
   border-radius: 4px;
   font-size: 12px;
 }
+
+/* ── Phase 3 tenant-individual button (Milestone B11) ────────────── */
+/* Reuses .tpr-srs-phase3-* styles by defining the wrapper with the
+   same shared class structure. The wrapper differs only in spacing.  */
+
+.tpr-srs-phase3-tenant {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d4e6f7;
+  border-radius: 6px;
+  background: #f4f9fd;
+}

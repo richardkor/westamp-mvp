@@ -89,6 +89,7 @@ export type TenancyRunStage =
   | "first_mutation_approved"
   | "phase_2_maklumat_am_saved"
   | "phase_3_landlord_individual_saved"
+  | "phase_3_tenant_individual_saved"
   | "blocked"
   | "aborted";
 
@@ -130,6 +131,27 @@ export interface TenancyRunSessionOperatorApproval {
  * URL, href, exception text, portal numeric IDs, party data, or
  * uploaded document content.
  */
+/**
+ * Narrow result block recorded on the run-session state when the
+ * controlled Phase 3 tenant-individual row-save executor
+ * (Milestone B11) attempts a mutation. Same sanitized shape as the
+ * landlord result.
+ */
+export interface TenancyRunSessionPhase3TenantResult {
+  status: "saved" | "failed";
+  attemptedAt: string;
+  savedAt?: string;
+  postSavePathKind?:
+    | "mytax_dashboard"
+    | "stamps_role_change"
+    | "stamps_dashboard"
+    | "sewa_pajakan_p5_form"
+    | "other";
+  failureReasonCode?: string;
+  preRowCount?: number;
+  postRowCount?: number;
+}
+
 /**
  * Narrow result block recorded on the run-session state when the
  * controlled Phase 3 landlord-individual row-save executor
@@ -226,6 +248,12 @@ export interface TenancyRunSessionState {
    * triggers Phase 3 landlord. Sanitized.
    */
   phase3LandlordIndividual?: TenancyRunSessionPhase3LandlordResult;
+  /**
+   * Result of the most recent Phase 3 tenant-individual row-save
+   * executor attempt (Milestone B11). Absent until the operator
+   * triggers Phase 3 tenant. Sanitized.
+   */
+  phase3TenantIndividual?: TenancyRunSessionPhase3TenantResult;
   /** ISO 8601 timestamp. Set on first prepare call. */
   createdAt: string;
   /** ISO 8601 timestamp. Refreshed on every state mutation. */
@@ -325,6 +353,20 @@ export const PHASE_3_LANDLORD_EXECUTE_WARNING =
 /** Success text shown after a successful landlord row save. */
 export const PHASE_3_LANDLORD_EXECUTE_SUCCESS =
   "Landlord individual row saved. No tenant, upload, Hantar, payment, or certificate action was performed.";
+
+// ─── B11 approved wording (Phase 3 tenant-individual save) ────────
+
+/** Operator-facing button label for the controlled tenant row save. */
+export const PHASE_3_TENANT_EXECUTE_BUTTON_LABEL =
+  "Save Tenant Row: Individual Only";
+
+/** Warning text shown above / next to the tenant-save button. */
+export const PHASE_3_TENANT_EXECUTE_WARNING =
+  "This will enter one tenant individual row in Bahagian A. It will not enter company data, upload, submit, pay, or retrieve a certificate.";
+
+/** Success text shown after a successful tenant row save. */
+export const PHASE_3_TENANT_EXECUTE_SUCCESS =
+  "Tenant individual row saved. No company, upload, Hantar, payment, or certificate action was performed.";
 
 // ─── Build / refresh ───────────────────────────────────────────────
 
@@ -637,6 +679,12 @@ function deriveRunStage(input: {
   if (input.previousStage === "phase_3_landlord_individual_saved") {
     return "phase_3_landlord_individual_saved";
   }
+  // Phase 3 tenant-individual saved succeeds the landlord-row stage
+  // (B11). Sticky for the same reason: once the tenant row commits
+  // to e-Duti Setem, no prepare call can pretend it isn't there.
+  if (input.previousStage === "phase_3_tenant_individual_saved") {
+    return "phase_3_tenant_individual_saved";
+  }
 
   if (input.operatorApprovalActive) return "first_mutation_approved";
 
@@ -696,6 +744,8 @@ export const RUN_STAGE_LABELS: Record<TenancyRunStage, string> = {
   phase_2_maklumat_am_saved: "Phase 2 Maklumat Am draft saved",
   phase_3_landlord_individual_saved:
     "Phase 3 landlord individual row saved",
+  phase_3_tenant_individual_saved:
+    "Phase 3 tenant individual row saved",
   blocked: "Blocked",
   aborted: "Aborted",
 };

@@ -1085,3 +1085,61 @@ describe("Run-session · B10 phase_3_landlord_individual_saved stage", () => {
     );
   });
 });
+
+// ─── B11 stage / wording invariants ────────────────────────────────
+
+describe("Run-session · B11 phase_3_tenant_individual_saved stage", () => {
+  test("stage is sticky once set — a subsequent prepare does NOT revert it", () => {
+    const job = buildReadyJob();
+    const readiness = evaluateTenancyPortalRunReadiness(job);
+    const graph = buildTenancyInstructionGraph({ job, jobId: "j-b11" });
+    const previous: TenancyRunSessionState = {
+      ...buildSupervisedRunSessionState({
+        jobId: "j-b11",
+        readinessReport: readiness,
+        instructionGraph: graph,
+      }),
+      currentRunStage: "phase_3_tenant_individual_saved",
+    };
+    const refreshed = buildSupervisedRunSessionState({
+      jobId: "j-b11",
+      readinessReport: readiness,
+      instructionGraph: graph,
+      existingState: previous,
+    });
+    expect(refreshed.currentRunStage).toBe(
+      "phase_3_tenant_individual_saved"
+    );
+  });
+
+  test("RUN_STAGE_LABELS includes phase_3_tenant_individual_saved", () => {
+    expect(RUN_STAGE_LABELS.phase_3_tenant_individual_saved).toBe(
+      "Phase 3 tenant individual row saved"
+    );
+  });
+
+  test("approved B11 wording is verbatim from the brief", async () => {
+    const mod = await import("./tenancy-supervised-run-session");
+    expect(mod.PHASE_3_TENANT_EXECUTE_BUTTON_LABEL).toBe(
+      "Save Tenant Row: Individual Only"
+    );
+    expect(mod.PHASE_3_TENANT_EXECUTE_WARNING).toBe(
+      "This will enter one tenant individual row in Bahagian A. It will not enter company data, upload, submit, pay, or retrieve a certificate."
+    );
+    expect(mod.PHASE_3_TENANT_EXECUTE_SUCCESS).toBe(
+      "Tenant individual row saved. No company, upload, Hantar, payment, or certificate action was performed."
+    );
+  });
+
+  test("forbidden button labels do NOT appear in the B11 button label", async () => {
+    const mod = await import("./tenancy-supervised-run-session");
+    const lbl = mod.PHASE_3_TENANT_EXECUTE_BUTTON_LABEL;
+    expect(lbl).not.toMatch(/\bStart automation\b/i);
+    expect(lbl).not.toMatch(/\bRun all parties\b/i);
+    expect(lbl).not.toMatch(/\bSubmit\b/i);
+    expect(lbl).not.toMatch(/\bSend to LHDN\b/i);
+    expect(lbl).not.toMatch(/\bHantar\b/i);
+    expect(lbl).not.toMatch(/\bPay\b/i);
+    expect(lbl).not.toMatch(/\bComplete stamping\b/i);
+  });
+});
