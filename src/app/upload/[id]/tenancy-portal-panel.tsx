@@ -69,6 +69,9 @@ import {
   PHASE_2_EXECUTE_BUTTON_LABEL,
   PHASE_2_EXECUTE_SUCCESS,
   PHASE_2_EXECUTE_WARNING,
+  PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL,
+  PHASE_3_LANDLORD_EXECUTE_SUCCESS,
+  PHASE_3_LANDLORD_EXECUTE_WARNING,
   type SupervisedRunSessionViewModel,
   type TenancyRunSessionState,
 } from "../../../lib/tenancy-supervised-run-session";
@@ -77,6 +80,11 @@ import {
   type Phase2ExecutionResult,
   type Phase2RefusalReason,
 } from "../../../lib/tenancy-phase-2-executor";
+import {
+  PHASE_3_LANDLORD_REASON_LABELS,
+  type Phase3LandlordExecutionResult,
+  type Phase3LandlordRefusalReason,
+} from "../../../lib/tenancy-phase-3-landlord-executor";
 import {
   buildTenancyBahagianAPartyPlan,
   type TenancyBahagianAPartyPlan,
@@ -3772,12 +3780,14 @@ function SupervisedRunSessionCard({
     initialState
   );
   const [busy, setBusy] = useState<
-    "prepare" | "approve" | "phase2" | null
+    "prepare" | "approve" | "phase2" | "phase3-landlord" | null
   >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedNotice, setCompletedNotice] = useState<string | null>(null);
   const [phase2Refusal, setPhase2Refusal] =
     useState<Phase2RefusalReason | null>(null);
+  const [phase3LandlordRefusal, setPhase3LandlordRefusal] =
+    useState<Phase3LandlordRefusalReason | null>(null);
 
   const viewModel: SupervisedRunSessionViewModel = useMemo(
     () => buildSupervisedRunSessionViewModel(state),
@@ -3893,6 +3903,19 @@ function SupervisedRunSessionCard({
     state !== null &&
     state.currentRunStage === "first_mutation_approved";
 
+  // Phase 3 landlord-individual (Milestone B10) — controlled
+  // Bahagian A landlord row save. Disabled unless:
+  //   - Maklumat Am has been saved (`phase_2_maklumat_am_saved`)
+  //   - the landlord row hasn't already been saved
+  // The route enforces the same gates server-side.
+  const phase3LandlordButtonEnabled =
+    state !== null &&
+    state.currentRunStage === "phase_2_maklumat_am_saved";
+
+  const phase3LandlordRowAlreadySaved =
+    state !== null &&
+    state.currentRunStage === "phase_3_landlord_individual_saved";
+
   const handleExecutePhase2 = useCallback(async () => {
     setBusy("phase2");
     setErrorMessage(null);
@@ -3951,6 +3974,70 @@ function SupervisedRunSessionCard({
         }
         const errMsg =
           failureJson?.reason ?? "Phase 2 Maklumat Am attempt failed.";
+        setErrorMessage(errMsg);
+      }
+    } catch {
+      setErrorMessage("Network failure. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }, [jobId]);
+
+  // Phase 3 landlord-individual handler (Milestone B10).
+  const handleExecutePhase3Landlord = useCallback(async () => {
+    setBusy("phase3-landlord");
+    setErrorMessage(null);
+    setCompletedNotice(null);
+    setPhase3LandlordRefusal(null);
+    try {
+      const res = await fetch(
+        `/api/intake/${encodeURIComponent(jobId)}/supervised-run/execute-phase-3-landlord-individual`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }
+      );
+      let json: unknown;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
+      if (
+        res.ok &&
+        json &&
+        typeof json === "object" &&
+        "ok" in json &&
+        (json as { ok: unknown }).ok === true &&
+        "result" in json
+      ) {
+        const successJson = json as {
+          result: Phase3LandlordExecutionResult;
+        };
+        if (successJson.result.status === "saved") {
+          setCompletedNotice(PHASE_3_LANDLORD_EXECUTE_SUCCESS);
+          // Optimistic local-state transition.
+          setState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  currentRunStage: "phase_3_landlord_individual_saved",
+                  updatedAt: new Date().toISOString(),
+                }
+              : prev
+          );
+        }
+      } else {
+        const failureJson =
+          json && typeof json === "object" && "result" in json
+            ? (json as { result: Phase3LandlordExecutionResult }).result
+            : null;
+        if (failureJson?.refusalReason) {
+          setPhase3LandlordRefusal(failureJson.refusalReason);
+        }
+        const errMsg =
+          failureJson?.reason ?? "Phase 3 landlord-individual save failed.";
         setErrorMessage(errMsg);
       }
     } catch {
@@ -4126,6 +4213,49 @@ function SupervisedRunSessionCard({
             <strong>Phase 2 Maklumat Am refused: </strong>
             <code>{phase2Refusal}</code> ·{" "}
             {PHASE_2_REASON_LABELS[phase2Refusal]}
+          </p>
+        )}
+      </div>
+
+      {/* ── Phase 3 landlord-individual row save (Milestone B10) ─
+          The SECOND portal-mutating control. Disabled until
+          Maklumat Am has been saved AND the landlord row hasn't
+          already been saved. The route enforces the same gates
+          server-side. The button NEVER triggers tenant rows,
+          company rows, Bahagian B/C, Lampiran, Perakuan, Hantar,
+          payment, or certificate retrieval — the route's executor
+          surface is locked to the landlord-individual selectors. */}
+      <div className="tpr-srs-phase3-landlord">
+        <p className="tpr-srs-phase3-warning" role="note">
+          {PHASE_3_LANDLORD_EXECUTE_WARNING}
+        </p>
+        <button
+          type="button"
+          className="tpr-srs-phase3-button"
+          onClick={handleExecutePhase3Landlord}
+          disabled={busy !== null || !phase3LandlordButtonEnabled}
+          title={
+            phase3LandlordRowAlreadySaved
+              ? "Landlord row already saved."
+              : phase3LandlordButtonEnabled
+                ? PHASE_3_LANDLORD_EXECUTE_WARNING
+                : "Save the Maklumat Am draft (Phase 2) before attempting the landlord row."
+          }
+        >
+          {busy === "phase3-landlord"
+            ? "Saving landlord row…"
+            : PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL}
+        </button>
+        {phase3LandlordRowAlreadySaved && (
+          <p className="tpr-srs-phase3-success" role="status">
+            <strong>{PHASE_3_LANDLORD_EXECUTE_SUCCESS}</strong>
+          </p>
+        )}
+        {phase3LandlordRefusal && (
+          <p className="tpr-srs-phase3-refusal" role="alert">
+            <strong>Phase 3 landlord-individual refused: </strong>
+            <code>{phase3LandlordRefusal}</code> ·{" "}
+            {PHASE_3_LANDLORD_REASON_LABELS[phase3LandlordRefusal]}
           </p>
         )}
       </div>

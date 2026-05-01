@@ -1011,3 +1011,77 @@ describe("Run-session · approved-wording constants", () => {
     );
   });
 });
+
+// ─── B10 stage / wording invariants ────────────────────────────────
+
+describe("Run-session · B10 phase_3_landlord_individual_saved stage", () => {
+  test("stage is sticky once set — a subsequent prepare does NOT revert it", () => {
+    const job = buildReadyJob();
+    const readiness = evaluateTenancyPortalRunReadiness(job);
+    const graph = buildTenancyInstructionGraph({ job, jobId: "j-b10" });
+    // Build a state with previousStage set to phase_3_landlord_individual_saved.
+    const previous: TenancyRunSessionState = {
+      ...buildSupervisedRunSessionState({
+        jobId: "j-b10",
+        readinessReport: readiness,
+        instructionGraph: graph,
+      }),
+      currentRunStage: "phase_3_landlord_individual_saved",
+    };
+    const refreshed = buildSupervisedRunSessionState({
+      jobId: "j-b10",
+      readinessReport: readiness,
+      instructionGraph: graph,
+      existingState: previous,
+    });
+    expect(refreshed.currentRunStage).toBe(
+      "phase_3_landlord_individual_saved"
+    );
+  });
+
+  test("RUN_STAGE_LABELS includes phase_3_landlord_individual_saved", () => {
+    expect(RUN_STAGE_LABELS.phase_3_landlord_individual_saved).toBe(
+      "Phase 3 landlord individual row saved"
+    );
+  });
+
+  test("approved B10 wording is verbatim from the brief", async () => {
+    const mod = await import("./tenancy-supervised-run-session");
+    expect(mod.PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL).toBe(
+      "Save Landlord Row: Individual Only"
+    );
+    expect(mod.PHASE_3_LANDLORD_EXECUTE_WARNING).toBe(
+      "This will enter one landlord individual row in Bahagian A. It will not enter tenant data, upload, submit, pay, or retrieve a certificate."
+    );
+    expect(mod.PHASE_3_LANDLORD_EXECUTE_SUCCESS).toBe(
+      "Landlord individual row saved. No tenant, upload, Hantar, payment, or certificate action was performed."
+    );
+  });
+
+  test("forbidden button labels do NOT appear in the B10 wording", async () => {
+    const mod = await import("./tenancy-supervised-run-session");
+    const all = [
+      mod.PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL,
+      mod.PHASE_3_LANDLORD_EXECUTE_WARNING,
+      mod.PHASE_3_LANDLORD_EXECUTE_SUCCESS,
+    ].join(" | ");
+    // The brief explicitly forbids these button labels.
+    expect(all).not.toMatch(/\bStart automation\b/i);
+    expect(all).not.toMatch(/\bRun all parties\b/i);
+    // "Submit" — guard against the button label, but allow narrative
+    // mentions like "It will not ... submit ..." in the warning.
+    expect(mod.PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL).not.toMatch(
+      /\bSubmit\b/i
+    );
+    expect(all).not.toMatch(/\bSend to LHDN\b/i);
+    // "Hantar" must not appear as a button label, but the success
+    // text deliberately mentions the word "Hantar" in the
+    // "No ... Hantar" disclaimer; the BUTTON LABEL specifically
+    // must not.
+    expect(mod.PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL).not.toMatch(/\bHantar\b/i);
+    expect(mod.PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL).not.toMatch(/\bPay\b/i);
+    expect(mod.PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL).not.toMatch(
+      /\bComplete stamping\b/i
+    );
+  });
+});

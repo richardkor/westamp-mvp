@@ -88,6 +88,7 @@ export type TenancyRunStage =
   | "awaiting_first_mutation_approval"
   | "first_mutation_approved"
   | "phase_2_maklumat_am_saved"
+  | "phase_3_landlord_individual_saved"
   | "blocked"
   | "aborted";
 
@@ -129,6 +130,31 @@ export interface TenancyRunSessionOperatorApproval {
  * URL, href, exception text, portal numeric IDs, party data, or
  * uploaded document content.
  */
+/**
+ * Narrow result block recorded on the run-session state when the
+ * controlled Phase 3 landlord-individual row-save executor
+ * (Milestone B10) attempts a mutation. Sanitized: stable enum
+ * values + ISO timestamps + path-shape enums + sanitized
+ * row-count integers only.
+ */
+export interface TenancyRunSessionPhase3LandlordResult {
+  status: "saved" | "failed";
+  attemptedAt: string;
+  savedAt?: string;
+  postSavePathKind?:
+    | "mytax_dashboard"
+    | "stamps_role_change"
+    | "stamps_dashboard"
+    | "sewa_pajakan_p5_form"
+    | "other";
+  /** Stable failure-reason code on `status === "failed"`. */
+  failureReasonCode?: string;
+  /** Sanitized small integer. Captured on success and most failures. */
+  preRowCount?: number;
+  /** Sanitized small integer. Captured on success and on row-count failures. */
+  postRowCount?: number;
+}
+
 export interface TenancyRunSessionPhase2Result {
   /** Always "saved" or "failed" — refusals never reach this block. */
   status: "saved" | "failed";
@@ -194,6 +220,12 @@ export interface TenancyRunSessionState {
    * Sanitized; see `TenancyRunSessionPhase2Result`.
    */
   phase2MaklumatAm?: TenancyRunSessionPhase2Result;
+  /**
+   * Result of the most recent Phase 3 landlord-individual row-save
+   * executor attempt (Milestone B10). Absent until the operator
+   * triggers Phase 3 landlord. Sanitized.
+   */
+  phase3LandlordIndividual?: TenancyRunSessionPhase3LandlordResult;
   /** ISO 8601 timestamp. Set on first prepare call. */
   createdAt: string;
   /** ISO 8601 timestamp. Refreshed on every state mutation. */
@@ -279,6 +311,20 @@ export const PHASE_2_EXECUTE_WARNING =
 /** Success text shown after a successful Phase 2 save. */
 export const PHASE_2_EXECUTE_SUCCESS =
   "Maklumat Am draft saved. No Hantar, upload, payment, or certificate retrieval was performed.";
+
+// ─── B10 approved wording (Phase 3 landlord-individual save) ──────
+
+/** Operator-facing button label for the controlled landlord row save. */
+export const PHASE_3_LANDLORD_EXECUTE_BUTTON_LABEL =
+  "Save Landlord Row: Individual Only";
+
+/** Warning text shown above / next to the landlord-save button. */
+export const PHASE_3_LANDLORD_EXECUTE_WARNING =
+  "This will enter one landlord individual row in Bahagian A. It will not enter tenant data, upload, submit, pay, or retrieve a certificate.";
+
+/** Success text shown after a successful landlord row save. */
+export const PHASE_3_LANDLORD_EXECUTE_SUCCESS =
+  "Landlord individual row saved. No tenant, upload, Hantar, payment, or certificate action was performed.";
 
 // ─── Build / refresh ───────────────────────────────────────────────
 
@@ -583,6 +629,14 @@ function deriveRunStage(input: {
   if (input.previousStage === "phase_2_maklumat_am_saved") {
     return "phase_2_maklumat_am_saved";
   }
+  // Phase 3 landlord-individual saved is also sticky — once a
+  // landlord row is committed to e-Duti Setem, no prepare call can
+  // pretend it isn't there. This stage strictly succeeds
+  // `phase_2_maklumat_am_saved` because the landlord-row save
+  // requires Maklumat Am to already be saved (B10 preflight).
+  if (input.previousStage === "phase_3_landlord_individual_saved") {
+    return "phase_3_landlord_individual_saved";
+  }
 
   if (input.operatorApprovalActive) return "first_mutation_approved";
 
@@ -640,6 +694,8 @@ export const RUN_STAGE_LABELS: Record<TenancyRunStage, string> = {
   awaiting_first_mutation_approval: "Awaiting first-mutation approval",
   first_mutation_approved: "First mutation approved internally",
   phase_2_maklumat_am_saved: "Phase 2 Maklumat Am draft saved",
+  phase_3_landlord_individual_saved:
+    "Phase 3 landlord individual row saved",
   blocked: "Blocked",
   aborted: "Aborted",
 };

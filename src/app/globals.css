@@ -10367,3 +10367,66 @@ section[data-section] {
   font-size: 11px;
   color: #6c4500;
 }
+
+/* ── Phase 3 landlord-individual button (Milestone B10) ──────────── */
+
+.tpr-srs-phase3-landlord {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d4e6f7;
+  border-radius: 6px;
+  background: #f4f9fd;
+}
+
+.tpr-srs-phase3-warning {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #2a4f78;
+  font-style: italic;
+}
+
+.tpr-srs-phase3-button {
+  display: inline-block;
+  padding: 8px 14px;
+  background: #2c75c8;
+  color: #fff;
+  border: 0;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.tpr-srs-phase3-button:disabled {
+  background: #b0c5dc;
+  cursor: not-allowed;
+}
+
+.tpr-srs-phase3-button:hover:not(:disabled) {
+  background: #235da0;
+}
+
+.tpr-srs-phase3-success {
+  margin: 8px 0 0 0;
+  padding: 6px 10px;
+  background: #e6f7eb;
+  border-left: 3px solid #2a8a47;
+  color: #1e5e32;
+  font-size: 12px;
+}
+
+.tpr-srs-phase3-refusal {
+  margin: 8px 0 0 0;
+  padding: 6px 10px;
+  background: #fff3f3;
+  border-left: 3px solid #c8443f;
+  color: #6e2723;
+  font-size: 12px;
+}
+
+.tpr-srs-phase3-refusal code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
