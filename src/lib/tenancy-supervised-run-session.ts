@@ -90,6 +90,7 @@ export type TenancyRunStage =
   | "phase_2_maklumat_am_saved"
   | "phase_3_landlord_individual_saved"
   | "phase_3_tenant_individual_saved"
+  | "phase_4_bahagian_b_fixed_rent_saved"
   | "blocked"
   | "aborted";
 
@@ -254,6 +255,12 @@ export interface TenancyRunSessionState {
    * triggers Phase 3 tenant. Sanitized.
    */
   phase3TenantIndividual?: TenancyRunSessionPhase3TenantResult;
+  /**
+   * Result of the most recent Phase 4 Bahagian B fixed-rent save
+   * executor attempt (Milestone B12). Absent until the operator
+   * triggers Phase 4. Sanitized.
+   */
+  phase4BahagianBFixedRent?: TenancyRunSessionPhase4BahagianBResult;
   /** ISO 8601 timestamp. Set on first prepare call. */
   createdAt: string;
   /** ISO 8601 timestamp. Refreshed on every state mutation. */
@@ -367,6 +374,40 @@ export const PHASE_3_TENANT_EXECUTE_WARNING =
 /** Success text shown after a successful tenant row save. */
 export const PHASE_3_TENANT_EXECUTE_SUCCESS =
   "Tenant individual row saved. No company, upload, Hantar, payment, or certificate action was performed.";
+
+// ─── B12 approved wording (Phase 4 Bahagian B fixed-rent save) ────
+
+/** Operator-facing button label for the controlled Bahagian B save. */
+export const PHASE_4_BAHAGIAN_B_EXECUTE_BUTTON_LABEL =
+  "Save Bahagian B: Fixed Rent Only";
+
+/** Warning text shown above / next to the Bahagian B save button. */
+export const PHASE_4_BAHAGIAN_B_EXECUTE_WARNING =
+  "This will enter fixed-rent Bahagian B data only. It will not enter property data, upload, submit, pay, or retrieve a certificate.";
+
+/** Success text shown after a successful Bahagian B save. */
+export const PHASE_4_BAHAGIAN_B_EXECUTE_SUCCESS =
+  "Bahagian B fixed-rent data saved. No Bahagian C, upload, Hantar, payment, or certificate action was performed.";
+
+/**
+ * Narrow result block recorded on the run-session state when the
+ * controlled Phase 4 Bahagian B fixed-rent executor (Milestone B12)
+ * attempts a mutation.
+ */
+export interface TenancyRunSessionPhase4BahagianBResult {
+  status: "saved" | "failed";
+  attemptedAt: string;
+  savedAt?: string;
+  postSavePathKind?:
+    | "mytax_dashboard"
+    | "stamps_role_change"
+    | "stamps_dashboard"
+    | "sewa_pajakan_p5_form"
+    | "other";
+  failureReasonCode?: string;
+  preRentRowCount?: number;
+  postRentRowCount?: number;
+}
 
 // ─── Build / refresh ───────────────────────────────────────────────
 
@@ -685,6 +726,11 @@ function deriveRunStage(input: {
   if (input.previousStage === "phase_3_tenant_individual_saved") {
     return "phase_3_tenant_individual_saved";
   }
+  // Phase 4 Bahagian B fixed-rent saved succeeds the tenant-row
+  // stage (B12). Same sticky semantics.
+  if (input.previousStage === "phase_4_bahagian_b_fixed_rent_saved") {
+    return "phase_4_bahagian_b_fixed_rent_saved";
+  }
 
   if (input.operatorApprovalActive) return "first_mutation_approved";
 
@@ -746,6 +792,8 @@ export const RUN_STAGE_LABELS: Record<TenancyRunStage, string> = {
     "Phase 3 landlord individual row saved",
   phase_3_tenant_individual_saved:
     "Phase 3 tenant individual row saved",
+  phase_4_bahagian_b_fixed_rent_saved:
+    "Phase 4 Bahagian B fixed-rent saved",
   blocked: "Blocked",
   aborted: "Aborted",
 };

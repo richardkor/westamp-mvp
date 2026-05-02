@@ -1143,3 +1143,61 @@ describe("Run-session · B11 phase_3_tenant_individual_saved stage", () => {
     expect(lbl).not.toMatch(/\bComplete stamping\b/i);
   });
 });
+
+// ─── B12 stage / wording invariants ────────────────────────────────
+
+describe("Run-session · B12 phase_4_bahagian_b_fixed_rent_saved stage", () => {
+  test("stage is sticky once set — a subsequent prepare does NOT revert it", () => {
+    const job = buildReadyJob();
+    const readiness = evaluateTenancyPortalRunReadiness(job);
+    const graph = buildTenancyInstructionGraph({ job, jobId: "j-b12" });
+    const previous: TenancyRunSessionState = {
+      ...buildSupervisedRunSessionState({
+        jobId: "j-b12",
+        readinessReport: readiness,
+        instructionGraph: graph,
+      }),
+      currentRunStage: "phase_4_bahagian_b_fixed_rent_saved",
+    };
+    const refreshed = buildSupervisedRunSessionState({
+      jobId: "j-b12",
+      readinessReport: readiness,
+      instructionGraph: graph,
+      existingState: previous,
+    });
+    expect(refreshed.currentRunStage).toBe(
+      "phase_4_bahagian_b_fixed_rent_saved"
+    );
+  });
+
+  test("RUN_STAGE_LABELS includes phase_4_bahagian_b_fixed_rent_saved", () => {
+    expect(RUN_STAGE_LABELS.phase_4_bahagian_b_fixed_rent_saved).toBe(
+      "Phase 4 Bahagian B fixed-rent saved"
+    );
+  });
+
+  test("approved B12 wording is verbatim from the brief", async () => {
+    const mod = await import("./tenancy-supervised-run-session");
+    expect(mod.PHASE_4_BAHAGIAN_B_EXECUTE_BUTTON_LABEL).toBe(
+      "Save Bahagian B: Fixed Rent Only"
+    );
+    expect(mod.PHASE_4_BAHAGIAN_B_EXECUTE_WARNING).toBe(
+      "This will enter fixed-rent Bahagian B data only. It will not enter property data, upload, submit, pay, or retrieve a certificate."
+    );
+    expect(mod.PHASE_4_BAHAGIAN_B_EXECUTE_SUCCESS).toBe(
+      "Bahagian B fixed-rent data saved. No Bahagian C, upload, Hantar, payment, or certificate action was performed."
+    );
+  });
+
+  test("forbidden button labels do NOT appear in the B12 button label", async () => {
+    const mod = await import("./tenancy-supervised-run-session");
+    const lbl = mod.PHASE_4_BAHAGIAN_B_EXECUTE_BUTTON_LABEL;
+    expect(lbl).not.toMatch(/\bStart automation\b/i);
+    expect(lbl).not.toMatch(/\bRun all sections\b/i);
+    expect(lbl).not.toMatch(/\bSubmit\b/i);
+    expect(lbl).not.toMatch(/\bSend to LHDN\b/i);
+    expect(lbl).not.toMatch(/\bHantar\b/i);
+    expect(lbl).not.toMatch(/\bPay\b/i);
+    expect(lbl).not.toMatch(/\bComplete stamping\b/i);
+  });
+});

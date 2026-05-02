@@ -10442,3 +10442,13 @@ section[data-section] {
   border-radius: 6px;
   background: #f4f9fd;
 }
+
+/* ── Phase 4 Bahagian B button (Milestone B12) ───────────────────── */
+
+.tpr-srs-phase4 {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #d4e6f7;
+  border-radius: 6px;
+  background: #f4f9fd;
+}

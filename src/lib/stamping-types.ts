@@ -169,7 +169,9 @@ export type JobEventType =
   | "supervised_run_phase_3_landlord_individual_saved"
   | "supervised_run_phase_3_landlord_individual_failed"
   | "supervised_run_phase_3_tenant_individual_saved"
-  | "supervised_run_phase_3_tenant_individual_failed";
+  | "supervised_run_phase_3_tenant_individual_failed"
+  | "supervised_run_phase_4_bahagian_b_fixed_rent_saved"
+  | "supervised_run_phase_4_bahagian_b_fixed_rent_failed";
 
 export interface JobEvent {
   /** Event type identifier. */

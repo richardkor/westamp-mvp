@@ -75,6 +75,9 @@ import {
   PHASE_3_TENANT_EXECUTE_BUTTON_LABEL,
   PHASE_3_TENANT_EXECUTE_SUCCESS,
   PHASE_3_TENANT_EXECUTE_WARNING,
+  PHASE_4_BAHAGIAN_B_EXECUTE_BUTTON_LABEL,
+  PHASE_4_BAHAGIAN_B_EXECUTE_SUCCESS,
+  PHASE_4_BAHAGIAN_B_EXECUTE_WARNING,
   type SupervisedRunSessionViewModel,
   type TenancyRunSessionState,
 } from "../../../lib/tenancy-supervised-run-session";
@@ -93,6 +96,11 @@ import {
   type Phase3TenantExecutionResult,
   type Phase3TenantRefusalReason,
 } from "../../../lib/tenancy-phase-3-tenant-executor";
+import {
+  PHASE_4_BAHAGIAN_B_REASON_LABELS,
+  type Phase4BahagianBExecutionResult,
+  type Phase4BahagianBRefusalReason,
+} from "../../../lib/tenancy-phase-4-bahagian-b-executor";
 import {
   buildTenancyBahagianAPartyPlan,
   type TenancyBahagianAPartyPlan,
@@ -3788,7 +3796,13 @@ function SupervisedRunSessionCard({
     initialState
   );
   const [busy, setBusy] = useState<
-    "prepare" | "approve" | "phase2" | "phase3-landlord" | "phase3-tenant" | null
+    | "prepare"
+    | "approve"
+    | "phase2"
+    | "phase3-landlord"
+    | "phase3-tenant"
+    | "phase4-bahagian-b"
+    | null
   >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedNotice, setCompletedNotice] = useState<string | null>(null);
@@ -3798,6 +3812,8 @@ function SupervisedRunSessionCard({
     useState<Phase3LandlordRefusalReason | null>(null);
   const [phase3TenantRefusal, setPhase3TenantRefusal] =
     useState<Phase3TenantRefusalReason | null>(null);
+  const [phase4BahagianBRefusal, setPhase4BahagianBRefusal] =
+    useState<Phase4BahagianBRefusalReason | null>(null);
 
   const viewModel: SupervisedRunSessionViewModel = useMemo(
     () => buildSupervisedRunSessionViewModel(state),
@@ -3937,6 +3953,18 @@ function SupervisedRunSessionCard({
     state !== null &&
     state.currentRunStage === "phase_3_tenant_individual_saved";
 
+  // Phase 4 Bahagian B fixed-rent (Milestone B12). Disabled unless:
+  //   - tenant row has been saved (`phase_3_tenant_individual_saved`)
+  //   - Bahagian B hasn't already been saved
+  // The fixed-rent / single-period rent-type check lives in the
+  // route's pure preflight; the UI button only gates on stage.
+  const phase4BahagianBButtonEnabled =
+    state !== null &&
+    state.currentRunStage === "phase_3_tenant_individual_saved";
+  const phase4BahagianBAlreadySaved =
+    state !== null &&
+    state.currentRunStage === "phase_4_bahagian_b_fixed_rent_saved";
+
   const handleExecutePhase2 = useCallback(async () => {
     setBusy("phase2");
     setErrorMessage(null);
@@ -3995,6 +4023,65 @@ function SupervisedRunSessionCard({
         }
         const errMsg =
           failureJson?.reason ?? "Phase 2 Maklumat Am attempt failed.";
+        setErrorMessage(errMsg);
+      }
+    } catch {
+      setErrorMessage("Network failure. Please try again.");
+    } finally {
+      setBusy(null);
+    }
+  }, [jobId]);
+
+  // Phase 4 Bahagian B fixed-rent handler (Milestone B12).
+  const handleExecutePhase4BahagianB = useCallback(async () => {
+    setBusy("phase4-bahagian-b");
+    setErrorMessage(null);
+    setCompletedNotice(null);
+    setPhase4BahagianBRefusal(null);
+    try {
+      const res = await fetch(
+        `/api/intake/${encodeURIComponent(jobId)}/supervised-run/execute-phase-4-bahagian-b-fixed-rent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }
+      );
+      let json: unknown;
+      try { json = await res.json(); } catch { json = null; }
+      if (
+        res.ok &&
+        json &&
+        typeof json === "object" &&
+        "ok" in json &&
+        (json as { ok: unknown }).ok === true &&
+        "result" in json
+      ) {
+        const successJson = json as {
+          result: Phase4BahagianBExecutionResult;
+        };
+        if (successJson.result.status === "saved") {
+          setCompletedNotice(PHASE_4_BAHAGIAN_B_EXECUTE_SUCCESS);
+          setState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  currentRunStage: "phase_4_bahagian_b_fixed_rent_saved",
+                  updatedAt: new Date().toISOString(),
+                }
+              : prev
+          );
+        }
+      } else {
+        const failureJson =
+          json && typeof json === "object" && "result" in json
+            ? (json as { result: Phase4BahagianBExecutionResult }).result
+            : null;
+        if (failureJson?.refusalReason) {
+          setPhase4BahagianBRefusal(failureJson.refusalReason);
+        }
+        const errMsg =
+          failureJson?.reason ?? "Phase 4 Bahagian B save failed.";
         setErrorMessage(errMsg);
       }
     } catch {
@@ -4384,6 +4471,46 @@ function SupervisedRunSessionCard({
             <strong>Phase 3 tenant-individual refused: </strong>
             <code>{phase3TenantRefusal}</code> ·{" "}
             {PHASE_3_TENANT_REASON_LABELS[phase3TenantRefusal]}
+          </p>
+        )}
+      </div>
+
+      {/* ── Phase 4 Bahagian B fixed-rent save (Milestone B12) ───
+          The FOURTH portal-mutating control. Disabled until the
+          tenant row has been saved AND Bahagian B hasn't already
+          been saved AND the job is on the fixed-rent single-period
+          path. The route enforces the same gates server-side. */}
+      <div className="tpr-srs-phase4">
+        <p className="tpr-srs-phase3-warning" role="note">
+          {PHASE_4_BAHAGIAN_B_EXECUTE_WARNING}
+        </p>
+        <button
+          type="button"
+          className="tpr-srs-phase3-button"
+          onClick={handleExecutePhase4BahagianB}
+          disabled={busy !== null || !phase4BahagianBButtonEnabled}
+          title={
+            phase4BahagianBAlreadySaved
+              ? "Bahagian B already saved."
+              : phase4BahagianBButtonEnabled
+                ? PHASE_4_BAHAGIAN_B_EXECUTE_WARNING
+                : "Save the tenant row before attempting Bahagian B (fixed-rent single-period only)."
+          }
+        >
+          {busy === "phase4-bahagian-b"
+            ? "Saving Bahagian B…"
+            : PHASE_4_BAHAGIAN_B_EXECUTE_BUTTON_LABEL}
+        </button>
+        {phase4BahagianBAlreadySaved && (
+          <p className="tpr-srs-phase3-success" role="status">
+            <strong>{PHASE_4_BAHAGIAN_B_EXECUTE_SUCCESS}</strong>
+          </p>
+        )}
+        {phase4BahagianBRefusal && (
+          <p className="tpr-srs-phase3-refusal" role="alert">
+            <strong>Phase 4 Bahagian B refused: </strong>
+            <code>{phase4BahagianBRefusal}</code> ·{" "}
+            {PHASE_4_BAHAGIAN_B_REASON_LABELS[phase4BahagianBRefusal]}
           </p>
         )}
       </div>
